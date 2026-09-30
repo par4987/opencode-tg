@@ -3,8 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Telegram bridge that runs inside the OpenCode server (no dependencies)",
-  "engines": {
-    "node": ">=22"
+  "description": "Telegram bridge that runs inside the OpenCode server (no runtime dependencies)",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node scripts/_run_tests.cjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "^2.0.20",
+    "@types/node": "^22",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }

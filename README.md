@@ -33,7 +33,15 @@ El manual completo de uso está en [`MANUAL.md`](MANUAL.md).
 
 ## Configuración
 
-1. Copiar el directorio donde OpenCode cargue los plugins.
+1. Registrar el plugin en la config de OpenCode (`opencode.jsonc` global o
+   del proyecto) apuntando al directorio:
+
+   ```jsonc
+   "plugins": [
+     { "package": "C:/ruta/al/opencode-tg" }
+   ]
+   ```
+
 2. Crear `~/.opencode/tg/.env` (nunca se sube al repo):
 
    ```
@@ -46,11 +54,15 @@ El manual completo de uso está en [`MANUAL.md`](MANUAL.md).
    `archiveAfterDays`, `render.*`. Arrancar en `dry` para validar sin tocar
    Telegram.
 
-## Tests
+## Tests y verificación
 
 ```sh
-npx tsx scripts/_setupcheck.ts    # y el resto de scripts/_*check.ts
+npm install
+npm run typecheck   # tsc con el tsconfig del proyecto — 0 errores
+npm test            # las 11 suites (~150 checks) con el runner propio
 ```
+
+GitHub Actions corre ambos en cada push (`.github/workflows/ci.yml`).
 
 Once suites (`_setupcheck` … `_mediaoutcheck`, ~140 checks) cubren el pump
 de eventos, render, tópicos, formularios, configuración, tareas, ingesta y

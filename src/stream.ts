@@ -47,6 +47,8 @@ interface BlockBase {
   sending: boolean;
   lastEdit: number;
   dirty: boolean;
+  /** Payload actually pushed (truncated): identical re-renders skip the edit. */
+  lastHtml?: string;
 }
 
 type TextBlock = BlockBase & {

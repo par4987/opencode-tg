@@ -187,7 +187,7 @@ export function formatToolCard(tool: {
   let line = describe(name, input, str, tool.output ?? "");
   // A failed tool that arrived mid-hand-over (no `input.started`, no input)
   // would otherwise be an empty line with a red mark.
-  if (!line && tool.status === "failed") line = oneLine(tool.error, 120) || "cancelado";
+  if (!line && tool.status === "failed") line = oneLine(tool.error ?? "", 120) || "cancelado";
   return `${icon} <code>${escapeHtml(name)}</code> ${escapeHtml(line)} ${mark}`;
 }
 

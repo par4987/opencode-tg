@@ -119,9 +119,13 @@ check(
   (await desktopVisibleModels(joinPath(dir, "no-existe.db"))).length === 0,
 );
 const realToggles = await desktopVisibleModels();
-const zaiShow = realToggles.filter((t) => t.providerID === "zai" && t.visible).map((t) => t.modelID);
-console.log(`  -- desktop real: ${realToggles.length} toggles; zai show (${zaiShow.length}): ${zaiShow.join(", ")}`);
-check("desktop real: zai tiene exactamente 3 show", zaiShow.length === 3);
+if (realToggles.length > 0) {
+  const zaiShow = realToggles.filter((t) => t.providerID === "zai" && t.visible).map((t) => t.modelID);
+  console.log(`  -- desktop real: ${realToggles.length} toggles; zai show (${zaiShow.length}): ${zaiShow.join(", ")}`);
+  check("desktop real: zai tiene exactamente 3 show", zaiShow.length === 3);
+} else {
+  console.log("  -- desktop real: sin drafts.sqlite (CI) \u2014 skipped");
+}
 rmSync(dir, { recursive: true, force: true });
 
 // ── loadConfig: coalesceMs (src/config.ts) ───────────────────────────────────
