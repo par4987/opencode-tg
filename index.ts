@@ -1994,10 +1994,18 @@ export default {
           for (const item of items) {
             const id = String(item.id ?? "");
             if (!id) continue;
-            const r = await forms
-              .request("PATCH", `/session/${encodeURIComponent(session)}/inbox/${encodeURIComponent(id)}`, { delivery: "steer" })
-              .catch(() => undefined);
-            if (r !== undefined) moved += 1;
+            try {
+               // Empty 204 is success for this PATCH — the item leaving the
+               // inbox is the point, not the body.
+               await forms.request(
+                 "PATCH",
+                 `/session/${encodeURIComponent(session)}/inbox/${encodeURIComponent(id)}`,
+                 { delivery: "steer" },
+               );
+               moved += 1;
+             } catch {
+               // one stuck item does not stop the rest of the flush
+             }
           }
           await reply(
             moved > 0
@@ -3305,13 +3313,20 @@ export default {
                   return;
                 }
                 if (action === "steer") {
-                  const r = await forms
-                    .request("PATCH", `/session/${encodeURIComponent(session)}/inbox/${encodeURIComponent(item.id)}`, { delivery: "steer" })
-                    .catch((error) => {
-                      log("WARN", "inbox steer", safe(error));
-                      return undefined;
-                    });
-                  await ack(r !== undefined ? "Adelantado al turno en curso" : "No se pudo adelantar (el turno ya lo tom\u00f3)");
+                  try {
+                    // A 204/empty body is the normal answer for this PATCH:
+                    // the item leaving the inbox IS the success, not the
+                    // body. Only a thrown non-2xx is a real "could not".
+                    await forms.request(
+                      "PATCH",
+                      `/session/${encodeURIComponent(session)}/inbox/${encodeURIComponent(item.id)}`,
+                      { delivery: "steer" },
+                    );
+                    await ack("Adelantado al turno en curso");
+                  } catch (error) {
+                    log("WARN", "inbox steer", safe(error));
+                    await ack("No se pudo adelantar: " + String((error as Error).message).slice(0, 120));
+                  }
                   return;
                 }
                 if (action === "cancel") {
