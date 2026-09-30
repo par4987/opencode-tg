@@ -116,7 +116,7 @@ sobrevive reinicios y se entrega sola:
 | Comando | Qué hace |
 | --- | --- |
 | `/newtask` | Asistente de 6 pasos: proyecto → sesión de referencia → prompt → modelo → intervalo → confirmar. El borrador se guarda: si te quedás a mitad, `/newtask` retoma donde estaba |
-| `/tasks` | Lista tus tareas: pausar, ejecutar ya, editar o borrar |
+| `/tasks` | Lista tus tareas: pausar, ejecutar ya, **editar el prompt (✏️)** o borrar |
 
 Cada corrida arranca una **sesión nueva** con el modelo que elegiste, corre
 el prompt y el resultado llega al hilo de esa tarea.
