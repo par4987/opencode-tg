@@ -9,6 +9,7 @@ import {
   parseScheduleDetail,
   parseTime,
   readTasks,
+  updateTaskPrompt,
   writeTasks,
   type Task,
   type TaskSchedule,
@@ -104,6 +105,17 @@ const back = readTasks(file);
 check("roundtrip: 1 tarea", back.length === 1);
 check("roundtrip: campos", back[0]?.name === "Resumen diario" && back[0]?.schedule.type === "daily");
 check("roundtrip: directorio con backslashes", back[0]?.directory === sample.directory);
+check("roundtrip: idempotente al sobreescribir el store", (() => {
+  writeTasks([sample], file);
+  return readTasks(file).length === 1;
+})());
+check("updateTaskPrompt actualiza y persiste", (() => {
+  const u = updateTaskPrompt(sample.id, "  Nuevo prompt de prueba  ", file);
+  const reread = readTasks(file).find((t) => t.id === sample.id)?.prompt;
+  return u?.prompt === "Nuevo prompt de prueba" && reread === "Nuevo prompt de prueba";
+})());
+check("updateTaskPrompt: id inexistente → undefined", updateTaskPrompt("no-existe", "x", file) === undefined);
+check("updateTaskPrompt: prompt vacio → undefined", updateTaskPrompt(sample.id, "   ", file) === undefined);
 check("read de JSON roto → []", (() => {
   writeFileSync(file, "{ no json", "utf8");
   return readTasks(file).length === 0;

@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { configProviders } from "./src/config-models.js";
 import { decodeText, DOC_MAX_CHARS, isTextLike, saveBinary } from "./src/ingest.js";
 import { describeReplyTarget, extractFilePaths, isForumEcho, qualifyingImage, selectImages, withReplyContext, MAX_IMAGES } from "./src/media-out.js";
-import { clearDraft, fmtDateTime, formatSchedule, newTaskId, nextRunOf, parseScheduleDetail, readDraft, readTasks, writeDraft, writeTasks, type Task, type TaskDraft, type TaskSchedule } from "./src/tasks.js";
+import { clearDraft, fmtDateTime, formatSchedule, newTaskId, nextRunOf, parseScheduleDetail, readDraft, readTasks, updateTaskPrompt, writeDraft, writeTasks, type Task, type TaskDraft, type TaskSchedule } from "./src/tasks.js";
 import { desktopVisibleModels } from "./src/desktop-models.js";
 import { AcpClient, type PermissionOutcome, type RequestPermissionParams } from "./src/acp.js";
 import { loadConfig, type Mode } from "./src/config.js";
@@ -673,6 +673,8 @@ export default {
     let permissionSeq = 0;
     /** Armed by a /skills tap: the next text becomes that skill's prompt. */
     let skillArmed: { id: string; name: string } | undefined;
+    /** Armed by a /tasks "✏️ Prompt" tap: the next text in that thread becomes that task's new prompt. */
+    let taskPromptEdit: { id: string; name: string; threadId: number | undefined; armedAt: number } | undefined;
     const watched = new Set<string>();
     const mirrorAll = config.mirror === "all";
     // One Telegram thread per session. The resolver is a no-op (returns
@@ -2627,6 +2629,23 @@ export default {
                 await sendPrompt(text, byThread, undefined, [{ id: armed.id }]);
                 return;
               }
+              // A task-prompt edit is armed: this text replaces that task's
+              // prompt. Stale (10 min) or written in another thread, it just
+              // falls through as a normal prompt — the edit forgets itself.
+              if (taskPromptEdit && text && !text.startsWith("/")) {
+                const edit = taskPromptEdit;
+                taskPromptEdit = undefined;
+                if (Date.now() - edit.armedAt < 10 * 60_000 && message.message_thread_id === edit.threadId) {
+                  const updated = updateTaskPrompt(edit.id, text);
+                  await send(
+                    updated
+                      ? `\u2705 Prompt de <b>${escapeHtml(edit.name)}</b> actualizado:\n<code>${escapeHtml(updated.prompt.slice(0, 400))}</code>`
+                      : `\u274C Esa tarea ya no existe \u2014 /tasks de nuevo.`,
+                    byThread,
+                  );
+                  return;
+                }
+              }
               // The /newtask wizard consumes this text as its current step.
               if (taskWizard && text && !text.startsWith("/")) {
                 await wizardStep(text, byThread);
@@ -3157,10 +3176,27 @@ export default {
                         { parseMode: "HTML",
                           replyMarkup: { inline_keyboard: [
                             [{ text: "\u25B6 Ahora", callback_data: "task:run:" + task.id }, { text: task.enabled ? "\u23F8 Apagar" : "\u25B6 Encender", callback_data: "task:toggle:" + task.id }],
+                            [{ text: "\u270F\uFE0F Prompt", callback_data: "task:prompt:" + task.id }],
                             [{ text: "\u{1F5D1} Eliminar", callback_data: "task:del:" + task.id }, { text: "\u2B05", callback_data: "task:back" }],
                           ] } },
                       )
                       .catch(() => undefined);
+                  }
+                  return;
+                }
+                if (action === "prompt") {
+                  // Arm the edit: the next text in this thread becomes the
+                  // task's new prompt (checked with a 10-minute window).
+                  await ack("Mand\u00e1 el nuevo prompt");
+                  taskPromptEdit = { id: task.id, name: task.name, threadId: cq.message?.message_thread_id, armedAt: Date.now() };
+                  if (cq.message) {
+                    await telegram
+                      .sendMessage(
+                        cq.message.chat.id,
+                        "\u270F\uFE0F Nuevo prompt para <b>" + escapeHtml(task.name) + "</b> \u2014 mandalo como pr\u00f3ximo mensaje en este hilo (10 min para hacerlo).\n\nActual:\n<code>" + escapeHtml(task.prompt.slice(0, 500)) + "</code>",
+                        { parseMode: "HTML", messageThreadId: cq.message.message_thread_id },
+                      )
+                      .catch((error) => log("WARN", "task prompt arm", safe(error)));
                   }
                   return;
                 }

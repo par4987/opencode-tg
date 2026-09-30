@@ -56,6 +56,21 @@ export function writeTasks(tasks: Task[], file: string = tasksFile()): void {
   }
 }
 
+/**
+ * Replace a task's prompt in the store — the /tasks "✏️ Prompt" action.
+ * Returns the updated task, or undefined for an unknown id / empty prompt.
+ */
+export function updateTaskPrompt(id: string, prompt: string, file: string = tasksFile()): Task | undefined {
+  const trimmed = prompt.trim();
+  if (trimmed.length === 0) return undefined;
+  const tasks = readTasks(file);
+  const task = tasks.find((t) => t.id === id);
+  if (!task) return undefined;
+  task.prompt = trimmed;
+  writeTasks(tasks, file);
+  return task;
+}
+
 // ── schedule grammar ────────────────────────────────────────────────────────
 
 const WEEKDAYS: Record<string, number> = {
