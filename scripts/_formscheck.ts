@@ -9,7 +9,7 @@
  * while a correct path against a missing form answers 404 with JSON.
  */
 import { execFileSync } from "node:child_process";
-import { choicesOf, pickOption, answerFor, answerFree, parseFreeCommand, formatAnswer, servicePassword, type FormInfo } from "../src/forms.js";
+import { choicesOf, pickOption, answerFor, answerFree, parseFreeCommand, formatAnswer, formatFullAnswer, formComplete, mergeAnswer, servicePassword, type FormChoice, type FormInfo } from "../src/forms.js";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {
@@ -73,6 +73,34 @@ check("formatAnswer une valores", formatAnswer({ a: "x", b: "y" }) === "x \u00b7
 check("formatAnswer array se une con coma", formatAnswer({ a: ["p", "q"] }) === "p, q");
 check("formatAnswer vacío → cadena vacía", formatAnswer({}) === "");
 check("formatAnswer no-objeto → cadena vacía", formatAnswer(undefined) === "");
+
+// ── multi-pregunta: acumular hasta completar ───────────────────────────────
+
+const choiceEntorno: FormChoice = {
+  fieldIndex: 0,
+  fieldKey: "entorno",
+  title: "¿Entorno?",
+  options: [{ label: "QA", value: "qa" }, { label: "PROD", value: "prod" }],
+  multiple: false,
+};
+const choiceModo: FormChoice = {
+  fieldIndex: 1,
+  fieldKey: "modo",
+  title: "¿Modo?",
+  options: [{ label: "Rápido", value: "fast" }, { label: "Seguro", value: "safe" }],
+  multiple: false,
+};
+let acc: Record<string, string | string[]> = {};
+acc = mergeAnswer(acc, answerFor(choiceEntorno, choiceEntorno.options[0]!));
+check("mergeAnswer acumula el primer campo", acc.entorno === "qa" && !formComplete([choiceEntorno, choiceModo], acc));
+acc = mergeAnswer(acc, answerFor(choiceModo, choiceModo.options[1]!));
+check("mergeAnswer completa y formComplete cierra", acc.modo === "safe" && formComplete([choiceEntorno, choiceModo], acc));
+check("mergeAnswer pisa al corregir", (() => {
+  const corrected = mergeAnswer(acc, answerFor(choiceEntorno, choiceEntorno.options[1]!));
+  return corrected.entorno === "prod" && corrected.modo === "safe";
+})());
+check("formatFullAnswer une con títulos", formatFullAnswer([choiceEntorno, choiceModo], acc) === "¿Entorno?: qa · ¿Modo?: safe");
+check("formComplete con lista vacía → true (sin preguntas)", formComplete([], {}));
 
 // ── password ─────────────────────────────────────────────────────────────────
 const password = servicePassword();

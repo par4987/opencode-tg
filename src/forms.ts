@@ -92,6 +92,39 @@ export function answerFor(choice: FormChoice, option: FormOption): Record<string
   return choice.multiple ? { [choice.fieldKey]: [option.value] } : { [choice.fieldKey]: option.value };
 }
 
+/** Merge one field's answer into the accumulated set — later taps overwrite. */
+export function mergeAnswer(
+  answers: Record<string, string | string[]>,
+  partial: Record<string, string | string[]>,
+): Record<string, string | string[]> {
+  return { ...answers, ...partial };
+}
+
+/** True when every option-bearing field has an answer in the set. */
+export function formComplete(
+  choices: FormChoice[],
+  answers: Record<string, string | string[]>,
+): boolean {
+  return choices.every((choice) => answers[choice.fieldKey] !== undefined);
+}
+
+/** Receipt line for all answers: "Título: valor · Título: valor". */
+export function formatFullAnswer(
+  choices: FormChoice[],
+  answers: Record<string, string | string[]>,
+): string {
+  return choices
+    .map((choice) => {
+      const value = answers[choice.fieldKey];
+      if (value === undefined) return "";
+      const shown = Array.isArray(value) ? value.join(", ") : String(value);
+      return `${choice.title ? `${choice.title}: ` : ""}${shown}`;
+    })
+    .filter(Boolean)
+    .join(" \u00b7 ")
+    .slice(0, 300);
+}
+
 /**
  * Is this typed message the answer to that question? A number picks that
  * position; otherwise the option's label or value has to match by name.

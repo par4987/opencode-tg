@@ -26,7 +26,7 @@ import { TopicResolver, TopicStore } from "./src/topics.js";
 import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { readHistory, jsonlPath, type HistoryEntry } from "./src/history.js";
-import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
+import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
 
 type Context = Plugin.Context;
@@ -91,6 +91,11 @@ interface OpenForm {
   settled: boolean;
   /** Armed by the "Otra respuesta" button: the next message answers freely. */
   freeText?: boolean;
+  /**
+   * Multi-question forms accumulate here, one key per field; the reply only
+   * goes out when every option-bearing field has an answer.
+   */
+  answers: Record<string, string | string[]>;
 }
 
 /**
@@ -872,6 +877,75 @@ export default {
       return outcome;
     };
 
+    /** Body + keyboard for a form: progress, answered picks, prefixes per question. */
+    const renderFormBody = (entry: OpenForm): { body: string; rows: Array<Array<{ text: string; callback_data: string }>> } => {
+      const multi = entry.choices.length > 1;
+      const answered = entry.choices.filter((choice) => entry.answers[choice.fieldKey] !== undefined).length;
+      const lines = [
+        `\u2753 <b>${escapeHtml(entry.title)}</b>${multi ? ` (${answered}/${entry.choices.length})` : ""}`,
+      ];
+      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+      entry.choices.forEach((choice, position) => {
+        // Several questions in one form: each needs its own heading, otherwise
+        // the first question's title would vanish behind the header.
+        if (multi) {
+          lines.push(""); // blank separator between questions
+          lines.push(`<b>${escapeHtml(choice.title || `Pregunta ${position + 1}`)}</b>`);
+        } else if (choice.title) {
+          lines.push(escapeHtml(choice.title));
+        }
+        const chosenValue = entry.answers[choice.fieldKey];
+        choice.options.forEach((option, index) => {
+          const picked =
+            chosenValue === option.value ||
+            (Array.isArray(chosenValue) && chosenValue.includes(option.value));
+          const detail = option.description ? ` \u2014 ${escapeHtml(option.description)}` : "";
+          lines.push(`${index + 1}. ${picked ? "\u2713 " : ""}${escapeHtml(option.label)}${detail}`);
+        });
+        // The running answer rides under its question so the re-render (each
+        // tap edits this very message) reads as progress, not noise.
+        if (chosenValue !== undefined) {
+          const shown = Array.isArray(chosenValue) ? chosenValue.join(", ") : String(chosenValue);
+          lines.push(`\u2794 tu respuesta: ${escapeHtml(shown)}`);
+        }
+        // With several questions the buttons carry the question number, so
+        // options from different questions cannot read as one flat list.
+        const prefix = multi ? `${position + 1}: ` : "";
+        rows.push(
+          choice.options.map((option, index) => ({
+            // The form id goes last so a stray ':' in it cannot shift the parse.
+            // Telegram rejects an empty button label outright.
+            text: (prefix + (option.label || option.value || `${index + 1}`)).slice(0, 64),
+            callback_data: `form:${choice.fieldIndex}:${index}:${entry.formID}`,
+          })),
+        );
+      });
+      if (entry.choices.length === 0) {
+        lines.push(`\u{1F4CC} Respondela desde la PC.`);
+      } else if (entry.choices.length === 1) {
+        lines.push(`\nToc\u00e1 una opci\u00f3n o mand\u00e1 el n\u00famero. Otra respuesta: <code>/txt tu texto</code>`);
+        // The free-text door: one button, only for single-field questions —
+        // with several fields a bare text would be a guess.
+        rows.push([{ text: "\u270F\uFE0F Otra respuesta", callback_data: `formfree:${entry.formID}` }]);
+      } else {
+        lines.push(`\nToc\u00e1 una opci\u00f3n por pregunta \u2014 podes corregir mientras no est\u00e9 completa.`);
+      }
+      return { body: lines.join("\n"), rows };
+    };
+
+    /** Re-edit the form's message after each answer: progress, not a new card. */
+    const rerenderForm = async (entry: OpenForm): Promise<void> => {
+      const rendered = renderFormBody(entry);
+      entry.body = rendered.body;
+      if (chatId === undefined || entry.messageId === undefined) return;
+      await telegram
+        .editMessageText(chatId, entry.messageId, rendered.body, {
+          parseMode: "HTML",
+          ...(rendered.rows.length > 0 ? { replyMarkup: { inline_keyboard: rendered.rows } } : {}),
+        })
+        .catch((error) => log("WARN", "form rerender", safe(error)));
+    };
+
     /** Post a form into its session's thread, one button per option. */
     const showForm = async (form: FormInfo): Promise<void> => {
       if (chatId === undefined) return;
@@ -883,42 +957,13 @@ export default {
         choices,
         settled: false,
         body: "",
+        answers: {},
       };
       openForms.set(form.id, entry);
 
-      const lines = [`\u2753 <b>${escapeHtml(entry.title)}</b>`];
-      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-      choices.forEach((choice, position) => {
-        // Several questions in one form: each needs its own heading, otherwise
-        // the first question's title would vanish behind the header.
-        if (choices.length > 1) {
-          lines.push(""); // blank separator between questions
-          lines.push(`<b>${escapeHtml(choice.title || `Pregunta ${position + 1}`)}</b>`);
-        } else if (choice.title) {
-          lines.push(escapeHtml(choice.title));
-        }
-        choice.options.forEach((option, index) => {
-          const detail = option.description ? ` \u2014 ${escapeHtml(option.description)}` : "";
-          lines.push(`${index + 1}. ${escapeHtml(option.label)}${detail}`);
-        });
-        rows.push(
-          choice.options.map((option, index) => ({
-            // The form id goes last so a stray ':' in it cannot shift the parse.
-            // Telegram rejects an empty button label outright.
-            text: (option.label || option.value || `${index + 1}`).slice(0, 64),
-            callback_data: `form:${choice.fieldIndex}:${index}:${form.id}`,
-          })),
-        );
-      });
-      if (choices.length === 0) {
-        lines.push(`\u{1F4CC} Respondela desde la PC.`);
-      } else if (choices.length === 1) {
-        lines.push(`\nToc\u00e1 una opci\u00f3n o mand\u00e1 el n\u00famero. Otra respuesta: <code>/txt tu texto</code>`);
-        // The free-text door: one button, only for single-field questions —
-        // with several fields a bare text would be a guess.
-        rows.push([{ text: "\u270F\uFE0F Otra respuesta", callback_data: `formfree:${form.id}` }]);
-      }
-      entry.body = lines.join("\n");
+      const rendered = renderFormBody(entry);
+      const rows = rendered.rows;
+      entry.body = rendered.body;
 
       try {
         const messageId = await telegram.sendMessage(chatId, entry.body, {
@@ -2881,16 +2926,39 @@ export default {
                 const choice = entry.choices.find((c) => c.fieldIndex === fieldIndex);
                 const option = choice?.options[optionIndex];
                 if (choice && option) {
-                  const result = await settleForm(entry, answerFor(choice, option), option.label);
-                  await ack(
-                    result === "ok"
-                      ? "Respondido"
-                      : result === "already"
-                        ? "Ya estaba respondida"
-                        : result === "dry"
-                          ? "(dry) anotado"
-                          : "No se pudo responder",
-                  );
+                  // Multi-question forms accumulate one field at a time and
+                  // only settle when every option-bearing field is answered —
+                  // a single-question form settles immediately as it always did.
+                  const partial = answerFor(choice, option);
+                  if (entry.choices.length === 1) {
+                    const result = await settleForm(entry, partial, option.label);
+                    await ack(
+                      result === "ok"
+                        ? "Respondido"
+                        : result === "already"
+                          ? "Ya estaba respondida"
+                          : result === "dry"
+                            ? "(dry) anotado"
+                            : "No se pudo responder",
+                    );
+                  } else {
+                    entry.answers = mergeAnswer(entry.answers, partial);
+                    if (formComplete(entry.choices, entry.answers)) {
+                      const chosen = formatFullAnswer(entry.choices, entry.answers);
+                      const result = await settleForm(entry, entry.answers, chosen);
+                      await ack(
+                        result === "ok"
+                          ? "Respondido"
+                          : result === "already"
+                            ? "Ya estaba respondida"
+                            : "No se pudo responder",
+                      );
+                    } else {
+                      await rerenderForm(entry);
+                      const done = entry.choices.filter((c) => entry.answers[c.fieldKey] !== undefined).length;
+                      await ack(`Pregunta respondida (${done}/${entry.choices.length})`);
+                    }
+                  }
                 } else {
                   log("WARN", `callback form sin opción: field=${parts[1]} option=${parts[2]} en ${formID}`);
                   await ack("Opción no válida");
