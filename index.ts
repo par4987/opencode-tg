@@ -2789,7 +2789,7 @@ export default {
                   const buf: Coalesced = { parts: [prompt], timer: undefined };
                   buf.timer = setTimeout(() => flushCoalesced(target), delay);
                   coalescing.set(target, buf);
-                  log("INFO", `coalesce: nuevo buffer (${busy ? "retiene hasta idle" : `${delay}ms`}) para ${target.slice(0, 18)}`);
+                  log("INFO", `coalesce: nuevo buffer (${delay}ms${busy ? " busy" : ""}) para ${target.slice(0, 18)}`);
                 }
               }
               return;
