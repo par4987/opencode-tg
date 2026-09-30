@@ -76,7 +76,11 @@ check("formatAnswer no-objeto → cadena vacía", formatAnswer(undefined) === ""
 
 // ── password ─────────────────────────────────────────────────────────────────
 const password = servicePassword();
-check("servicePassword lee service.json", password.length > 0, `(${password.length} chars)`);
+if (password.length > 0) {
+  check("servicePassword lee service.json", true, `(${password.length} chars)`);
+} else {
+  console.log("  -- sin service.json local (CI) \u2014 checks de API local skipped");
+}
 
 // ── local API contract (read-only) ───────────────────────────────────────────
 /**
@@ -121,8 +125,12 @@ async function findServer(): Promise<string | null> {
   return found ? `http://127.0.0.1:${found.port}/api` : null;
 }
 
-const base = await findServer();
-check("se encontró una API local con nuestro password", base !== null, base ?? "");
+const base = password.length > 0 ? await findServer() : null;
+if (password.length > 0) {
+  check("se encontró una API local con nuestro password", base !== null, base ?? "");
+} else {
+  console.log("  -- API local con password: skipped (CI)");
+}
 if (base) {
   const auth = `Basic ${Buffer.from(`opencode:${password}`, "utf8").toString("base64")}`;
   const call = (path: string, init: RequestInit = {}) =>

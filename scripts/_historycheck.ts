@@ -50,6 +50,10 @@ check("sessionsDir contiene opencode/sessions", sessionsDir().includes("opencode
     lines.push(JSON.stringify({ kind: "Prompt", data: { content: [{ kind: "text", data: `pregunta ${i}` }] } }));
   }
   const fs = await import("node:fs");
+  const path = await import("node:path");
+  // The opencode sessions dir does not exist in CI: create it for the probe
+  // (the probe file is unlinked in the finally below).
+  fs.mkdirSync(path.dirname(tmp), { recursive: true });
   fs.writeFileSync(tmp, lines.join("\n"), "utf8");
   try {
     const entries = readHistory(tmp, 5);

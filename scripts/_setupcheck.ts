@@ -88,6 +88,10 @@ const forced = backup
   .replace(/"mode"\s*:\s*"live"/, '"mode": "dry"')
   .replace(/"debugEvents"\s*:\s*false/, '"debugEvents": true');
 writeFileSync(CONFIG, forced);
+// CI has no ~/.opencode/tg/.env — a fake token lets setup() run anywhere,
+// and no real secret ever reaches a test. Env wins over the .env file.
+process.env.TELEGRAM_BOT_TOKEN = "123456789:TEST_FAKE_TOKEN_never_used_12345";
+process.env.ALLOWED_USERS = "123456789";
 
 let cleanup: (() => Promise<void>) | undefined;
 try {
