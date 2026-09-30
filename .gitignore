@@ -1,0 +1,17 @@
+# ── basura del historial de desarrollo ────────────────────────────────────────
+*.bak
+index.ts.corrupto.bak
+*-Mo3501*
+
+# scripts de wiring de un solo uso (rutas locales absolutas)
+scripts/_wire_*.cjs
+scripts/_fix_md_regex.cjs
+scripts/_png_pathcheck.ts
+
+# artefactos regenerables por los scripts _gen_*
+out/
+
+# ── entorno ──────────────────────────────────────────────────────────────────
+node_modules/
+.env
+logs/

@@ -1,0 +1,37 @@
+{
+  // opencode-tg — ajustes del puente.
+  //
+  // "mode":
+  //   off   -> el plugin no hace nada.
+  //   dry   -> se suscribe y escribe en ~/.opencode/tg/logs/plugin.log lo que
+  //            ENVIARIA, sin tocar el token. El bot antiguo sigue funcionando.
+  //   live  -> envia mensajes y hace polling de Telegram. Solo cuando el bot
+  //            antiguo este detenido (si no: HTTP 409, dos getUpdates).
+  //
+  // El token y la lista de usuarios permitidos NO estan aqui: se leen de
+  // ~/.opencode/tg/.env (TELEGRAM_BOT_TOKEN, ALLOWED_USERS) para no duplicar
+  // el secreto. Ese fichero solo se lee, nunca se escribe.
+  "mode": "live",
+
+  // all    -> espeja todas las sesiones que vea el servidor (fase de pruebas).
+  // watched -> solo las marcadas con /watch en el chat.
+  "mirror": "all",
+
+  // Vuelca la forma real de los eventos estructurales al log. Apagar tras
+  // validar: crece el fichero.
+  "debugEvents": false,
+
+  "render": {
+    // Milisegundos minimos entre ediciones del mismo mensaje.
+    // Telegram permite ~1 edicion/segundo por mensaje.
+    "editIntervalMs": 1400,
+
+    // Mensaje propio con el diff de cada edit/write.
+    "showDiffs": true,
+    "diffMaxLines": 40,
+
+    // El "razonamiento" del modelo, tostado y acotado.
+    "showReasoning": false,
+    "reasoningChars": 1400
+  }
+}
