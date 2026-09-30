@@ -34,7 +34,7 @@ y podés adelantarla al turno en curso con ▶.
 | Foto (con o sin caption) | Imagen visible para el agente (caption = texto del prompt) |
 | Documento de texto (.md, .txt, código) | Contenido inline en el prompt (hasta 100.000 caracteres) |
 | Binario o video | Se guarda en disco y le llega la ruta |
-| Nota de voz | Aviso pendiente: falta el servicio de transcripción (STT) |
+| Nota de voz | **Transcripción local** (whisper.cpp): el texto entra como prompt; una pregunta abierta la responde |
 
 **Tip**: respondé con reply al mensaje que querés comentar — el agente ve
 exactamente a qué te referís, sin que tengas que repetir contexto.
@@ -160,7 +160,7 @@ autorizados en `~/.opencode/tg/.env`.
 
 ## Estado conocido
 
-- **Notas de voz**: pendiente hasta conectar un servicio de transcripción.
+- **Notas de voz**: transcripción local con whisper.cpp (binarios en `~/.opencode/tg/stt`); la primera corrida de una nota tarda unos segundos mientras carga el modelo.
 - El canal texto inline recorta archivos de más de 3400 caracteres (los
   grandes viajan completos como documento).
 

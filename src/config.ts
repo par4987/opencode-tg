@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RenderOptions } from "./render-options.js";
+import type { SttConfig } from "./stt.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** Plugin root: this file lives in `src/`, config.json sits one level up. */
@@ -52,6 +53,8 @@ export interface Config {
   coalesceBusyMs: number;
   /** Extra: log every event type, for developing the renderer. */
   debugEvents: boolean;
+  /** Local voice-note transcription (whisper.cpp) — paths/language. */
+  stt: SttConfig;
 }
 
 const DEFAULTS: Omit<Config, "token"> = {
@@ -62,6 +65,7 @@ const DEFAULTS: Omit<Config, "token"> = {
   coalesceMs: 2000,
   coalesceBusyMs: 8_000,
   debugEvents: false,
+  stt: {},
   render: {
     editIntervalMs: 1400,
     showDiffs: true,
@@ -198,6 +202,11 @@ export function loadConfig(): Config {
     coalesceBusyRaw !== undefined && Number.isFinite(Number(coalesceBusyRaw))
       ? Math.min(Math.max(Number(coalesceBusyRaw), 2000), 30_000)
       : DEFAULTS.coalesceBusyMs;
+  // Voice transcription: an "stt" object in config.json, or TG_STT_* overrides.
+  const stt = typeof env.stt === "object" && env.stt !== null ? { ...(env.stt as SttConfig) } : {};
+  if (env.TG_STT_WHISPER !== undefined) stt.whisper = String(env.TG_STT_WHISPER);
+  if (env.TG_STT_MODEL !== undefined) stt.model = String(env.TG_STT_MODEL);
+  if (env.TG_STT_LANGUAGE !== undefined) stt.language = String(env.TG_STT_LANGUAGE);
 
   return {
     mode,
@@ -209,5 +218,6 @@ export function loadConfig(): Config {
     coalesceMs,
     coalesceBusyMs,
     debugEvents: asBool(env.TG_DEBUG_EVENTS) ?? asBool(env.debugEvents) ?? DEFAULTS.debugEvents,
+    stt,
   };
 }

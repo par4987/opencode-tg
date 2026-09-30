@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { configProviders } from "./src/config-models.js";
 import { decodeText, DOC_MAX_CHARS, isTextLike, saveBinary } from "./src/ingest.js";
 import { describeReplyTarget, extractFilePaths, isForumEcho, qualifyingImage, selectImages, withReplyContext, MAX_IMAGES } from "./src/media-out.js";
+import { sttAvailable, transcribeFile } from "./src/stt.js";
 import { clearDraft, fmtDateTime, formatSchedule, newTaskId, nextRunOf, parseScheduleDetail, readDraft, readTasks, updateTaskPrompt, writeDraft, writeTasks, type Task, type TaskDraft, type TaskSchedule } from "./src/tasks.js";
 import { desktopVisibleModels } from "./src/desktop-models.js";
 import { AcpClient, type PermissionOutcome, type RequestPermissionParams } from "./src/acp.js";
@@ -2739,7 +2740,48 @@ export default {
                 return;
               }
               if (message.voice) {
-                await send("\u{1F3A4} La voz a\u00fan no est\u00e1 soportada \u2014 escribilo o mand\u00e1 una foto.", byThread);
+                // Voice → local transcription (whisper.cpp): the OGG/Opus that
+                // Telegram hands over rides the OS temp dir, and the text enters
+                // the prompt as if typed. An open question takes it as the answer.
+                const file = await telegram.getFile(message.voice.file_id);
+                if (!file.file_path) {
+                  await send("\u26A0\uFE0F Telegram no me dio el archivo de audio.", byThread);
+                  return;
+                }
+                const buffer = await telegram.downloadFile(file.file_path);
+                const fs = await import("node:fs");
+                const os = await import("node:os");
+                const path = await import("node:path");
+                const oggPath = path.join(os.tmpdir(), `tg-voz-${Date.now()}.ogg`);
+                fs.writeFileSync(oggPath, buffer);
+                try {
+                  if (!sttAvailable(config.stt)) {
+                    await send("\u26A0\uFE0F Transcripci\u00f3n local no instalada \u2014 falta el binario en ~/.opencode/tg/stt, o escribime mientras tanto.", byThread);
+                    return;
+                  }
+                  await send(`\u{1F3A4} Transcribiendo ${message.voice.duration ?? "?"}s de audio\u2026`, byThread);
+                  const text = await transcribeFile(oggPath, config.stt);
+                  if (text.length === 0) {
+                    await send("\u{1F3A4} No entend\u00ed nada en el audio \u2014 \u00bfera voz?", byThread);
+                    return;
+                  }
+                  await send(`\u{1F3A4} \u00ab${escapeHtml(text.slice(0, 400))}\u00bb`, byThread);
+                  const target = byThread ?? targetSession();
+                  if (target) {
+                    // An open single-question form gets the transcription as its
+                    // answer; otherwise it is a normal prompt for the session.
+                    if (!(await answerFreeForm(target, text))) {
+                      await sendPrompt(`\u{1F3A4} (nota de voz, transcrita)\n${text}`, target);
+                    }
+                  } else {
+                    await send("No s\u00e9 a qu\u00e9 sesi\u00f3n \u2014 escribilo en el hilo de una sesi\u00f3n, o /use primero.", byThread);
+                  }
+                } catch (error) {
+                  log("WARN", "stt", safe(error));
+                  await send(`\u274C Transcripci\u00f3n fallida: ${escapeHtml(String((error as Error).message).slice(0, 200))}`, byThread);
+                } finally {
+                  fs.rmSync(oggPath, { force: true });
+                }
                 return;
               }
               if (message.document?.file_id) {

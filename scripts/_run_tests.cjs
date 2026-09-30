@@ -19,6 +19,7 @@ const suites = [
   "_taskcheck",
   "_ingestcheck",
   "_mediaoutcheck",
+  "_sttcheck",
 ];
 
 let failed = 0;

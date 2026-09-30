@@ -18,7 +18,8 @@ eventos que el desktop — sin un proceso aparte ni un bot que duplica estado.
 - **Reply-context**: responder con reply a un mensaje del hilo inyecta la
   cita en el prompt (con filtrado del eco del foro de Telegram).
 - **Multimedia**: fotos → el agente las ve; documentos de texto → inline al
-  prompt; binarios → disco con ruta.
+  prompt; binarios → disco con ruta; **notas de voz → transcripción local**
+  (whisper.cpp en `~/.opencode/tg/stt`, sin nube ni claves).
 - **Archivos generados**: el agente produce un archivo durante un turno y el
   bot lo entrega solo — foto si es imagen, mensaje legible si es texto
   chico (`.md`/`.txt` en partes numeradas), documento adjunto en el resto.
