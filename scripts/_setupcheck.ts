@@ -46,7 +46,7 @@ function* events(): Generator<{ type: string; data: Record<string, unknown> }> {
   yield { type: "session.text.ended", data: { ...mid, ordinal: 1 } };
 
   yield { type: "session.execution.failed", data: { sessionID: SID, error: { message: "boom simulado" } } };
-  yield { type: "permission.asked", data: { sessionID: SID, action: "edit", resources: ["C:/x/src/app.ts"] } };
+  yield { type: "permission.asked", data: { sessionID: SID, id: "pr_1", action: "edit", resources: ["C:/x/src/app.ts"] } };
   yield { type: "session.idle", data: { sessionID: SID } };
 
   yield { type: "session.tool.input.started", data: { ...mid, id: "tool_3", name: "read" } };
