@@ -669,8 +669,8 @@ export default {
     const COALESCE_MS = config.coalesceMs;
     /** Burst window while busy: merges rapid follow-ups, still reaches /queue fast. */
     const COALESCE_BUSY_MS = config.coalesceBusyMs;
-    const permissionRequests = new Map<string, { sessionID: string; action?: string; resource?: string }>();
-    let permissionSeq = 0;
+    /** Pending permission.asked requests, keyed by the server's real requestID. */
+    const permissionRequests = new Map<string, { sessionID: string }>();
     /** Armed by a /skills tap: the next text becomes that skill's prompt. */
     let skillArmed: { id: string; name: string } | undefined;
     /** Armed by a /tasks "✏️ Prompt" tap: the next text in that thread becomes that task's new prompt. */
@@ -2587,15 +2587,21 @@ export default {
         }
 
         case "permission.asked": {
+          // Real contract (validated against @opencode/client): the event's
+          // `id` is the requestID the reply must address — a synthetic id
+          // would 404. The three buttons map 1:1 to the server's decisions:
+          // once / always / reject.
+          const requestId = str(data.id);
+          if (!requestId) return;
           const resources = Array.isArray(data.resources) ? data.resources.map(str).join(", ") : str(data.resources);
           const action = str(data.action) || "?";
-          const reqId = "perm-" + (++permissionSeq);
-          permissionRequests.set(reqId, { sessionID, action, resource: resources });
+          permissionRequests.set(requestId, { sessionID });
           if (chatId !== undefined && isWatched(sessionID)) {
             const keyboard = {
               inline_keyboard: [[
-                { text: "\u2705 Aprobar", callback_data: "perm2:ok:" + reqId },
-                { text: "\u2716 Rechazar", callback_data: "perm2:no:" + reqId },
+                { text: "\u2705 Aprobar", callback_data: "perm2:ok:" + requestId },
+                { text: "\u{1F501} Siempre", callback_data: "perm2:always:" + requestId },
+                { text: "\u2716 Rechazar", callback_data: "perm2:no:" + requestId },
               ]],
             };
             void telegram
@@ -2825,23 +2831,32 @@ export default {
                 await ack("Esta pregunta ya no está activa");
               };
               if (payload.startsWith("perm2:")) {
-                const [, outcome, reqId] = payload.split(":");
-                const req = permissionRequests.get(reqId);
+                // Real contract (from @opencode/client): POST to
+                // /session/{sid}/permission/{requestID}/reply with
+                // { decision: "once" | "always" | "reject" } — and a 204
+                // with an empty body IS the success, so only a throw counts.
+                const [, outcome, requestId] = payload.split(":");
+                const req = permissionRequests.get(requestId);
                 if (!req) { await ack("Ese permiso ya se resolvi\u00f3"); return; }
-                permissionRequests.delete(reqId);
-                const approved = outcome === "ok";
-                await ack(approved ? "Aprobado" : "Rechazado");
+                permissionRequests.delete(requestId);
+                const decision = outcome === "always" ? "always" : outcome === "ok" ? "once" : "reject";
+                await ack(decision === "reject" ? "Rechazado" : decision === "always" ? "Aprobado siempre" : "Aprobado");
                 if (cq.message) {
-                  await telegram.editMessageText(cq.message.chat.id, cq.message.message_id,
-                    (approved ? "\u2705 " : "\u2716 ") + "Permiso " + (approved ? "aprobado" : "rechazado") + " desde Telegram.",
-                    { parseMode: "HTML" }).catch(() => undefined);
+                  const label = decision === "reject"
+                    ? "\u2716 Permiso rechazado desde Telegram."
+                    : decision === "always"
+                      ? "\u2705 Aprobado siempre (el server recuerda la regla)."
+                      : "\u2705 Aprobado por esta vez.";
+                  await telegram.editMessageText(cq.message.chat.id, cq.message.message_id, label, { parseMode: "HTML" }).catch(() => undefined);
                 }
                 if (await forms.connect()) {
                   try {
-                    await forms.request("POST", "/session/" + encodeURIComponent(req.sessionID) + "/permission", {
-                      action: req.action, resource: req.resource, outcome: approved ? "allow" : "deny",
-                    });
-                    log("INFO", "permiso resuelto desde TG");
+                    await forms.request(
+                      "POST",
+                      "/session/" + encodeURIComponent(req.sessionID) + "/permission/" + encodeURIComponent(requestId) + "/reply",
+                      { decision },
+                    );
+                    log("INFO", "permiso resuelto desde TG: " + decision);
                   } catch (error) { log("WARN", "perm resolve", safe(error)); }
                 }
                 return;
