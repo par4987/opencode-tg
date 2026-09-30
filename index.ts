@@ -2743,7 +2743,12 @@ export default {
                 // Voice → local transcription (whisper.cpp): the OGG/Opus that
                 // Telegram hands over rides the OS temp dir, and the text enters
                 // the prompt as if typed. An open question takes it as the answer.
-                const file = await telegram.getFile(message.voice.file_id);
+                const voiceId = message.voice.file_id;
+                if (!voiceId) {
+                  await send("\u26A0\uFE0F La nota de voz lleg\u00f3 sin id de archivo.", byThread);
+                  return;
+                }
+                const file = await telegram.getFile(voiceId);
                 const filePath = file.file_path;
                 if (!filePath) {
                   await send("\u26A0\uFE0F Telegram no me dio el archivo de audio.", byThread);
