@@ -5,7 +5,7 @@ index.ts.corrupto.bak
 
 # scripts de wiring de un solo uso (rutas locales absolutas)
 scripts/_wire_*.cjs
-scripts/_fix_md_regex.cjs
+scripts/_fix_*.cjs
 scripts/_png_pathcheck.ts
 
 # artefactos regenerables por los scripts _gen_*
