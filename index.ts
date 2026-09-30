@@ -2744,11 +2744,12 @@ export default {
                 // Telegram hands over rides the OS temp dir, and the text enters
                 // the prompt as if typed. An open question takes it as the answer.
                 const file = await telegram.getFile(message.voice.file_id);
-                if (!file.file_path) {
+                const filePath = file.file_path;
+                if (!filePath) {
                   await send("\u26A0\uFE0F Telegram no me dio el archivo de audio.", byThread);
                   return;
                 }
-                const buffer = await telegram.downloadFile(file.file_path);
+                const buffer = await telegram.downloadFile(filePath);
                 const fs = await import("node:fs");
                 const os = await import("node:os");
                 const path = await import("node:path");
