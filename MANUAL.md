@@ -17,9 +17,10 @@ produce vuelve al hilo.
 | Cambiar de contexto | `/use <id>` fija la sesión con la que hablás desde el hilo General. |
 
 Mientras el agente trabaja, el hilo muestra *"escribiendo…"* — es la señal
-de vida del bot. No hace falta esperar para escribir: **todo lo que mandás
-mientras trabaja se acumula y se le entrega junto, como un solo mensaje**,
-cuando termina el turno.
+de vida del bot. No hace falta esperar para escribir: **lo que mandás
+mientras trabaja se agrupa por ráfaga** (los seguimientos rápidos van
+juntos) y entra a la cola del servidor en segundos — la ves con `/queue`
+y podés adelantarla al turno en curso con ▶.
 
 ---
 
@@ -29,7 +30,7 @@ cuando termina el turno.
 | --- | --- |
 | Texto en el hilo | Prompt directo |
 | Reply a un mensaje anterior | Prompt con la cita: el mensaje citado viaja arriba, entre `<<<…>>>` |
-| Varias líneas seguidas | Si llegan en ráfaga (2 seg o menos entre sí), se unifican en un prompt |
+| Varias líneas seguidas | Se unifican: ventana de 2 seg (agente libre) o 8 seg (agente trabajando) |
 | Foto (con o sin caption) | Imagen visible para el agente (caption = texto del prompt) |
 | Documento de texto (.md, .txt, código) | Contenido inline en el prompt (hasta 100.000 caracteres) |
 | Binario o video | Se guarda en disco y le llega la ruta |
@@ -149,7 +150,7 @@ autorizados en `~/.opencode/tg/.env`.
 | `mode` | `"dry"` | `"off"` apagado · `"dry"` solo loguea · `"live"` activo |
 | `mirror` | `"all"` | `"all"` espeja todas las sesiones · `"watched"` solo las vigiladas |
 | `coalesceMs` | `2000` | Ventana (ms) para unir mensajes en ráfaga cuando la sesión está libre |
-| `coalesceBusyMs` | `30000` | Cada cuánto (ms) entrega lo acumulado mientras el agente trabaja |
+| `coalesceBusyMs` | `8000` | Ventana de ráfaga (ms) mientras el agente trabaja; luego entra a la cola |
 | `archiveAfterDays` | `0` (off) | Días de inactividad para auto-archivar hilos |
 | `render.showReasoning` | `true` | Mostrar el razonamiento del agente en el hilo |
 | `render.showDiffs` | `true` | Mostrar diffs al editar archivos |

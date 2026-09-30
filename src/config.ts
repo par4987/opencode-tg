@@ -45,10 +45,9 @@ export interface Config {
    */
   coalesceMs: number;
   /**
-   * While a session is busy its coalescing buffer HOLDS messages until the
-   * turn ends — `session.idle` flushes them as one prompt — with this safety
-   * timer as the only fallback. That is what turns "several messages sent
-   * while the agent works" into ONE prompt instead of one inbox row each.
+   * Burst window while a session is busy: rapid follow-ups merge into one
+   * prompt, but the batch reaches the server's inbox in seconds — a longer
+   * hold made the messages invisible to /queue and stole the steer control.
    */
   coalesceBusyMs: number;
   /** Extra: log every event type, for developing the renderer. */
@@ -61,7 +60,7 @@ const DEFAULTS: Omit<Config, "token"> = {
   mirror: "all",
   archiveAfterDays: 0,
   coalesceMs: 2000,
-  coalesceBusyMs: 30_000,
+  coalesceBusyMs: 8_000,
   debugEvents: false,
   render: {
     editIntervalMs: 1400,
@@ -197,7 +196,7 @@ export function loadConfig(): Config {
   const coalesceBusyRaw = env.TG_COALESCE_BUSY_MS ?? env.coalesceBusyMs;
   const coalesceBusyMs =
     coalesceBusyRaw !== undefined && Number.isFinite(Number(coalesceBusyRaw))
-      ? Math.min(Math.max(Number(coalesceBusyRaw), 5000), 300_000)
+      ? Math.min(Math.max(Number(coalesceBusyRaw), 2000), 30_000)
       : DEFAULTS.coalesceBusyMs;
 
   return {

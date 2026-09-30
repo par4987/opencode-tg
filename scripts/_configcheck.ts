@@ -136,12 +136,12 @@ process.env.TG_COALESCE_MS = "abc";
 check("coalesceMs: no numerico usa default 2000", loadConfig().coalesceMs === 2000);
 delete process.env.TG_COALESCE_MS;
 
-process.env.TG_COALESCE_BUSY_MS = "60000";
-check("coalesceBusyMs: TG_COALESCE_BUSY_MS=60000", loadConfig().coalesceBusyMs === 60000);
+process.env.TG_COALESCE_BUSY_MS = "20000";
+check("coalesceBusyMs: TG_COALESCE_BUSY_MS=20000", loadConfig().coalesceBusyMs === 20000);
 process.env.TG_COALESCE_BUSY_MS = "1000";
-check("coalesceBusyMs: clamp inferior a 5000", loadConfig().coalesceBusyMs === 5000);
+check("coalesceBusyMs: clamp inferior a 2000", loadConfig().coalesceBusyMs === 2000);
 process.env.TG_COALESCE_BUSY_MS = "abc";
-check("coalesceBusyMs: no numerico usa default 30000", loadConfig().coalesceBusyMs === 30000);
+check("coalesceBusyMs: no numerico usa default 8000", loadConfig().coalesceBusyMs === 8000);
 delete process.env.TG_COALESCE_BUSY_MS;
 
 console.log(failures === 0 ? `\nCONFIGCHECK OK (${total})` : `\nCONFIGCHECK ${failures} FALLOS de ${total}`);

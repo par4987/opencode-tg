@@ -667,7 +667,7 @@ export default {
     interface Coalesced { parts: string[]; timer: ReturnType<typeof setTimeout> | undefined }
     const coalescing = new Map<string, Coalesced>();
     const COALESCE_MS = config.coalesceMs;
-    /** Safety valve while a session is busy: hold the batch until the turn ends. */
+    /** Burst window while busy: merges rapid follow-ups, still reaches /queue fast. */
     const COALESCE_BUSY_MS = config.coalesceBusyMs;
     const permissionRequests = new Map<string, { sessionID: string; action?: string; resource?: string }>();
     let permissionSeq = 0;
@@ -2745,10 +2745,10 @@ export default {
                   return;
                 }
                 // Coalesce: an idle session takes the short window; a busy one
-                // HOLDS the batch until the turn ends — `session.idle` flushes
-                // it — with a long safety timer. That is the "unify in the
-                // queue" ask: several messages sent while the agent works
-                // become ONE prompt, not one inbox row each.
+                // takes a slightly wider burst window — rapid follow-ups
+                // still merge, but the batch reaches the server's inbox (and
+                // /queue) in seconds, keeping the steer control alive. A long
+                // hold until idle made every message invisible to /queue.
                 const trackedTarget = sessions.get(target);
                 const busy = trackedTarget !== undefined && !trackedTarget.idle;
                 const delay = busy ? COALESCE_BUSY_MS : COALESCE_MS;
