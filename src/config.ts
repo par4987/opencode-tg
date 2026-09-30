@@ -208,6 +208,7 @@ export function loadConfig(): Config {
   if (env.TG_STT_PROVIDER === "local" || env.TG_STT_PROVIDER === "openai-compatible") stt.provider = env.TG_STT_PROVIDER;
   if (env.TG_STT_WHISPER !== undefined) stt.whisper = String(env.TG_STT_WHISPER);
   if (env.TG_STT_MODEL !== undefined) stt.model = String(env.TG_STT_MODEL);
+  if (env.TG_STT_FFMPEG !== undefined) stt.ffmpeg = String(env.TG_STT_FFMPEG);
   if (env.TG_STT_BASEURL !== undefined) stt.baseUrl = String(env.TG_STT_BASEURL);
   if (env.TG_STT_LANGUAGE !== undefined) stt.language = String(env.TG_STT_LANGUAGE);
   if (env.STT_API_KEY !== undefined) stt.apiKey = String(env.STT_API_KEY);

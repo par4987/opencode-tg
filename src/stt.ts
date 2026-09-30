@@ -20,7 +20,7 @@
  * Pure stdlib: child_process for the local binary, fetch for the cloud.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -31,6 +31,8 @@ export interface SttConfig {
   whisper?: string;
   /** local: ggml model path | cloud: model name (whisper-large-v3-turbo…). */
   model?: string;
+  /** local: ffmpeg binary — decodes Telegram's OGG/Opus (default: from PATH). */
+  ffmpeg?: string;
   /** cloud: base URL, e.g. https://api.groq.com/openai/v1. */
   baseUrl?: string;
   /** cloud: the STT_API_KEY from the .env — resolved by config.ts, never logged. */
@@ -118,14 +120,37 @@ async function transcribeLocal(oggPath: string, cfg: SttConfig, timeoutMs: numbe
   const model = cfg.model ?? d.model;
   if (!existsSync(whisper)) throw new Error(`whisper-cli no existe: ${whisper}`);
   if (!existsSync(model)) throw new Error(`modelo no existe: ${model}`);
+  // whisper.cpp's bundled miniaudio does not read Telegram's OGG/Opus on this
+  // build (verified live: jfk.wav transcribes, the same audio as .ogg comes
+  // back empty) — so ffmpeg (system PATH or stt.ffmpeg) decodes to 16 kHz
+  // mono WAV first. A WAV input skips the step.
+  let audioPath = oggPath;
+  if (!oggPath.toLowerCase().endsWith(".wav")) {
+    const ffmpeg = cfg.ffmpeg ?? "ffmpeg";
+    const wavPath = `${oggPath.replace(/\.[^.]+$/, "")}-${Date.now()}.wav`;
+    const conv = await run(
+      ffmpeg,
+      ["-y", "-i", oggPath, "-ar", "16000", "-ac", "1", wavPath],
+      Math.min(timeoutMs, 120_000),
+    );
+    if (conv.code !== 0 || !existsSync(wavPath)) {
+      throw new Error(`ffmpeg no pudo decodificar el audio: ${conv.stderr.slice(0, 200)}`);
+    }
+    audioPath = wavPath;
+  }
   const language = cfg.language && cfg.language.length > 0 ? cfg.language : "es";
-  const { code, stdout, stderr } = await run(
-    whisper,
-    ["-m", model, "-f", oggPath, "-l", language, "-nt"],
-    timeoutMs,
-  );
-  if (code !== 0) throw new Error(`whisper-cli exit ${code}: ${stderr.slice(0, 300)}`);
-  return parseTranscription(stdout);
+  try {
+    const { code, stdout, stderr } = await run(
+      whisper,
+      ["-m", model, "-f", audioPath, "-l", language, "-nt"],
+      timeoutMs,
+    );
+    if (code !== 0) throw new Error(`whisper-cli exit ${code}: ${stderr.slice(0, 300)}`);
+    return parseTranscription(stdout);
+  } finally {
+    // The temporary WAV never outlives the transcription.
+    if (audioPath !== oggPath) rmSync(audioPath, { force: true });
+  }
 }
 
 /**

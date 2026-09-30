@@ -66,12 +66,14 @@ Las notas de voz se transcriben antes de entrar al agente. Sin la clave
 "stt": { "provider": "local" }
 ```
 
-Descargar `whisper-blas-bin-x64.zip` de las
+Requisitos: [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) en el PATH
+(Windows: `winget install ffmpeg`) — decodifica el OGG/Opus de Telegram a
+WAV, que es lo que whisper.cpp lee — y bajar
+`whisper-blas-bin-x64.zip` de las
 [releases de whisper.cpp](https://github.com/ggml-org/whisper.cpp/releases)
-a `~/.opencode/tg/stt/Release/` y un modelo ggml (p. ej.
+a `~/.opencode/tg/stt/Release/` más un modelo ggml (p. ej.
 [ggml-small.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin))
-a `~/.opencode/tg/stt/models/` — esos son los paths default. Telegram envía
-voz como OGG/Opus y whisper.cpp la decodifica directo.
+a `~/.opencode/tg/stt/models/` — esos son los paths default.
 
 **Cloud — cualquier API compatible con OpenAI** (Groq, OpenAI, self-hosted):
 
