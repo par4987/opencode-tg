@@ -203,10 +203,14 @@ export function loadConfig(): Config {
       ? Math.min(Math.max(Number(coalesceBusyRaw), 2000), 30_000)
       : DEFAULTS.coalesceBusyMs;
   // Voice transcription: an "stt" object in config.json, or TG_STT_* overrides.
+  // The cloud key rides the .env as STT_API_KEY — never inside the repo.
   const stt = typeof env.stt === "object" && env.stt !== null ? { ...(env.stt as SttConfig) } : {};
+  if (env.TG_STT_PROVIDER === "local" || env.TG_STT_PROVIDER === "openai-compatible") stt.provider = env.TG_STT_PROVIDER;
   if (env.TG_STT_WHISPER !== undefined) stt.whisper = String(env.TG_STT_WHISPER);
   if (env.TG_STT_MODEL !== undefined) stt.model = String(env.TG_STT_MODEL);
+  if (env.TG_STT_BASEURL !== undefined) stt.baseUrl = String(env.TG_STT_BASEURL);
   if (env.TG_STT_LANGUAGE !== undefined) stt.language = String(env.TG_STT_LANGUAGE);
+  if (env.STT_API_KEY !== undefined) stt.apiKey = String(env.STT_API_KEY);
 
   return {
     mode,

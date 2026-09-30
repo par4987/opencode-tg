@@ -55,6 +55,44 @@ El manual completo de uso está en [`MANUAL.md`](MANUAL.md).
    `archiveAfterDays`, `render.*`. Arrancar en `dry` para validar sin tocar
    Telegram.
 
+## Voz (opcional — cada usuario elige)
+
+Las notas de voz se transcriben antes de entrar al agente. Sin la clave
+`stt`, el bot avisa cómo activarla — la feature es opt-in por diseño.
+
+**Local — whisper.cpp (gratis, privado):**
+
+```jsonc
+"stt": { "provider": "local" }
+```
+
+Descargar `whisper-blas-bin-x64.zip` de las
+[releases de whisper.cpp](https://github.com/ggml-org/whisper.cpp/releases)
+a `~/.opencode/tg/stt/Release/` y un modelo ggml (p. ej.
+[ggml-small.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin))
+a `~/.opencode/tg/stt/models/` — esos son los paths default. Telegram envía
+voz como OGG/Opus y whisper.cpp la decodifica directo.
+
+**Cloud — cualquier API compatible con OpenAI** (Groq, OpenAI, self-hosted):
+
+```jsonc
+"stt": {
+  "provider": "openai-compatible",
+  "baseUrl": "https://api.groq.com/openai/v1",
+  "model": "whisper-large-v3-turbo"
+}
+```
+
+Con `baseUrl` de Groq o `https://api.openai.com/v1` y `model` `whisper-1`.
+La key va en `~/.opencode/tg/.env`:
+
+```
+STT_API_KEY=...
+```
+
+Opciones comunes de `stt`: `whisper` y `model` (paths locales),
+`baseUrl` + `model` + `STT_API_KEY` (cloud), `language` (default `es`).
+
 ## Tests y verificación
 
 ```sh

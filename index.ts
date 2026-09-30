@@ -2762,7 +2762,7 @@ export default {
                 fs.writeFileSync(oggPath, buffer);
                 try {
                   if (!sttAvailable(config.stt)) {
-                    await send("\u26A0\uFE0F Transcripci\u00f3n local no instalada \u2014 falta el binario en ~/.opencode/tg/stt, o escribime mientras tanto.", byThread);
+                    await send("\u26A0\uFE0F Transcripci\u00f3n de voz no configurada \u2014 eleg\u00ed un proveedor en la secci\u00f3n Voz del README (local o cloud), o escribime mientras tanto.", byThread);
                     return;
                   }
                   await send(`\u{1F3A4} Transcribiendo ${message.voice.duration ?? "?"}s de audio\u2026`, byThread);

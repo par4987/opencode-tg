@@ -21,6 +21,12 @@
   // validar: crece el fichero.
   "debugEvents": false,
 
+  // Transcripcion de notas de voz — cada usuario elige su proveedor:
+  //   "local"             -> whisper.cpp en ~/.opencode/tg/stt (sin nube).
+  //   "openai-compatible" -> Groq / OpenAI / self-hosted; STT_API_KEY va en
+  //                          ~/.opencode/tg/.env, nunca aca.
+  "stt": { "provider": "local" },
+
   "render": {
     // Milisegundos minimos entre ediciones del mismo mensaje.
     // Telegram permite ~1 edicion/segundo por mensaje.

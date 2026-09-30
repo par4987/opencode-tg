@@ -1,6 +1,6 @@
 /** stt checks: parseo del stdout de whisper-cli, defaults, disponibilidad. */
 import { join } from "node:path";
-import { parseTranscription, sttAvailable, sttDefaults, transcribeFile } from "../src/stt.js";
+import { parseCloudResponse, parseTranscription, sttAvailable, sttDefaults, transcribeFile } from "../src/stt.js";
 
 let failures = 0;
 let total = 0;
@@ -28,6 +28,21 @@ check(
   "sttAvailable con paths inventados → false",
   sttAvailable({ whisper: "C:\\no\\existe.exe", model: "C:\\no\\modelo.bin" }) === false,
 );
+
+// ── proveedor cloud (openai-compatible) ─────────────────────────────────────
+
+check("sttAvailable cloud sin baseUrl ni key → false", sttAvailable({ provider: "openai-compatible" }) === false);
+check(
+  "sttAvailable cloud sin key → false",
+  sttAvailable({ provider: "openai-compatible", baseUrl: "https://api.groq.com/openai/v1" }) === false,
+);
+check(
+  "sttAvailable cloud completo → true",
+  sttAvailable({ provider: "openai-compatible", baseUrl: "https://api.groq.com/openai/v1", apiKey: "k" }) === true,
+);
+check("parseCloudResponse extrae text", parseCloudResponse('{"text":"hola mundo"}') === "hola mundo");
+check("parseCloudResponse json roto → vacio", parseCloudResponse("no json") === "");
+check("parseCloudResponse sin text → vacio", parseCloudResponse('{"otra":1}') === "");
 
 // transcribeFile exige los binarios — siempre, sin tocar el disco del usuario.
 try {
