@@ -1,5 +1,7 @@
 # Manual del usuario — Bot de Telegram para OpenCode
 
+> **Español** | Read this in [English](MANUAL.en.md)
+
 Tu asistente de código, en el teléfono. El bot espeja tus sesiones de
 OpenCode en un foro de Telegram: **cada sesión tiene su propio hilo**, lo
 que escribís en el hilo le llega al agente, y lo que el agente responde o

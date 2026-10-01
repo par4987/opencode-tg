@@ -1,5 +1,7 @@
 # opencode-tg
 
+> **Español** | Read this in [English](README.en.md)
+
 Bridge bidireccional entre [OpenCode](https://opencode.ai) y Telegram: cada
 sesión del servidor obtiene su propio hilo en un foro de Telegram, y el hilo
 es una consola completa del agente — prompts, respuestas, preguntas con
@@ -30,7 +32,8 @@ eventos que el desktop — sin un proceso aparte ni un bot que duplica estado.
 - **`/models`** espeja el selector del desktop; **`/usagestats`** con tokens,
   costo y racha.
 
-El manual completo de uso está en [`MANUAL.md`](MANUAL.md).
+El manual completo de uso está en [`MANUAL.md`](MANUAL.md) (Español) /
+[`MANUAL.en.md`](MANUAL.en.md) (English).
 
 ## Configuración
 
