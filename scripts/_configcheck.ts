@@ -153,5 +153,12 @@ process.env.TG_COALESCE_BUSY_MS = "abc";
 check("coalesceBusyMs: no numerico usa default 8000", loadConfig().coalesceBusyMs === 8000);
 delete process.env.TG_COALESCE_BUSY_MS;
 
+process.env.TG_SUBAGENTS = "off";
+check("subagents: TG_SUBAGENTS=off", loadConfig().subagents === "off");
+process.env.TG_SUBAGENTS = "mirror";
+check("subagents: mirror explicito", loadConfig().subagents === "mirror");
+delete process.env.TG_SUBAGENTS;
+check("subagents: default mirror", loadConfig().subagents === "mirror");
+
 console.log(failures === 0 ? `\nCONFIGCHECK OK (${total})` : `\nCONFIGCHECK ${failures} FALLOS de ${total}`);
 process.exit(failures === 0 ? 0 : 1);

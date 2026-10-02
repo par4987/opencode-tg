@@ -59,6 +59,15 @@ wait for the turn to end.
 
 ---
 
+## Subagents
+
+When the agent delegates to a subagent (the `task` tool), its topic shows up
+in the forum badged **🤖** with the task's name. They are **read-only**: the
+parent session drives their work — writing to them gets a notice and nothing
+is sent (same as the desktop). When they finish, the topic **archives
+itself**. `/sessions` marks them as "🤖 sub". In `config.json`,
+`"subagents": "off"` hides them entirely.
+
 ## Multi-question forms: answer one by one
 
 When the agent asks several questions in one form, the topic shows each

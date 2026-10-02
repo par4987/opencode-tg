@@ -73,6 +73,8 @@ interface TrackedSession {
   id: string;
   title: string;
   directory: string;
+  /** Set for subagent (task) sessions: the parent session's id. */
+  parentID?: string;
   lastSeen: number;
   /** Cleared on every event, set by `session.idle`: the turn finished. */
   idle: boolean;
@@ -682,6 +684,11 @@ export default {
     /** Armed by a /tasks "✏️ Prompt" tap: the next text in that thread becomes that task's new prompt. */
     let taskPromptEdit: { id: string; name: string; threadId: number | undefined; armedAt: number } | undefined;
     const watched = new Set<string>();
+    /**
+     * Subagent sessions under `"subagents": "off"` — ignored from the first
+     * `session.created` (which carries the parentID) until the run ends.
+     */
+    const ignoredSubagents = new Set<string>();
     const mirrorAll = config.mirror === "all";
     // One Telegram thread per session. The resolver is a no-op (returns
     // undefined) until the store has a mapping, and schedules the topic
@@ -693,7 +700,12 @@ export default {
             topicStore,
             chatId,
             telegram,
-            (id: string) => sessions.get(id)?.title ?? "",
+            (id: string) => {
+              const tracked = sessions.get(id);
+              // A subagent's topic is born badged: the forum reads "child of
+              // something" at a glance, exactly like the desktop's task view.
+              return tracked?.parentID ? `\u{1F916} ${tracked.title}` : (tracked?.title ?? "");
+            },
             () => {
               // Topics are unavailable for this bot: stop trying and keep the
               // chat as a single stream for the rest of the run.
@@ -1093,6 +1105,18 @@ export default {
       skills?: Array<{ id: string }>,
     ): Promise<void> => {
       if (chatId === undefined) return;
+      // Subagent sessions are read-only from Telegram — the parent drives
+      // their input, exactly like the desktop. A direct prompt here would
+      // only pollute a task the parent owns.
+      const parentCheck = sessions.get(target);
+      if (parentCheck?.parentID) {
+        const parent = sessions.get(parentCheck.parentID);
+        await send(
+          `\u{1F916} Este hilo es un subagente${parent ? ` de <b>${escapeHtml(parent.title)}</b>` : ""} \u2014 su tarea la maneja la sesi\u00f3n padre. Escribile al hilo del padre.`,
+          replyThread,
+        );
+        return;
+      }
       const key = `${target}:${text.slice(0, 40)}`;
       if (sending.has(key)) return;
       sending.add(key);
@@ -1905,7 +1929,8 @@ export default {
                   ? "\u{1F4A4}"
                   : "\u{1F7E2}";
             const title = session.title || "(sin t\u00edtulo)";
-            return `${mark} <code>${session.id.slice(0, 18)}\u2026</code> ${escapeHtml(title)}`;
+            const badge = session.parentID ? " \u{1F916} sub" : "";
+            return `${mark} <code>${session.id.slice(0, 18)}\u2026</code> ${escapeHtml(title)}${badge}`;
           };
           const all = [...sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen);
           const active = all.filter((session) => !session.idle).slice(0, 20).map(row);
@@ -2488,6 +2513,10 @@ export default {
       }
       const sessionID = str(data.sessionID ?? data.sessionId);
       if (!sessionID) return;
+      // "subagents": "off" drops parented sessions from the mirror entirely:
+      // no topic, no rendering, no notifications — they live in the parent.
+      if (config.subagents === "off" && str(data.parentID)) ignoredSubagents.add(sessionID);
+      if (ignoredSubagents.has(sessionID)) return;
       const session = track(sessionID);
       // The first event of a running turn lights the thread's "typing…" lamp;
       // `session.idle` — and a failed execution — put it out.
@@ -2504,13 +2533,23 @@ export default {
           session.title = fresh;
           const renameThreadId = threadOf(sessionID);
           if (chatId !== undefined && renameThreadId !== undefined) {
+            const name = session.parentID ? `\u{1F916} ${fresh}` : fresh;
             void telegram
-              .editForumTopic(chatId, renameThreadId, fresh)
+              .editForumTopic(chatId, renameThreadId, name)
               .catch((error) => log("WARN", "topic rename", safe(error)));
           }
           return;
         }
         case "session.created":
+          // Subagent (task) sessions are born with their parent in the event:
+          // the badge, the read-only guard and the auto-archive all key on it.
+          {
+            const bornParent = str(data.parentID);
+            if (bornParent) {
+              session.parentID = bornParent;
+              log("INFO", `subagente ${sessionID.slice(0, 18)} de ${bornParent.slice(0, 18)}`);
+            }
+          }
           if (data.location && typeof data.location === "object") {
             session.directory = str((data.location as Record<string, unknown>).directory);
           }
@@ -2651,6 +2690,17 @@ export default {
           renderer.finalize(sessionID);
           flushTurnImages(sessionID);
           flushCoalesced(sessionID);
+          // A finished subagent archives its own topic: the forum stays clean
+          // and the parent keeps the spotlight. Marking the store keeps the
+          // revive logic consistent (a revived subagent reopens on first sight).
+          if (session.parentID && chatId !== undefined) {
+            const subThreadId = threadOf(sessionID);
+            if (subThreadId !== undefined) {
+              topicStore?.setArchived(sessionID, true);
+              void telegram.closeForumTopic(chatId, subThreadId).catch((error) => log("WARN", "subagent archive", safe(error)));
+              log("INFO", `subagente ${sessionID.slice(0, 18)} termin\u00f3 \u2014 hilo archivado`);
+            }
+          }
           return;
 
         case "session.execution.failed": {

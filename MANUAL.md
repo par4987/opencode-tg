@@ -58,6 +58,15 @@ espera a que termine el turno.
 
 ---
 
+## Subagentes
+
+Cuando el agente delega en un subagente (la tool `task`), su hilo aparece en
+el foro con la marca **🤖** y el nombre de la tarea. Son **solo lectura**:
+su trabajo lo maneja la sesión padre — si les escribís, el bot te avisa y no
+se envía (igual que el desktop). Al terminar, el hilo **se archiva solo**.
+`/sessions` los marca como "🤖 sub". En `config.json`, `"subagents": "off"`
+los oculta por completo.
+
 ## Preguntas y permisos: respondé desde el teléfono
 
 - **Preguntas**: cuando el agente usa la herramienta de pregunta, el hilo

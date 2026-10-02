@@ -55,6 +55,8 @@ export interface Config {
   debugEvents: boolean;
   /** Local voice-note transcription (whisper.cpp) — paths/language. */
   stt: SttConfig;
+  /** Subagent (task) sessions in the chat: mirrored read-only topics, or off. */
+  subagents: "mirror" | "off";
 }
 
 const DEFAULTS: Omit<Config, "token"> = {
@@ -66,6 +68,7 @@ const DEFAULTS: Omit<Config, "token"> = {
   coalesceBusyMs: 8_000,
   debugEvents: false,
   stt: {},
+  subagents: "mirror",
   render: {
     editIntervalMs: 1400,
     showDiffs: true,
@@ -224,5 +227,6 @@ export function loadConfig(): Config {
     coalesceBusyMs,
     debugEvents: asBool(env.TG_DEBUG_EVENTS) ?? asBool(env.debugEvents) ?? DEFAULTS.debugEvents,
     stt,
+    subagents: asChoice(env.TG_SUBAGENTS, ["mirror", "off"] as const) ?? asChoice(env.subagents, ["mirror", "off"] as const) ?? DEFAULTS.subagents,
   };
 }
