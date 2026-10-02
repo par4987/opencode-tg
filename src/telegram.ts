@@ -141,7 +141,52 @@ export class Telegram {
   }
 
   /** Raw Bot API call with flood control and no-op edit suppression. */
+  /**
+   * Global flood gate — the 2026-10-02 incident: three subagents + the
+   * parent each rendering in parallel burst ~28 edits in one second,
+   * Telegram answered 429, and every in-flight call retried on its own
+   * clock inside the penalty window, RENEWING it: 1929 errors and a muted
+   * bot for hours. Now (a) short calls leave through a serial queue with
+   * spacing, so bursts cannot happen; (b) one 429 mutes EVERYONE until its
+   * retry_after expires, so the penalty is served once — not forever.
+   */
+  private muteUntil = 0;
+  private queue: Promise<void> = Promise.resolve();
+  private static readonly SPACING_MS = 50;
+
+  /**
+   * Serialize the API call stream. The long poll is a single 35s-parked
+   * request — serializing it would freeze every other call behind it, so
+   * it skips the queue; the flood mute still applies to it.
+   */
+  private async gate(longPoll: boolean): Promise<void> {
+    if (longPoll) {
+      if (Date.now() < this.muteUntil) {
+        await delay(this.muteUntil - Date.now() + 50, () => this.aborted, (cancel) => this.delays.add(cancel));
+      }
+      return;
+    }
+    const previous = this.queue;
+    let release!: () => void;
+    this.queue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await previous;
+      // Spacing between outgoing calls keeps the stream far below
+      // Telegram's global rate limit no matter how many sessions render.
+      await delay(Telegram.SPACING_MS, () => this.aborted, (cancel) => this.delays.add(cancel));
+      if (Date.now() < this.muteUntil) {
+        await delay(this.muteUntil - Date.now() + 50, () => this.aborted, (cancel) => this.delays.add(cancel));
+      }
+    } finally {
+      release();
+    }
+  }
+
   async call<T = unknown>(method: string, body: Record<string, unknown>, attempt = 0): Promise<T> {
+    const longPoll = method === "getUpdates";
+    await this.gate(longPoll);
     let response: Response;
     try {
       // Tying the in-flight request to `aborted` means `stop()` cancels a
@@ -151,7 +196,6 @@ export class Telegram {
       // `timeout` seconds by contract, so anything past that plus slack is
       // a corpse (NAT dropped it, the socket died mid-answer) and aborting
       // it is what keeps the poller turning.
-      const longPoll = method === "getUpdates";
       const timeoutMs = (longPoll ? (this.pollTimeout + 15) * 1000 : 15_000) + attempt * 5_000;
       const signal =
         typeof AbortSignal.any === "function"
@@ -194,7 +238,12 @@ export class Telegram {
       return undefined as T;
     }
     if (error.isFlood && attempt < 4) {
-      await delay((error.info.retryAfter ?? 1) * 1000);
+      // One flood sets the GLOBAL gate: every call — not just this one —
+      // waits the penalty out, so nothing re-fires inside the window and
+      // the mute ends when Telegram says it ends. The retry goes through
+      // the gate, which is what holds it.
+      const retryAfter = error.info.retryAfter ?? (attempt + 1) * 3;
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + retryAfter * 1000 + 500);
       return this.call<T>(method, body, attempt + 1);
     }
     throw error;
