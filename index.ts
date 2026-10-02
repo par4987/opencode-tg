@@ -1542,18 +1542,18 @@ export default {
       { command: "projects", description: "Open a new session in a project" },
       { command: "tasks", description: "Scheduled tasks" },
       { command: "newtask", description: "Create a scheduled task" },
-      { command: "new", description: "New session in the current project" },
-      { command: "skill", description: "Run a prompt with a skill" },
+      { command: "new", description: "New session: /new <title?>" },
+      { command: "skill", description: "Run a skill prompt: /skill <id> <text>" },
       { command: "archive", description: "Close a session\u0027s thread (archive)" },
       { command: "unarchive", description: "Reopen an archived thread" },
       { command: "delthread", description: "Delete a session\u0027s thread" },
-      { command: "compact", description: "Compact a session\u0027s context" },
-      { command: "usagestats", description: "Token/cost stats for recent days" },
+      { command: "compact", description: "Compact context: /compact <ses_id?>" },
+      { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
 
       { command: "queue", description: "Show queued messages" },
-      { command: "flush", description: "Send queued messages now" },
+      { command: "flush", description: "Send the queue now; /flush <text> steers" },
       { command: "clearqueue", description: "Drop queued messages" },
-      { command: "history", description: "Recent messages of a session" },
+      { command: "history", description: "Recent messages: /history <ses_id?>" },
       { command: "kill", description: "Cancel a running turn" },
       { command: "skills", description: "Installed OpenCode skills" },
       { command: "status", description: "Bridge status" },
@@ -2187,7 +2187,9 @@ export default {
             const short = (directory.split(/[\\/]/).filter(Boolean).pop() ?? directory) as string;
             await reply(
               "\u2728 Nueva sesi\u00f3n <code>" + created.id.slice(0, 22) + "\u2026</code> en <b>" + escapeHtml(short) + "</b>." +
-                (title ? "\n\u{1F3F7}\uFE0F T\u00edtulo: <b>" + escapeHtml(title.slice(0, 60)) + "</b>" : "") +
+                (title
+                  ? "\n\u{1F3F7}\uFE0F T\u00edtulo: <b>" + escapeHtml(title.slice(0, 60)) + "</b>"
+                  : "\n\u{1F4A1} Pod\u00e9s crearla con t\u00edtulo: <code>/new <t\u00edtulo></code>") +
                 "\nEscribile \u2014 su hilo se crea con el primer mensaje, o us\u00e1 <code>/use " + created.id + "</code>.",
             );
           } catch (error) {
@@ -2493,11 +2495,21 @@ export default {
 
       switch (event.type) {
         case "session.renamed":
-          session.title = str(data.title) || session.title;
+        case "session.metadata.updated": {
+          const fresh = str(data.title);
+          if (!fresh || fresh === session.title) return;
+          // A session gets retitled all the time (the title agent after the
+          // first prompt, manual renames) — the forum topic must follow or
+          // the thread keeps its birth name forever.
+          session.title = fresh;
+          const renameThreadId = threadOf(sessionID);
+          if (chatId !== undefined && renameThreadId !== undefined) {
+            void telegram
+              .editForumTopic(chatId, renameThreadId, fresh)
+              .catch((error) => log("WARN", "topic rename", safe(error)));
+          }
           return;
-        case "session.metadata.updated":
-          if (str(data.title)) session.title = str(data.title);
-          return;
+        }
         case "session.created":
           if (data.location && typeof data.location === "object") {
             session.directory = str((data.location as Record<string, unknown>).directory);

@@ -368,6 +368,21 @@ export class Telegram {
     }
   }
 
+  /**
+   * Rename a topic — sessions get retitled all the time (the title agent
+   * after the first prompt, manual renames), and the forum thread must
+   * follow to stay findable.
+   */
+  async editForumTopic(chatId: number, threadId: number, name: string): Promise<boolean> {
+    try {
+      await this.call("editForumTopic", { chat_id: chatId, message_thread_id: threadId, name: name.slice(0, 128) });
+      return true;
+    } catch (error) {
+      if (error instanceof TelegramError && this.isThreadStateError(error)) return true;
+      throw error;
+    }
+  }
+
   async deleteForumTopic(chatId: number, threadId: number): Promise<boolean> {
     try {
       await this.call("deleteForumTopic", { chat_id: chatId, message_thread_id: threadId });
