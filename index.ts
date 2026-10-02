@@ -1123,7 +1123,19 @@ export default {
         if (!sent?.id) log("WARN", `prompt a ${target.slice(0, 18)} sin message id`);
       } catch (error) {
         log("ERROR", "prompt", safe(error));
-        await send(`\u274C no se pudo enviar: ${escapeHtml(String((error as Error).message).slice(0, 300))}`, replyThread);
+        const raw = String((error as Error).message);
+        // A SessionNotFound on a young session is the server-restart race:
+        // freshly created sessions live in memory until the server persists
+        // them, so a restart in between loses them. Saying so plainly beats
+        // a cryptic 404 the user cannot act on.
+        if (raw.includes("SessionNotFound")) {
+          await send(
+            "\u{1F6AB} Esa sesi\u00f3n ya no existe \u2014 el server se reinici\u00f3 desde que la creaste (las sesiones nuevas viven en memoria hasta persistirse). Cre\u00e1 otra con <code>/new</code>.",
+            replyThread,
+          );
+        } else {
+          await send(`\u274C no se pudo enviar: ${escapeHtml(raw.slice(0, 300))}`, replyThread);
+        }
       } finally {
         sending.delete(key);
       }
@@ -2164,14 +2176,19 @@ export default {
             return;
           }
           try {
+            // /new <título> — the session is born with the title; the forum
+            // topic (created on the first message) carries it as its name.
+            const title = argument.trim();
             const created = await forms.request<{ id?: string }>("POST", "/session", {
               location: { directory },
+              ...(title ? { title: title.slice(0, 60) } : {}),
             });
             if (!created?.id) throw new Error("sin id de sesi\u00f3n");
             const short = (directory.split(/[\\/]/).filter(Boolean).pop() ?? directory) as string;
             await reply(
-              "\u2728 Nueva sesi\u00f3n <code>" + created.id.slice(0, 22) + "\u2026</code> en <b>" + escapeHtml(short) + "</b>.\n" +
-                "Escribile \u2014 su hilo se crea con el primer mensaje, o us\u00e1 <code>/use " + created.id + "</code>.",
+              "\u2728 Nueva sesi\u00f3n <code>" + created.id.slice(0, 22) + "\u2026</code> en <b>" + escapeHtml(short) + "</b>." +
+                (title ? "\n\u{1F3F7}\uFE0F T\u00edtulo: <b>" + escapeHtml(title.slice(0, 60)) + "</b>" : "") +
+                "\nEscribile \u2014 su hilo se crea con el primer mensaje, o us\u00e1 <code>/use " + created.id + "</code>.",
             );
           } catch (error) {
             log("WARN", "new session", safe(error));

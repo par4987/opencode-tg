@@ -81,7 +81,7 @@ espera a que termine el turno.
 | `/running` | Solo las sesiones trabajando ahora |
 | `/history` | Historial de la sesión del hilo (o `/history <id>`) |
 | `/kill` | Interrumpe el turno en curso de la sesión |
-| `/new` | Sesión nueva con hilo propio |
+| `/new` | Sesión nueva con hilo propio — `/new <título>` la crea ya bautizada |
 | `/send <id> <texto>` | Manda un prompt a una sesión sin cambiar de hilo |
 | `/menu` | Menú principal con botones |
 | `/usage` | Uso actual del modelo (tokens y costo del proyecto) |

@@ -92,7 +92,7 @@ answered — with **all the answers together**.
 | `/running` | Only the sessions working right now |
 | `/history` | History of the topic's session (or `/history <id>`) |
 | `/kill` | Interrupts the current turn |
-| `/new` | New session with its own topic |
+| `/new` | New session with its own topic — `/new <title>` creates it already named |
 | `/send <id> <text>` | Send a prompt to a session without switching topics |
 | `/menu` | Main menu with buttons |
 | `/usage` | Current model usage (tokens and cost of the project) |
