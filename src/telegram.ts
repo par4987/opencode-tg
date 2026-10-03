@@ -118,6 +118,16 @@ export class Telegram {
   private readonly base: string;
   private readonly pollTimeout: number;
   private offset = 0;
+  /**
+   * The long poll's heartbeat — touched on every loop turn. A leader whose
+   * poll is stuck inside one never-returning call shows no errors at all;
+   * the bridge's alive() uses this to notice and hand leadership over.
+   */
+  private lastPollAt = Date.now();
+  /** True while the long poll is actually turning (or was, seconds ago). */
+  pollAlive(maxGapMs = 90_000): boolean {
+    return !this.aborted && Date.now() - this.lastPollAt < maxGapMs;
+  }
   private aborted = false;
   /** One controller for every in-flight request, so `stop()` is instantaneous. */
   private controller = new AbortController();
@@ -559,10 +569,18 @@ export class Telegram {
    * start this can be hours of backlog.
    */
   async longPoll(onUpdate: (update: Update) => void | Promise<void>, onError?: (error: unknown) => void): Promise<void> {
-    await this.call("deleteWebhook", { drop_pending_updates: true }).catch(() => undefined);
+    // NOT drop_pending_updates: every poll restart wiped whatever the user
+    // sent while no poller was listening (today that ate real messages).
+    // The webhook only exists once in a bot's life — deleting it without
+    // dropping keeps the pending updates for the first getUpdates to fetch.
+    await this.call("deleteWebhook", { drop_pending_updates: false }).catch(() => undefined);
 
     let conflicts = 0;
     while (!this.aborted) {
+      // The loop's heartbeat: a leader whose poll is stuck inside one call
+      // (dead socket, vanished network) shows no errors and no logs — but
+      // this timestamp stops moving, and the bridge's alive() catches it.
+      this.lastPollAt = Date.now();
       let updates: Update[] = [];
       try {
         updates = await this.call<Update[]>("getUpdates", {

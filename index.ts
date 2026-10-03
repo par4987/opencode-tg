@@ -3690,6 +3690,6 @@ export default {
       poll = undefined;
     }
 
-    return joinBridge({ start, stop, alive: () => !streamClosed }, config.mode);
+    return joinBridge({ start, stop, alive: () => !streamClosed && (dry ? true : telegram.pollAlive()) }, config.mode);
   },
 };
