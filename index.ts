@@ -1983,7 +1983,13 @@ export default {
           }
           watched.add(target);
           track(target);
-          await reply(`Vigilando <code>${escapeHtml(target)}</code>`);
+          // In `all` mode one /watch silences EVERY other session — the 2026-10
+          // debugging lost half a day to this being invisible. Say it plainly.
+          await reply(
+            mirrorAll
+              ? `Vigilando <code>${escapeHtml(target)}</code>.\n\u26A0\uFE0F Est\u00e1s en <code>mirror=all</code>: ahora SOLO esta sesi\u00f3n se espeja \u2014 las dem\u00e1s quedan mudas. <code>/watch off</code> restaura el espejo completo.`
+              : `Vigilando <code>${escapeHtml(target)}</code>`,
+          );
           return;
         }
 
