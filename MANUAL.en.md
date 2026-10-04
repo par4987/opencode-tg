@@ -108,6 +108,9 @@ answered — with **all the answers together**.
 | `/menu` | Main menu with buttons |
 | `/usage` | Current model usage (tokens and cost of the project) |
 | `/ls` | Browse the project's files from the phone — tap a folder to enter, a file to download, 📎 to attach it to your next message |
+| `/find <text>` | Search files by name in the project — tap a result to download it |
+| `/git` | What the agent changed in the project: status with +/- per file, and the full diff downloadable |
+| `/revert` | Undo a session's last turn — inline confirmation, there is no way back |
 | `/config` | See the project's config (default model, agents, MCP, permissions) — `/config model <provider/model>` changes the default for new sessions |
 
 ### Agent setup

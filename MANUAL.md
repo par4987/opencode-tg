@@ -95,6 +95,9 @@ los oculta por completo.
 | `/menu` | Menú principal con botones |
 | `/usage` | Uso actual del modelo (tokens y costo del proyecto) |
 | `/ls` | Navegar los archivos del proyecto desde el teléfono — carpeta para entrar, archivo para descargarlo, 📎 para adjuntarlo al próximo mensaje |
+| `/find <texto>` | Buscar archivos por nombre en el proyecto — tocá un resultado para descargarlo |
+| `/git` | Qué tocó el agente en el proyecto: status con +/− por archivo, y el diff completo descargable |
+| `/revert` | Deshacer el último turno de una sesión — con confirmación inline, no hay vuelta atrás |
 | `/config` | Ver el config del proyecto (modelo default, agents, MCP, permisos) — `/config model <proveedor/modelo>` cambia el default para sesiones nuevas |
 
 ### Configuración del agente

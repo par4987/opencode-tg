@@ -62,6 +62,9 @@ const HELP = [
   "/compact \u2014 compactar el contexto de la sesi\u00f3n",
   "/usagestats <d\u00edas?> \u2014 tokens y costo de los \u00faltimos d\u00edas",
   "/ls <carpeta?> \u2014 navegar los archivos del proyecto: toc\u00e1 para descargar, \u{1F4CE} adjunta al pr\u00f3ximo",
+  "/find <texto> \u2014 buscar archivos por nombre en el proyecto; toc\u00e1 un resultado para descargarlo",
+  "/git \u2014 qu\u00e9 toc\u00f3 el agente en el proyecto (status + diff descargable)",
+  "/revert \u2014 deshacer el \u00faltimo turno de una sesi\u00f3n (con confirmaci\u00f3n)",
   "/config \u2014 config del proyecto \u00b7 /config model <p/m> cambia el default de sesiones nuevas",
   "Respond\u00e9 a un mensaje con reply para citarlo en tu prompt",
 
@@ -1626,6 +1629,9 @@ export default {
       { command: "help", description: "Show this help" },
       { command: "sessions", description: "Sessions seen by the server" },
       { command: "ls", description: "Browse project files: /ls [folder]" },
+      { command: "find", description: "Search files by name: /find <text>" },
+      { command: "git", description: "What the agent changed (git status + diff)" },
+      { command: "revert", description: "Undo a session's last turn (confirm first)" },
       { command: "config", description: "Project config: /config model <provider/model>" },
       { command: "use", description: "Where prompts go: /use <id>" },
       { command: "watch", description: "Watch a session: /watch <id|all|off>" },
@@ -2070,6 +2076,127 @@ export default {
             return;
           }
           await browseDirectory(target, directory, argument.trim());
+          return;
+        }
+
+        case "git": {
+          // /git — what the agent touched in the session's project: vcs status
+          // with add/del lines, and the working diff one tap away.
+          const target = threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
+            return;
+          }
+          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+          const directory = info?.location?.directory;
+          if (!directory) {
+            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            return;
+          }
+          const status = await forms.request<Array<Record<string, unknown>>>(
+            "GET",
+            "/vcs/status?location%5Bdirectory%5D=" + encodeURIComponent(directory),
+          ).catch(() => undefined);
+          const rows = Array.isArray(status) ? status : [];
+          if (rows.length === 0) {
+            await reply("\u{1F4C2} Sin cambios pendientes (o el proyecto no es un repo git).");
+            return;
+          }
+          const lines = [`\u{1F5C3} <b>Git \u00b7 cambios en el proyecto</b> \u2014 ${rows.length} archivo(s)`];
+          for (const row of rows.slice(0, 25)) {
+            const file = String(row.file ?? "?");
+            const add = Number(row.additions ?? 0);
+            const del = Number(row.deletions ?? 0);
+            const mark = String(row.status ?? "") === "added" ? "+" : String(row.status ?? "") === "deleted" ? "\u2212" : "~";
+            lines.push(`<code>${mark}</code> ${escapeHtml(file)} <b>+${add}</b> <i>\u2212${del}</i>`);
+          }
+          if (rows.length > 25) lines.push(`(\u2026y ${rows.length - 25} m\u00e1s)`);
+          if (chatId !== undefined) {
+            await telegram
+              .sendMessage(chatId, lines.join("\n"), {
+                parseMode: "HTML",
+                messageThreadId: threadOf(threadSession),
+                replyMarkup: { inline_keyboard: [[{ text: "\u{1F4CA} Ver el diff", callback_data: `gitdiff:${target}` }]] },
+              })
+              .catch((error) => log("WARN", "git send", safe(error)));
+          }
+          return;
+        }
+
+        case "revert": {
+          // /revert — undo a session's last turn. The API commit is one call;
+          // the inline confirmation is the plugin's, because undoing agent
+          // work must never happen by accident.
+          const target = argument.trim() || threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/revert <ses_id></code>.");
+            return;
+          }
+          const tracked = sessions.get(target);
+          if (chatId !== undefined) {
+            await telegram
+              .sendMessage(
+                chatId,
+                `\u21A9\uFE0F Deshacer el \u00faltimo turno de <b>${escapeHtml(tracked?.title ?? target.slice(0, 18))}</b>?` +
+                  `\nEsto borra el intercambio completo (tu mensaje y su respuesta) \u2014 no se puede volver atr\u00e1s.`,
+                {
+                  parseMode: "HTML",
+                  messageThreadId: threadOf(threadSession),
+                  replyMarkup: {
+                    inline_keyboard: [
+                      [
+                        { text: "\u2705 Deshacer", callback_data: "revertok:" + target },
+                        { text: "\u2716 Cancelar", callback_data: "revertno:" + target },
+                      ],
+                    ],
+                  },
+                },
+              )
+              .catch((error) => log("WARN", "revert send", safe(error)));
+          }
+          return;
+        }
+
+        case "find": {
+          // /find <text> — fuzzy file search over the session's project; the
+          // results are tappable and download like /ls rows.
+          const query = argument.trim();
+          const target = threadSession || targetSession();
+          if (!query || !target) {
+            await reply("Decime qu\u00e9 buscar: <code>/find parte-del-nombre</code> \u2014 en el hilo de una sesi\u00f3n.");
+            return;
+          }
+          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+          const directory = info?.location?.directory;
+          if (!directory) {
+            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            return;
+          }
+          const found = await forms.request<Array<Record<string, unknown>>>(
+            "GET",
+            "/api/fs/find?location%5Bdirectory%5D=" + encodeURIComponent(directory) + "&query=" + encodeURIComponent(query),
+          ).catch(() => undefined);
+          const results = Array.isArray(found) ? found : [];
+          if (results.length === 0) {
+            await reply(`Nada con \u00ab${escapeHtml(query)}\u00bb en el proyecto.`);
+            return;
+          }
+          const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+          for (const item of results.slice(0, 25)) {
+            const p = String(item.path ?? "");
+            if (!p) continue;
+            rows.push([{ text: "\u{1F4C4} " + p.slice(0, 55), callback_data: "lsfile:" + p }]);
+          }
+          if (results.length > 25) rows.push([{ text: `(\u2026y ${results.length - 25} m\u00e1s)`, callback_data: "find:" + query }]);
+          if (chatId !== undefined) {
+            await telegram
+              .sendMessage(chatId, `\u{1F50D} <b>${results.length}</b> resultado(s) para \u00ab${escapeHtml(query)}\u00bb \u2014 toc\u00e1 para descargar:`, {
+                parseMode: "HTML",
+                messageThreadId: threadOf(threadSession),
+                replyMarkup: { inline_keyboard: rows },
+              })
+              .catch((error) => log("WARN", "find send", safe(error)));
+          }
           return;
         }
 
@@ -3229,6 +3356,73 @@ export default {
                 }
                 await ack("Esta pregunta ya no está activa");
               };
+              if (payload.startsWith("gitdiff:")) {
+                // gitdiff:<sessionID> — the working diff of the session's
+                // project, as a preview plus the full patch downloadable.
+                const sessionID = payload.slice(8);
+                await ack("Cargando el diff\u2026");
+                const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined);
+                const directory = info?.location?.directory;
+                if (!directory || chatId === undefined || !cq.message) {
+                  await ack("No pude ver el proyecto.");
+                  return;
+                }
+                const diff = await forms.request<Array<Record<string, unknown>>>(
+                  "GET",
+                  "/vcs/diff?location%5Bdirectory%5D=" + encodeURIComponent(directory) + "&mode=working",
+                ).catch(() => undefined);
+                const files = Array.isArray(diff) ? diff : [];
+                if (files.length === 0) {
+                  await ack("Sin cambios que mostrar.");
+                  return;
+                }
+                // Full patch as a downloadable .diff; short preview inline.
+                const fs = await import("node:fs");
+                const os = await import("node:os");
+                const pathMod = await import("node:path");
+                const patch = files.map((f) => String(f.patch ?? "")).join("\n");
+                const tmp = pathMod.join(os.tmpdir(), `tg-diff-${Date.now()}.patch`);
+                fs.writeFileSync(tmp, patch, "utf8");
+                const preview = patch.length > 1500 ? patch.slice(0, 1500) + "\n\u2026 (recortado \u2014 el .patch va completo)" : patch;
+                try {
+                  await telegram.sendMessage(chatId, `<pre>${escapeHtml(preview)}</pre>`, {
+                    parseMode: "HTML",
+                    messageThreadId: cq.message.message_thread_id,
+                  });
+                  await telegram.sendDocument(chatId, tmp, { messageThreadId: cq.message.message_thread_id });
+                } finally {
+                  fs.rmSync(tmp, { force: true });
+                }
+                return;
+              }
+              if (payload.startsWith("revertok:")) {
+                // revertok:<sessionID> — the confirmed undo.
+                const sessionID = payload.slice(9);
+                await ack("Deshaciendo\u2026");
+                try {
+                  await forms.request("POST", "/session/" + encodeURIComponent(sessionID) + "/revert/commit");
+                  log("INFO", "revert confirmado desde TG: " + sessionID.slice(0, 18));
+                  if (cq.message) {
+                    await telegram
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, "\u21A9\uFE0F Turno deshecho.", { parseMode: "HTML" })
+                      .catch(() => undefined);
+                  }
+                } catch (error) {
+                  log("WARN", "revert commit", safe(error));
+                  await ack("No se pudo deshacer: " + String((error as Error).message).slice(0, 120));
+                }
+                return;
+              }
+              if (payload.startsWith("revertno:")) {
+                const sessionID = payload.slice(9);
+                await ack("Cancelado");
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, "\u2716 Revert cancelado.", { parseMode: "HTML" })
+                    .catch(() => undefined);
+                }
+                return;
+              }
               if (payload.startsWith("ls:")) {
                 // ls:<rel> — navigate into a subdirectory of the session's project.
                 const rel = payload.slice(3);
