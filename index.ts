@@ -2059,6 +2059,16 @@ export default {
           for (const pending of [...coalescing.keys()]) flushCoalesced(pending);
           // Texto: steering directo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â entra al turno en curso YA.
           if (body.length > 0) {
+            // A subagent takes no direct prompts — the flush must not be the
+            // back door around the deliver guard.
+            const flushTarget = sessions.get(session);
+            if (flushTarget?.parentID) {
+              const parent = sessions.get(flushTarget.parentID);
+              await reply(
+                `\u{1F916} Ese es un subagente${parent ? ` de <b>${escapeHtml(parent.title)}</b>` : ""} \u2014 su tarea la maneja la sesi\u00f3n padre. No se inyect\u00f3 nada.`,
+              );
+              return;
+            }
             try {
               const sent = await forms.request<{ id?: string }>(
                 "POST",

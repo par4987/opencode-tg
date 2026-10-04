@@ -1,5 +1,7 @@
 # opencode-tg
 
+[![CI](https://github.com/par4987/opencode-tg/actions/workflows/ci.yml/badge.svg)](https://github.com/par4987/opencode-tg/actions/workflows/ci.yml)
+
 > Read this in [Español](README.md) | **English**
 
 Bidirectional bridge between [OpenCode](https://opencode.ai) and Telegram:
@@ -99,6 +101,11 @@ STT_API_KEY=...
 
 Common `stt` options: `whisper` and `model` (local paths), `baseUrl` +
 `model` + `STT_API_KEY` (cloud), `language` (defaults to `es`).
+
+## Server compatibility
+
+- **Permissions**: servers 2.0.19+ ship the build agent with `{"*", "*", "allow"}` as its first rule, so `ask` rules from the config's `permissions` (root or `agents.*`) are shadowed — permission prompts only arrive when the *server* decides to ask (e.g. `external_directory` or `.env` reads). When one arrives, the bot shows its three buttons (✅ once · 🔁 always · ✖ deny) and settles it over the local API.
+- The plugin has been exercised against 2.0.15–2.0.22; typechecking uses the current generation's `@opencode/plugin`.
 
 ## Tests and verification
 
