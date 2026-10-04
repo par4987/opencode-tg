@@ -177,8 +177,8 @@ autorizados en `~/.opencode/tg/.env`.
 ## Estado conocido
 
 - **Notas de voz**: transcripción opt-in por usuario — whisper.cpp local (default) o cualquier API compatible con OpenAI; ver la sección Voz del README.
-- El canal texto inline recorta archivos de más de 3400 caracteres (los
-  grandes viajan completos como documento).
+- **Archivar en chat privado**: Telegram no permite que un bot cierre tópicos en un chat privado — `/archive` silencia del lado del bot (sin espejo ni avisos) y marca el hilo con 📦; `/unarchive` lo despierta. `/delthread` sí borra el tópico, pero una sesión activa lo recrea con su próximo evento.
+- Los textos inline viajan completos en partes numeradas; los mayores de 12 KB como documento.
 
 *Generado el 2026-09-30 por el agente de la sesión «Problemas al activar el
 bot de Telegram».*

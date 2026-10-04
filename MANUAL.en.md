@@ -192,6 +192,11 @@ allowed-chats list in `~/.opencode/tg/.env`.
 
 - **Voice notes**: opt-in per user — local whisper.cpp (default) or any
   OpenAI-compatible API; see the README's Voice section.
+- **Archiving in a private chat**: Telegram does not let a bot close topics
+  there — `/archive` goes silent on the bot's side (no mirror, no
+  heads-ups) and badges the thread with 📦; `/unarchive` wakes it.
+  `/delthread` does delete the topic, but an active session recreates it
+  on its next event.
 - Inline texts travel complete in numbered parts; anything over 12 KB
   rides as a document.
 

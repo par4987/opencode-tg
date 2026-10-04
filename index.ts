@@ -2727,7 +2727,18 @@ export default {
             await reply("\u{1F4E6} Hilo archivado (cerrado, no se puede escribir) \u2014 <code>/unarchive</code> lo reabre. Si la sesi\u00f3n revive, se reabre sola.");
           } catch (error) {
             log("WARN", "archive", safe(error));
-            await reply("\u274C No se pudo archivar.");
+            // Private chats cannot close or reopen topics (verified live:
+            // "the chat is not a supergroup") but they CAN rename them.
+            // Archive on the plugin's side — silence: no mirror, no typing,
+            // no prompts into it — and badge the title so the forum reads
+            // "parked" at a glance.
+            topicStore.setArchived(target, true);
+            const tracked = sessions.get(target);
+            const name = `\u{1F4E6} ${tracked?.title ?? target.slice(0, 18)}`.slice(0, 128);
+            await telegram.editForumTopic(chatId, tid, name).catch(() => undefined);
+            await reply(
+              "\u{1F4E6} Archivado (silenciado): Telegram no permite cerrar t\u00f3picos en un chat privado \u2014 el hilo queda visible pero mudo, sin espejo ni avisos. <code>/unarchive</code> lo despierta.",
+            );
           }
           return;
         }
@@ -2749,7 +2760,15 @@ export default {
             await reply("\u{1F4C2} Hilo reabierto.");
           } catch (error) {
             log("WARN", "unarchive", safe(error));
-            await reply("\u274C No se pudo reabrir.");
+            // The private-chat fallback: nothing was closed on Telegram's
+            // side, so waking it up is clearing our flag and dropping the
+            // badge from the title.
+            topicStore.setArchived(target, false);
+            const tracked = sessions.get(target);
+            const raw = tracked?.title ?? target.slice(0, 18);
+            const name = raw.startsWith("\u{1F4E6} ") ? raw.slice(3) : raw;
+            await telegram.editForumTopic(chatId, tid, name.slice(0, 128)).catch(() => undefined);
+            await reply("\u{1F4C2} Despertado \u2014 el espejo de la sesi\u00f3n vuelve a este hilo.");
           }
           return;
         }
@@ -2771,7 +2790,9 @@ export default {
           try {
             await telegram.deleteForumTopic(chatId, tid);
             topicStore.remove(target);
-            await reply("\u{1F5D1} Hilo eliminado del chat. La sesi\u00f3n sigue en el server \u2014 su pr\u00f3ximo evento crea un hilo nuevo.");
+            await reply(
+              "\u{1F5D1} Hilo eliminado del chat. Ojo: la sesi\u00f3n sigue existiendo \u2014 mientras est\u00e9 activa, su pr\u00f3ximo evento crea un hilo nuevo (as\u00ed funciona el espejo). Para silenciarla en serio: <code>/archive</code>.",
+            );
           } catch (error) {
             log("WARN", "delthread", safe(error));
             await reply("\u274C No se pudo eliminar el hilo.");
