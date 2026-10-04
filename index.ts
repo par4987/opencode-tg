@@ -68,6 +68,7 @@ const HELP = [
   "/context \u2014 tokens, costo, l\u00edmite del modelo y compactaciones de una sesi\u00f3n",
   "/worktree \u2014 worktrees del proyecto: toc\u00e1 para abrir sesi\u00f3n ah\u00ed \u00b7 /worktree new <n>",
   "/fork \u2014 bifurcar una sesi\u00f3n para probar ideas sin ensuciar la original",
+  "/export \u2014 descargar el transcript completo de una sesi\u00f3n como JSON",
   "/config \u2014 config del proyecto \u00b7 /config model <p/m> cambia el default de sesiones nuevas",
   "Respond\u00e9 a un mensaje con reply para citarlo en tu prompt",
 
@@ -1657,6 +1658,7 @@ export default {
       { command: "context", description: "Session tokens, cost and compactions" },
       { command: "worktree", description: "List/create git worktrees; open a session in one" },
       { command: "fork", description: "Fork a session to try ideas safely" },
+      { command: "export", description: "Download a session's transcript as JSON" },
       { command: "config", description: "Project config: /config model <provider/model>" },
       { command: "use", description: "Where prompts go: /use <id>" },
       { command: "watch", description: "Watch a session: /watch <id|all|off>" },
@@ -2359,6 +2361,50 @@ export default {
           } catch (error) {
             log("WARN", "fork", safe(error));
             await reply("No se pudo forkear: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+          }
+          return;
+        }
+
+        case "export": {
+          // /export — download a session's full transcript as JSON from the
+          // phone. The server wraps {info, messages}; we ship it verbatim.
+          const target = argument.trim() || threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/export <ses_id></code>.");
+            return;
+          }
+          const tracked = sessions.get(target);
+          if (chatId === undefined) return;
+          await reply("\u{1F4E4} Exportando\u2026");
+          try {
+            const exported = await forms.request<Record<string, unknown>>(
+              "GET",
+              "/api/experimental/session/" + encodeURIComponent(target) + "/export",
+            );
+            if (!exported) throw new Error("respuesta vac\u00eda del export");
+            const text = JSON.stringify(exported, null, 2);
+            if (text.length > 40 * 1024 * 1024) {
+              await reply("El export supera los 40 MB \u2014 export\u00e1 esa sesi\u00f3n desde la PC.");
+              return;
+            }
+            const fs = await import("node:fs");
+            const os = await import("node:os");
+            const pathMod = await import("node:path");
+            const safeName = (tracked?.title ?? target.slice(0, 18)).replace(/[^\w\u00c0-\u017f-]+/g, "_").slice(0, 40) || "sesion";
+            const tmp = pathMod.join(os.tmpdir(), `tg-export-${safeName}-${Date.now()}.json`);
+            fs.writeFileSync(tmp, text, "utf8");
+            try {
+              const thread = threadOf(threadSession);
+              await telegram.sendDocument(chatId, tmp, {
+                caption: `\u{1F4C2} ${escapeHtml(tracked?.title ?? target.slice(0, 18))} \u00b7 ${(text.length / 1024 / 1024).toFixed(1)} MB`,
+                messageThreadId: thread,
+              });
+            } finally {
+              fs.rmSync(tmp, { force: true });
+            }
+          } catch (error) {
+            log("WARN", "export", safe(error));
+            await reply("No se pudo exportar: " + escapeHtml(String((error as Error).message).slice(0, 200)));
           }
           return;
         }
