@@ -2404,6 +2404,34 @@ export default {
             }
           } catch (error) {
             log("WARN", "export", safe(error));
+            // The 2.0.19+ export only knows the NEW storage format; sessions
+            // born before it answer 404 (same reason a direct GET does).
+            // Their transcript lives in the legacy .jsonl on disk — same
+            // content, different shelf. Send that one.
+            try {
+              const fs = await import("node:fs");
+              const os = await import("node:os");
+              const pathMod = await import("node:path");
+              const legacy = pathMod.join(os.homedir(), ".local", "share", "opencode", "sessions", target + ".jsonl");
+              if (existsSync(legacy)) {
+                const size = fs.statSync(legacy).size;
+                if (size > 40 * 1024 * 1024) {
+                  await reply("El transcript legacy supera los 40 MB \u2014 export\u00e1 esa sesi\u00f3n desde la PC.");
+                  return;
+                }
+                if (chatId !== undefined) {
+                  await telegram
+                    .sendDocument(chatId, legacy, {
+                      caption: `\u{1F4C2} ${escapeHtml(tracked?.title ?? target.slice(0, 18))} \u00b7 transcript legacy \u00b7 ${(size / 1024 / 1024).toFixed(1)} MB`,
+                      messageThreadId: threadOf(threadSession),
+                    })
+                    .catch((sendError) => log("WARN", "export legacy send", safe(sendError)));
+                }
+                return;
+              }
+            } catch (legacyError) {
+              log("WARN", "export legacy", safe(legacyError));
+            }
             await reply("No se pudo exportar: " + escapeHtml(String((error as Error).message).slice(0, 200)));
           }
           return;
