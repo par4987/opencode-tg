@@ -65,6 +65,9 @@ const HELP = [
   "/find <texto> \u2014 buscar archivos por nombre en el proyecto; toc\u00e1 un resultado para descargarlo",
   "/git \u2014 qu\u00e9 toc\u00f3 el agente en el proyecto (status + diff descargable)",
   "/revert \u2014 deshacer el \u00faltimo turno de una sesi\u00f3n (con confirmaci\u00f3n)",
+  "/context \u2014 tokens, costo, l\u00edmite del modelo y compactaciones de una sesi\u00f3n",
+  "/worktree \u2014 worktrees del proyecto: toc\u00e1 para abrir sesi\u00f3n ah\u00ed \u00b7 /worktree new <n>",
+  "/fork \u2014 bifurcar una sesi\u00f3n para probar ideas sin ensuciar la original",
   "/config \u2014 config del proyecto \u00b7 /config model <p/m> cambia el default de sesiones nuevas",
   "Respond\u00e9 a un mensaje con reply para citarlo en tu prompt",
 
@@ -198,6 +201,7 @@ function fmtAgo(ts: number): string {
 interface ApiSession {
   id: string;
   agent?: string;
+  projectID?: string;
   model?: { id?: string; providerID?: string; variant?: string };
   cost?: number;
   tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } };
@@ -1650,6 +1654,9 @@ export default {
       { command: "find", description: "Search files by name: /find <text>" },
       { command: "git", description: "What the agent changed (git status + diff)" },
       { command: "revert", description: "Undo a session's last turn (confirm first)" },
+      { command: "context", description: "Session tokens, cost and compactions" },
+      { command: "worktree", description: "List/create git worktrees; open a session in one" },
+      { command: "fork", description: "Fork a session to try ideas safely" },
       { command: "config", description: "Project config: /config model <provider/model>" },
       { command: "use", description: "Where prompts go: /use <id>" },
       { command: "watch", description: "Watch a session: /watch <id|all|off>" },
@@ -2214,6 +2221,144 @@ export default {
                 replyMarkup: { inline_keyboard: rows },
               })
               .catch((error) => log("WARN", "find send", safe(error)));
+          }
+          return;
+        }
+
+        case "context": {
+          // /context — the session's footprint: tokens, cost, model limit and
+          // compaction history, so the phone can answer "is it time to /compact?".
+          const target = argument.trim() || threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/context <ses_id></code>.");
+            return;
+          }
+          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+          if (!info) {
+            await reply("No encontr\u00e9 esa sesi\u00f3n.");
+            return;
+          }
+          const catalogue = await ctx.model.list().then((res) => res.data ?? []).catch(() => []);
+          const modelRef = info.model;
+          const modelHit = catalogue.find(
+            (m) => m.providerID === modelRef?.providerID && m.modelID === modelRef?.id,
+          );
+          const limit = modelHit?.limit?.context;
+          const compactions = await forms.request<Array<Record<string, unknown>>>(
+            "GET",
+            "/session/" + encodeURIComponent(target) + "/context",
+          ).catch(() => undefined);
+          const comps = Array.isArray(compactions) ? compactions : [];
+          const lines = [
+            `\u{1F4CA} <b>Contexto de la sesi\u00f3n</b>`,
+            `Modelo: <code>${escapeHtml(modelRef?.providerID ?? "?")}/${escapeHtml(modelRef?.id ?? "?")}</code> (l\u00edmite: ${limit !== undefined ? fmtTokens(limit) : "?"})`,
+          ];
+          const t = info.tokens;
+          if (t) {
+            lines.push(
+              `\u{1F4E5} Input acumulado: ${fmtTokens((t.input ?? 0) + (t.reasoning ?? 0) + (t.cache?.read ?? 0))}` +
+                ` \u00b7 \u{1F4E4} Output: ${fmtTokens(t.output ?? 0)}`,
+            );
+          }
+          if (info.cost !== undefined) lines.push(`\u{1FA99} Costo: ${fmtCost(info.cost)}`);
+          lines.push(
+            comps.length > 0
+              ? `\u{1F4DC} Compactaciones: ${comps.length} (\u00faltima: ${escapeHtml(String(comps[comps.length - 1]?.reason ?? "?"))})`
+              : `\u{1F4DC} Sin compactaciones a\u00fan.`,
+          );
+          if (comps.length > 0) {
+            const summary = String(comps[comps.length - 1]?.summary ?? "").slice(0, 200);
+            if (summary) lines.push(`\n<i>${escapeHtml(summary)}\u2026</i>`);
+          }
+          lines.push(`\n${limit !== undefined && t !== undefined && (t.input ?? 0) + (t.cache?.read ?? 0) > limit * 0.5 ? "\u26A0\uFE0F Va denso \u2014 consider\u00e1 <code>/compact</code>." : ""}`);
+          await reply(lines.filter((l) => l.length > 1).join("\n"));
+          return;
+        }
+
+        case "worktree": {
+          // /worktree — the project's git worktrees: switch the NEXT session
+          // to one with a tap, or /worktree new <name> to carve a fresh one.
+          const sub = (argument.split(/\s+/)[0] ?? "").toLowerCase();
+          const target = threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
+            return;
+          }
+          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+          const directory = info?.location?.directory;
+          if (!directory) {
+            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            return;
+          }
+          const projects = await forms.request<Array<Record<string, unknown>>>("GET", "/api/project").catch(() => undefined);
+          const list = Array.isArray(projects) ? projects : [];
+          const proj = list.find((p) => String(p.canonical ?? "").replace(/\\/g, "/") === directory.replace(/\\/g, "/"));
+          const projectID = proj ? String(proj.id) : info ? String(info.projectID ?? "") : "";
+          if (!projectID) {
+            await reply("No encontr\u00e9 el proyecto en el server.");
+            return;
+          }
+          const trees = await forms.request<Array<Record<string, unknown>>>(
+            "GET",
+            "/api/worktree?projectID=" + encodeURIComponent(projectID),
+          ).catch(() => undefined);
+          const rowsTrees = Array.isArray(trees) ? trees : [];
+          if (sub === "new") {
+            const name = argument.slice(3).trim();
+            if (!name) {
+              await reply("Decime el nombre: <code>/worktree new <nombre></code>");
+              return;
+            }
+            try {
+              await forms.request("POST", "/api/worktree", { projectID, name });
+              await reply(`\u{1F33F} Worktree <b>${escapeHtml(name)}</b> creado. Abr\u00ed una sesi\u00f3n en \u00e9l con <code>/projects</code>.`);
+            } catch (error) {
+              log("WARN", "worktree create", safe(error));
+              await reply("No se pudo crear el worktree: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+            }
+            return;
+          }
+          if (rowsTrees.length === 0) {
+            await reply(`Sin worktrees en el proyecto. <code>/worktree new <nombre></code> crea uno.`);
+            return;
+          }
+          const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+          for (const tree of rowsTrees.slice(0, 20)) {
+            const dir = String(tree.directory ?? "");
+            if (!dir) continue;
+            const name = dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
+            rows.push([{ text: "\u{1F33F} " + name.slice(0, 50), callback_data: "wtnew:" + lsKeyOf(dir) }]);
+          }
+          if (chatId !== undefined) {
+            await telegram
+              .sendMessage(chatId, `\u{1F33F} <b>${rowsTrees.length}</b> worktree(s) \u2014 toc\u00e1 para abrir una sesi\u00f3n ah\u00ed:`, {
+                parseMode: "HTML",
+                messageThreadId: threadOf(threadSession),
+                replyMarkup: { inline_keyboard: rows },
+              })
+              .catch((error) => log("WARN", "worktree send", safe(error)));
+          }
+          return;
+        }
+
+        case "fork": {
+          // /fork — a session's copy from its last message: try ideas without
+          // dirtying the original.
+          const target = argument.trim() || threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/fork <ses_id></code>.");
+            return;
+          }
+          const tracked = sessions.get(target);
+          try {
+            const forked = await forms.request<{ id?: string }>("POST", "/session/" + encodeURIComponent(target) + "/fork", {});
+            if (!forked?.id) throw new Error("sin id del fork");
+            await reply(
+              `\u{1F374} Fork de <b>${escapeHtml(tracked?.title ?? target.slice(0, 18))}</b> creado: <code>${forked.id.slice(0, 22)}\u2026</code>\nEscribile \u2014 su hilo se crea con el primer mensaje.`,
+            );
+          } catch (error) {
+            log("WARN", "fork", safe(error));
+            await reply("No se pudo forkear: " + escapeHtml(String((error as Error).message).slice(0, 200)));
           }
           return;
         }
@@ -3555,6 +3700,33 @@ export default {
                 const content = decodeText(fs.readFileSync(full));
                 pendingAttach.set(sessionID, { uri: `data:text/plain;filename="${encodeURIComponent(name)}";base64,${Buffer.from(content, "utf8").toString("base64")}`, name });
                 await ack("Adjuntado \u2014 tu pr\u00f3ximo mensaje lo lleva al agente");
+                return;
+              }
+              if (payload.startsWith("wtnew:")) {
+                // wtnew:<key> — open a new session in that worktree.
+                const dir = lsKeys.get(payload.slice(6));
+                if (dir === undefined) {
+                  await ack("Listing viejo \u2014 reabr\u00ed /worktree");
+                  return;
+                }
+                await ack("Abriendo\u2026");
+                try {
+                  const created = await forms.request<{ id?: string }>("POST", "/session", { location: { directory: dir } });
+                  if (!created?.id) throw new Error("sin id");
+                  const name = dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
+                  if (cq.message) {
+                    await telegram
+                      .sendMessage(
+                        cq.message.chat.id,
+                        `\u2728 Sesi\u00f3n <code>${created.id.slice(0, 22)}\u2026</code> en <b>${escapeHtml(name)}</b>.\nEscribile \u2014 su hilo se crea con el primer mensaje.`,
+                        { parseMode: "HTML", messageThreadId: cq.message.message_thread_id },
+                      )
+                      .catch(() => undefined);
+                  }
+                } catch (error) {
+                  log("WARN", "worktree session", safe(error));
+                  await ack("No se pudo abrir la sesi\u00f3n.");
+                }
                 return;
               }
               if (payload.startsWith("perm2:")) {
