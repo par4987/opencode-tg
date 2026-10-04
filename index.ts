@@ -843,6 +843,24 @@ export default {
      * split on the FIRST ':' only and paths with ':' are rare enough.
      */
     const pendingAttach = new Map<string, { uri: string; name: string }>();
+    /**
+     * /ls keyboard keys. Telegram's callback_data caps at 64 bytes — a deep
+     * path ("lsfile:project/src/components/Navbar.tsx") blows the limit and
+     * Telegram rejects the WHOLE message with BUTTON_DATA_INVALID, which is
+     * why subfolders never appeared. Keys are cheap: the path lives here,
+     * the button only carries a short base-36 index. Old listings beyond
+     * the cap answer "re-abre /ls" — a keyboard is cheap to redraw.
+     */
+    const lsKeys = new Map<string, string>();
+    let lsKeySeq = 0;
+    const lsKeyOf = (rel: string): string => {
+      const key = (++lsKeySeq).toString(36);
+      lsKeys.set(key, rel);
+      if (lsKeys.size > 500) {
+        for (const k of [...lsKeys.keys()].slice(0, 250)) lsKeys.delete(k);
+      }
+      return key;
+    };
     const browseDirectory = async (sessionID: string, directory: string, rel: string): Promise<void> => {
       if (chatId === undefined) return;
       const full = safeResolve(directory, rel);
@@ -870,19 +888,19 @@ export default {
       ];
       const cleanRel = rel.replace(/\\/g, "/");
       const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-      if (cleanRel) rows.push([{ text: "\u2B06 subir", callback_data: `ls:${cleanRel.split("/").slice(0, -1).join("/")}` }]);
+      if (cleanRel) rows.push([{ text: "\u2B06 subir", callback_data: `lsg:${lsKeyOf(cleanRel.split("/").slice(0, -1).join("/"))}` }]);
       for (const entry of shown) {
         const child = cleanRel ? `${cleanRel}/${entry.name}` : entry.name;
         if (entry.dir) {
-          rows.push([{ text: `\u{1F4C1} ${entry.name.slice(0, 50)}`, callback_data: `ls:${child}` }]);
+          rows.push([{ text: `\u{1F4C1} ${entry.name.slice(0, 50)}`, callback_data: `lsg:${lsKeyOf(child)}` }]);
         } else {
           rows.push([
-            { text: `\u{1F4C4} ${entry.name.slice(0, 50)} (${fmtSize(entry.size)})`, callback_data: `lsfile:${child}` },
-            { text: "\u{1F4CE}", callback_data: `lsattach:${child}` },
+            { text: `\u{1F4C4} ${entry.name.slice(0, 50)} (${fmtSize(entry.size)})`, callback_data: `lsd:${lsKeyOf(child)}` },
+            { text: "\u{1F4CE}", callback_data: `lsa:${lsKeyOf(child)}` },
           ]);
         }
       }
-      if (rows.length === 0) rows.push([{ text: "(carpeta vac\u00eda)", callback_data: `ls:${cleanRel}` }]);
+      if (rows.length === 0) rows.push([{ text: "(carpeta vac\u00eda)", callback_data: `lsg:${lsKeyOf(cleanRel)}` }]);
       await telegram
         .sendMessage(chatId, lines.join("\n"), {
           parseMode: "HTML",
@@ -2185,7 +2203,7 @@ export default {
           for (const item of results.slice(0, 25)) {
             const p = String(item.path ?? "");
             if (!p) continue;
-            rows.push([{ text: "\u{1F4C4} " + p.slice(0, 55), callback_data: "lsfile:" + p }]);
+            rows.push([{ text: "\u{1F4C4} " + p.slice(0, 55), callback_data: "lsd:" + lsKeyOf(p) }]);
           }
           if (results.length > 25) rows.push([{ text: `(\u2026y ${results.length - 25} m\u00e1s)`, callback_data: "find:" + query }]);
           if (chatId !== undefined) {
@@ -3423,9 +3441,14 @@ export default {
                 }
                 return;
               }
-              if (payload.startsWith("ls:")) {
-                // ls:<rel> — navigate into a subdirectory of the session's project.
-                const rel = payload.slice(3);
+              if (payload.startsWith("lsg:")) {
+                // lsg:<key> — navigate to the stored rel path.
+                const key = payload.slice(4);
+                const rel = lsKeys.get(key);
+                if (rel === undefined) {
+                  await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
+                  return;
+                }
                 const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                 const sessionID = menuSession ?? targetSession();
                 if (!sessionID) {
@@ -3442,13 +3465,18 @@ export default {
                 await browseDirectory(sessionID, directory, rel);
                 return;
               }
-              if (payload.startsWith("lsfile:")) {
-                // lsfile:<rel> — send the file as a document.
-                const rel = payload.slice(7);
+              if (payload.startsWith("lsd:")) {
+                // lsd:<key> — download the stored file.
+                const key = payload.slice(4);
+                const rel = lsKeys.get(key);
                 const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                 const sessionID = menuSession ?? targetSession();
                 const info = sessionID ? await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined) : undefined;
                 const directory = info?.location?.directory;
+                if (rel === undefined) {
+                  await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
+                  return;
+                }
                 if (!sessionID || !directory || chatId === undefined || !cq.message) {
                   await ack("No pude ubicar el archivo.");
                   return;
@@ -3471,13 +3499,18 @@ export default {
                   });
                 return;
               }
-              if (payload.startsWith("lsattach:")) {
-                // lsattach:<rel> — arm this text file as the next prompt's attachment.
-                const rel = payload.slice(9);
+              if (payload.startsWith("lsa:")) {
+                // lsa:<key> — arm the stored text file as the next attachment.
+                const key = payload.slice(4);
+                const rel = lsKeys.get(key);
                 const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                 const sessionID = menuSession ?? targetSession();
                 const info = sessionID ? await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined) : undefined;
                 const directory = info?.location?.directory;
+                if (rel === undefined) {
+                  await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
+                  return;
+                }
                 if (!sessionID || !directory) {
                   await ack("No pude ubicar el archivo.");
                   return;
