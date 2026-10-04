@@ -2013,8 +2013,20 @@ export default {
             }
             const fs = await import("node:fs");
             fs.writeFileSync(file, edited, "utf8");
+            // The location-reload endpoint (verified live: 204) makes the new
+            // default reach new sessions right away — no server restart.
+            let reloaded = false;
+            try {
+              await forms.request("POST", "/location/reload", {});
+              reloaded = true;
+            } catch (error) {
+              log("WARN", "config reload", safe(error));
+            }
             await reply(
-              `\u2705 Default del proyecto: <code>${escapeHtml(full)}</code>.\n\u{1F504} Aplica a las sesiones NUEVAS tras reiniciar el server.`,
+              `\u2705 Default del proyecto: <code>${escapeHtml(full)}</code>.` +
+                (reloaded
+                  ? " \u{1F504} Recargado \u2014 las sesiones nuevas ya nacen con \u00e9l."
+                  : "\n\u{1F504} Aplica a las sesiones NUEVAS tras reiniciar el server."),
             );
             return;
           }
