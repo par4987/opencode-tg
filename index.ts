@@ -11,7 +11,10 @@
  * is erased at compile time and this folder needs no node_modules.
  */
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { configProviders } from "./src/config-models.js";
+import { projectConfigFile, withDefaultModel } from "./src/config-edit.js";
+import { fmtSize, LS_HIDDEN, safeResolve } from "./src/lsbrowse.js";
 import { decodeText, DOC_MAX_CHARS, isTextLike, saveBinary } from "./src/ingest.js";
 import { describeReplyTarget, extractFilePaths, isForumEcho, qualifyingImage, selectImages, withReplyContext, MAX_IMAGES } from "./src/media-out.js";
 import { sttAvailable, transcribeFile } from "./src/stt.js";
@@ -58,6 +61,8 @@ const HELP = [
   "/archive \u00b7 /unarchive \u00b7 /delthread \u2014 archivar, reabrir o borrar el hilo de una sesi\u00f3n",
   "/compact \u2014 compactar el contexto de la sesi\u00f3n",
   "/usagestats <d\u00edas?> \u2014 tokens y costo de los \u00faltimos d\u00edas",
+  "/ls <carpeta?> \u2014 navegar los archivos del proyecto: toc\u00e1 para descargar, \u{1F4CE} adjunta al pr\u00f3ximo",
+  "/config \u2014 config del proyecto \u00b7 /config model <p/m> cambia el default de sesiones nuevas",
   "Respond\u00e9 a un mensaje con reply para citarlo en tu prompt",
 
   "/skills \u2014 skills instaladas en OpenCode",
@@ -827,6 +832,63 @@ export default {
       return undefined;
     };
 
+    /**
+     * /ls — one directory of the session's project as a tappable listing.
+     * Directories navigate, files download, 📎 arms a file as the next
+     * prompt's attachment. The rel key rides the callback after the
+     * prefix, so a ':' inside a filename shifts the parse — the callbacks
+     * split on the FIRST ':' only and paths with ':' are rare enough.
+     */
+    const pendingAttach = new Map<string, { uri: string; name: string }>();
+    const browseDirectory = async (sessionID: string, directory: string, rel: string): Promise<void> => {
+      if (chatId === undefined) return;
+      const full = safeResolve(directory, rel);
+      if (!full) {
+        await send("Ruta inv\u00e1lida.", sessionID);
+        return;
+      }
+      const fs = await import("node:fs");
+      let entries: Array<{ name: string; dir: boolean; size: number }>;
+      try {
+        entries = fs
+          .readdirSync(full, { withFileTypes: true })
+          .filter((e) => !LS_HIDDEN.has(e.name))
+          .map((e) => ({ name: e.name, dir: e.isDirectory(), size: e.isFile() ? fs.statSync(join(full, e.name)).size : 0 }))
+          .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
+      } catch {
+        await send("No pude leer esa carpeta.", sessionID);
+        return;
+      }
+      const shown = entries.slice(0, 30);
+      const label = rel ? rel.replace(/\\/g, "/") : (directory.split(/[\\/]/).filter(Boolean).pop() ?? "proyecto");
+      const lines = [
+        `\u{1F4C2} <b>${escapeHtml(label)}</b> \u2014 ${entries.length} entradas${entries.length > 30 ? " (primeras 30)" : ""}`,
+        "Carpeta para entrar \u00b7 archivo para descargar \u00b7 \u{1F4CE} lo adjunta al pr\u00f3ximo mensaje.",
+      ];
+      const cleanRel = rel.replace(/\\/g, "/");
+      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+      if (cleanRel) rows.push([{ text: "\u2B06 subir", callback_data: `ls:${cleanRel.split("/").slice(0, -1).join("/")}` }]);
+      for (const entry of shown) {
+        const child = cleanRel ? `${cleanRel}/${entry.name}` : entry.name;
+        if (entry.dir) {
+          rows.push([{ text: `\u{1F4C1} ${entry.name.slice(0, 50)}`, callback_data: `ls:${child}` }]);
+        } else {
+          rows.push([
+            { text: `\u{1F4C4} ${entry.name.slice(0, 50)} (${fmtSize(entry.size)})`, callback_data: `lsfile:${child}` },
+            { text: "\u{1F4CE}", callback_data: `lsattach:${child}` },
+          ]);
+        }
+      }
+      if (rows.length === 0) rows.push([{ text: "(carpeta vac\u00eda)", callback_data: `ls:${cleanRel}` }]);
+      await telegram
+        .sendMessage(chatId, lines.join("\n"), {
+          parseMode: "HTML",
+          messageThreadId: threadOf(sessionID),
+          replyMarkup: { inline_keyboard: rows },
+        })
+        .catch((error) => log("WARN", "ls send", safe(error)));
+    };
+
     /** Replace the form's message with a receipt, and forget it. */
     const closeForm = async (entry: OpenForm, receipt: string): Promise<void> => {
       // A late `form.replied` can race the tap's own close; a second close
@@ -990,6 +1052,16 @@ export default {
         log("ERROR", "form send", safe(error));
       }
       log("INFO", `form ${form.id} en ${form.sessionID.slice(0, 18)} — ${choices.length} campo(s) con opciones, msg=${entry.messageId ?? "?"}`);
+      // Background heads-up: the form lives in its session's thread, but the
+      // user may be looking at any other one. One short line in General keeps
+      // a question in another thread from sitting unseen.
+      if (threadOf(form.sessionID) !== undefined && chatId !== undefined) {
+        void telegram
+          .sendMessage(chatId, `\u{1F4AC} <b>${escapeHtml(entry.title)}</b> tiene una pregunta pendiente \u2014 respondela en su hilo.`, {
+            parseMode: "HTML",
+          })
+          .catch((error) => log("WARN", "form heads-up", safe(error)));
+      }
     };
 
     /**
@@ -1553,6 +1625,8 @@ export default {
     const commands = [
       { command: "help", description: "Show this help" },
       { command: "sessions", description: "Sessions seen by the server" },
+      { command: "ls", description: "Browse project files: /ls [folder]" },
+      { command: "config", description: "Project config: /config model <provider/model>" },
       { command: "use", description: "Where prompts go: /use <id>" },
       { command: "watch", description: "Watch a session: /watch <id|all|off>" },
       { command: "send", description: "Send a prompt: /send <id> <text>" },
@@ -1875,6 +1949,115 @@ export default {
               `log: <code>~/.opencode/tg/logs/plugin.log</code>`,
             ].join("\n"),
           );
+          return;
+        }
+
+        case "config": {
+          // /config — the project's opencode.jsonc from the phone: read the
+          // key facts, or /config model <provider/model> to change the
+          // default every NEW session is born with.
+          const target = threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto), o <code>/use</code> primero.");
+            return;
+          }
+          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+          const directory = info?.location?.directory;
+          if (!directory) {
+            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            return;
+          }
+          const sub = (argument.split(/\s+/)[0] ?? "").toLowerCase();
+          const rest = argument.slice(sub.length).trim();
+          if (sub === "model") {
+            if (!rest) {
+              await reply("Decime el modelo: <code>/config model proveedor/modelo</code> \u2014 <code>/models</code> los lista.");
+              return;
+            }
+            // Validate against the live catalogue: a typo would silently
+            // break every new session in the project.
+            const catalogue = await ctx.model.list().then((res) => res.data ?? []).catch(() => []);
+            const hit = catalogue.find(
+              (m) => `${m.providerID}/${m.modelID}` === rest || m.modelID === rest,
+            );
+            if (!hit) {
+              await reply(`No encuentro <code>${escapeHtml(rest)}</code> en el cat\u00e1logo \u2014 mir\u00e1 <code>/models</code>`);
+              return;
+            }
+            const full = `${hit.providerID}/${hit.modelID}`;
+            let file = projectConfigFile(directory);
+            let raw: string | undefined;
+            if (file) {
+              raw = (await import("node:fs")).readFileSync(file, "utf8");
+            } else {
+              // No project config yet: create the JSONC form.
+              file = join(directory, "opencode.jsonc");
+              raw = "{}";
+            }
+            if (!file || raw === undefined) {
+              await reply("No pude ubicar el config del proyecto.");
+              return;
+            }
+            const edited = withDefaultModel(raw, full);
+            if (!edited) {
+              await reply("El config del proyecto no parece JSON/JSONC v\u00e1lido \u2014 no toqu\u00e9 nada.");
+              return;
+            }
+            // Prove the edit still parses before it touches disk.
+            const { stripJsonc } = await import("./src/config-models.js");
+            try {
+              JSON.parse(stripJsonc(edited));
+            } catch {
+              await reply("La edici\u00f3n no compuso un JSON v\u00e1lido \u2014 no toqu\u00e9 nada.");
+              return;
+            }
+            const fs = await import("node:fs");
+            fs.writeFileSync(file, edited, "utf8");
+            await reply(
+              `\u2705 Default del proyecto: <code>${escapeHtml(full)}</code>.\n\u{1F504} Aplica a las sesiones NUEVAS tras reiniciar el server.`,
+            );
+            return;
+          }
+          // Read view: the key facts of the project config.
+          const file = projectConfigFile(directory);
+          if (!file) {
+            await reply(`Este proyecto no tiene <code>opencode.jsonc</code> \u2014 el default viene de la config global.`);
+            return;
+          }
+          const { stripJsonc } = await import("./src/config-models.js");
+          const parsed = (await import("node:fs")).readFileSync(file, "utf8");
+          try {
+            const cfg = JSON.parse(stripJsonc(parsed)) as Record<string, unknown>;
+            const lines = [`\u{1F527} <b>Config del proyecto</b> \u00b7 <code>${escapeHtml((directory.split(/[\\/]/).filter(Boolean).pop() ?? directory))}</code>`];
+            lines.push(`Modelo default: <code>${escapeHtml(typeof cfg.model === "string" ? cfg.model : "(ninguno \u2014 global)")}</code>`);
+            if (cfg.agents && typeof cfg.agents === "object") lines.push(`Agents custom: ${Object.keys(cfg.agents as object).length}`);
+            if (cfg.mcp && typeof cfg.mcp === "object" && "servers" in (cfg.mcp as object)) {
+              lines.push(`MCP servers: ${Object.keys((cfg.mcp as Record<string, unknown>).servers as object).join(", ")}`);
+            }
+            if (Array.isArray(cfg.permissions)) lines.push(`Reglas de permiso: ${cfg.permissions.length}`);
+            lines.push(`\nCambiar default: <code>/config model proveedor/modelo</code>`);
+            await reply(lines.join("\n"));
+          } catch {
+            await reply("El config del proyecto no parsea \u2014 revisalo en la PC.");
+          }
+          return;
+        }
+
+        case "ls": {
+          // /ls — browse the project from the phone: see what the agent sees,
+          // download files by tapping, attach one to the next prompt.
+          const target = threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
+            return;
+          }
+          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+          const directory = info?.location?.directory;
+          if (!directory) {
+            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            return;
+          }
+          await browseDirectory(target, directory, argument.trim());
           return;
         }
 
@@ -2750,6 +2933,15 @@ export default {
                 parseMode: "HTML", messageThreadId: threadOf(sessionID), replyMarkup: keyboard,
               })
               .catch((error) => log("WARN", "perm send", safe(error)));
+            // Background heads-up — same reasoning as the form's: the request
+            // sits in its thread, this line makes sure General says so.
+            if (threadOf(sessionID) !== undefined) {
+              void telegram
+                .sendMessage(chatId, `\u{1F510} <b>${escapeHtml(session.title)}</b> pide un permiso \u2014 su hilo espera tu respuesta.`, {
+                  parseMode: "HTML",
+                })
+                .catch((error) => log("WARN", "perm heads-up", safe(error)));
+            }
           }
           return;
         }
@@ -2965,6 +3157,13 @@ export default {
                   await send("No s\u00e9 a qu\u00e9 sesi\u00f3n \u2014 escrib\u00ed en el hilo de una sesi\u00f3n, o /use primero.", byThread);
                   return;
                 }
+                // An armed /ls attachment rides along with this text.
+                const attached = pendingAttach.get(target);
+                if (attached) {
+                  pendingAttach.delete(target);
+                  await sendPrompt(prompt, byThread, [attached]);
+                  return;
+                }
                 // Coalesce: an idle session takes the short window; a busy one
                 // takes a slightly wider burst window — rapid follow-ups
                 // still merge, but the batch reaches the server's inbox (and
@@ -3018,6 +3217,86 @@ export default {
                 }
                 await ack("Esta pregunta ya no está activa");
               };
+              if (payload.startsWith("ls:")) {
+                // ls:<rel> — navigate into a subdirectory of the session's project.
+                const rel = payload.slice(3);
+                const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
+                const sessionID = menuSession ?? targetSession();
+                if (!sessionID) {
+                  await ack("No s\u00e9 a qu\u00e9 proyecto \u2014 abrilo en el hilo de una sesi\u00f3n.");
+                  return;
+                }
+                const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined);
+                const directory = info?.location?.directory;
+                if (!directory) {
+                  await ack("No pude ver el proyecto.");
+                  return;
+                }
+                await ack();
+                await browseDirectory(sessionID, directory, rel);
+                return;
+              }
+              if (payload.startsWith("lsfile:")) {
+                // lsfile:<rel> — send the file as a document.
+                const rel = payload.slice(7);
+                const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
+                const sessionID = menuSession ?? targetSession();
+                const info = sessionID ? await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined) : undefined;
+                const directory = info?.location?.directory;
+                if (!sessionID || !directory || chatId === undefined || !cq.message) {
+                  await ack("No pude ubicar el archivo.");
+                  return;
+                }
+                const full = safeResolve(directory, rel);
+                if (!full || !existsSync(full)) {
+                  await ack("El archivo ya no est\u00e1.");
+                  return;
+                }
+                const size = (await import("node:fs")).statSync(full).size;
+                if (size > 45 * 1024 * 1024) {
+                  await ack("Supera los 45 MB de Telegram.");
+                  return;
+                }
+                await ack("Enviando\u2026");
+                await telegram
+                  .sendDocument(chatId, full, { messageThreadId: cq.message.message_thread_id })
+                  .catch((error) => {
+                    log("WARN", "ls download", safe(error));
+                  });
+                return;
+              }
+              if (payload.startsWith("lsattach:")) {
+                // lsattach:<rel> — arm this text file as the next prompt's attachment.
+                const rel = payload.slice(9);
+                const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
+                const sessionID = menuSession ?? targetSession();
+                const info = sessionID ? await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined) : undefined;
+                const directory = info?.location?.directory;
+                if (!sessionID || !directory) {
+                  await ack("No pude ubicar el archivo.");
+                  return;
+                }
+                const full = safeResolve(directory, rel);
+                if (!full || !existsSync(full)) {
+                  await ack("El archivo ya no est\u00e1.");
+                  return;
+                }
+                const fs = await import("node:fs");
+                const size = fs.statSync(full).size;
+                const name = full.split(/[\\/]/).pop() ?? "archivo";
+                if (!isTextLike(name, "", Buffer.alloc(0))) {
+                  await ack("Solo archivos de texto se adjuntan \u2014 el binario descargalo.");
+                  return;
+                }
+                if (size > 200 * 1024) {
+                  await ack("Muy grande para adjuntar (l\u00edmite 200 KB) \u2014 descargalo.");
+                  return;
+                }
+                const content = decodeText(fs.readFileSync(full));
+                pendingAttach.set(sessionID, { uri: `data:text/plain;filename="${encodeURIComponent(name)}";base64,${Buffer.from(content, "utf8").toString("base64")}`, name });
+                await ack("Adjuntado \u2014 tu pr\u00f3ximo mensaje lo lleva al agente");
+                return;
+              }
               if (payload.startsWith("perm2:")) {
                 // Real contract (from @opencode/client): POST to
                 // /session/{sid}/permission/{requestID}/reply with

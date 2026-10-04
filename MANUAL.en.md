@@ -82,6 +82,8 @@ answered — with **all the answers together**.
 
 - **Single questions**: inline **buttons** in the topic. Tap an option and
   the turn continues. Free-text answers go by their number, or `/txt <your answer>`.
+- If a question or permission arrives while you are reading another thread,
+  **General gets a short heads-up** pointing at it.
 - **Permissions**: when the agent needs an approval you get a message with
   **[✅ Allow] [🔁 Always] [✖ Deny]**. "Always" saves the rule — the server
   won't ask again for that pattern. Tap and the turn continues without
@@ -105,6 +107,8 @@ answered — with **all the answers together**.
 | `/send <id> <text>` | Send a prompt to a session without switching topics |
 | `/menu` | Main menu with buttons |
 | `/usage` | Current model usage (tokens and cost of the project) |
+| `/ls` | Browse the project's files from the phone — tap a folder to enter, a file to download, 📎 to attach it to your next message |
+| `/config` | See the project's config (default model, agents, MCP, permissions) — `/config model <provider/model>` changes the default for new sessions |
 
 ### Agent setup
 

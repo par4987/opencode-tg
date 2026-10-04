@@ -69,10 +69,10 @@ los oculta por completo.
 
 ## Preguntas y permisos: respondé desde el teléfono
 
-- **Preguntas**: cuando el agente usa la herramienta de pregunta, el hilo
-  muestra la pregunta con **botones inline**. Tocás la opción y el turno
-  sigue. Las preguntas de texto libre se responden con su número o con
-  `/txt <tu respuesta>` si preferís escribir.
+- **Preguntas de una sola opción**: **botones inline** en el hilo. Tocás la opción
+  y el turno sigue. Las de texto libre van con su número, o `/txt <tu respuesta>`.
+- Si una pregunta o permiso llega mientras estás viendo otro hilo, **el General
+  recibe un aviso corto** apuntando a él.
 - **Permisos**: si el agente necesita aprobación para algo, llega un mensaje
   con **[✅ Aprobar] [✖ Rechazar]**. Tocás y el turno continúa sin abrir la PC.
 
@@ -94,6 +94,8 @@ los oculta por completo.
 | `/send <id> <texto>` | Manda un prompt a una sesión sin cambiar de hilo |
 | `/menu` | Menú principal con botones |
 | `/usage` | Uso actual del modelo (tokens y costo del proyecto) |
+| `/ls` | Navegar los archivos del proyecto desde el teléfono — carpeta para entrar, archivo para descargarlo, 📎 para adjuntarlo al próximo mensaje |
+| `/config` | Ver el config del proyecto (modelo default, agents, MCP, permisos) — `/config model <proveedor/modelo>` cambia el default para sesiones nuevas |
 
 ### Configuración del agente
 

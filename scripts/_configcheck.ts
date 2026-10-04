@@ -1,6 +1,11 @@
 /** config-models checks: JSONC parsing and the config→catalogue mapping. */
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { stripJsonc, parseConfigModels, configProviders, type ConfigProvider } from "../src/config-models.js";
 import { loadConfig } from "../src/config.js";
+import { projectConfigFile, withDefaultModel } from "../src/config-edit.js";
+import { safeResolve } from "../src/lsbrowse.js";
 
 let failures = 0;
 let total = 0;
@@ -153,12 +158,58 @@ process.env.TG_COALESCE_BUSY_MS = "abc";
 check("coalesceBusyMs: no numerico usa default 8000", loadConfig().coalesceBusyMs === 8000);
 delete process.env.TG_COALESCE_BUSY_MS;
 
+// ── config-edit: el default de modelo del proyecto ──────────────────────────
+
+check(
+  "withDefaultModel reemplaza el model existente",
+  withDefaultModel('{\n  // comment\n  "model": "nvidia/z-ai/glm-5.3",\n  "mcp": {}\n}', "zai/glm-5.3") ===
+    '{\n  // comment\n  "model": "zai/glm-5.3",\n  "mcp": {}\n}',
+);
+check(
+  "withDefaultModel inserta cuando no habia model",
+  withDefaultModel('{\n  "schema": "x"\n}', "nvidia/z-ai/glm-5.3") === '{\n  "model": "nvidia/z-ai/glm-5.3",\n  "schema": "x"\n}',
+);
+check("withDefaultModel sin llave → undefined", withDefaultModel("no json", "a/b") === undefined);
+check("withDefaultModel con modelo invalido → undefined", withDefaultModel('{"model": "x"}', "modelo con espacios") === undefined);
+check(
+  "withDefaultModel: el resultado sigue parseando como JSONC",
+  (() => {
+    const raw = '{\n  // Mi config\n  "model": "nvidia/z-ai/glm-5.3",\n  "mcp": { "servers": {} }\n}';
+    const edited = withDefaultModel(raw, "zai/glm-5.3-flash");
+    if (!edited) return false;
+    const parsed = JSON.parse(stripJsonc(edited)) as { model?: string };
+    return parsed.model === "zai/glm-5.3-flash";
+  })(),
+);
+check(
+  "projectConfigFile prefiere jsonc sobre json",
+  (() => {
+    const dir = mkdtempSync(join(tmpdir(), "cfgedit-"));
+    writeFileSync(join(dir, "opencode.json"), "{}");
+    let f = projectConfigFile(dir);
+    const jsonOnly = f !== undefined && f.endsWith("opencode.json");
+    writeFileSync(join(dir, "opencode.jsonc"), "{}");
+    f = projectConfigFile(dir);
+    const jsoncWins = f !== undefined && f.endsWith("opencode.jsonc");
+    rmSync(dir, { recursive: true, force: true });
+    return jsonOnly && jsoncWins;
+  })(),
+);
+
 process.env.TG_SUBAGENTS = "off";
 check("subagents: TG_SUBAGENTS=off", loadConfig().subagents === "off");
 process.env.TG_SUBAGENTS = "mirror";
 check("subagents: mirror explicito", loadConfig().subagents === "mirror");
 delete process.env.TG_SUBAGENTS;
 check("subagents: default mirror", loadConfig().subagents === "mirror");
+
+// ── safeResolve: el guard de navegacion de /ls ──────────────────────────────
+
+check("safeResolve: raiz con rel vacia", safeResolve("E:/proj", "") === "E:/proj");
+check("safeResolve: subcarpeta", safeResolve("E:/proj", "src/app.ts") === join("E:/proj", "src", "app.ts"));
+check("safeResolve: backslashes normalizados", safeResolve("E:/proj", "src\\app.ts") === join("E:/proj", "src", "app.ts"));
+check("safeResolve: '..' bloqueado", safeResolve("E:/proj", "../otro") === undefined);
+check("safeResolve: escape con partes bloqueado", safeResolve("E:/proj", "src/../../otro") === undefined);
 
 console.log(failures === 0 ? `\nCONFIGCHECK OK (${total})` : `\nCONFIGCHECK ${failures} FALLOS de ${total}`);
 process.exit(failures === 0 ? 0 : 1);
