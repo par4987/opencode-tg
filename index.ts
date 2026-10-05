@@ -773,11 +773,19 @@ export default {
             topicStore,
             chatId,
             telegram,
-            (id: string) => {
+            async (id: string) => {
               const tracked = sessions.get(id);
+              // The live title first: the server knows the CURRENT name
+              // (the desktop shows it); the tracked map and the disk json
+              // are fallbacks for sessions this server does not hold.
+              const live = await forms
+                .request<ApiSession>("GET", "/session/" + encodeURIComponent(id))
+                .then((info) => info?.title?.trim() ?? "")
+                .catch(() => "");
+              const base = live || tracked?.title || readSessionMeta(id)?.title || "";
               // A subagent's topic is born badged: the forum reads "child of
               // something" at a glance, exactly like the desktop's task view.
-              return tracked?.parentID ? `\u{1F916} ${tracked.title}` : (tracked?.title ?? "");
+              return tracked?.parentID ? `\u{1F916} ${base}` : base;
             },
             () => {
               // Topics are unavailable for this bot: stop trying and keep the
@@ -802,6 +810,37 @@ export default {
         log("INFO", `hilo ${tid} borrado desde el teléfono — mapeo soltado, se recrea con el próximo evento (${sid.slice(0, 18)})`);
       };
     }
+    /**
+     * The live title beats every cached copy — this is the rename safety
+     * net. `session.renamed` is the primary sync, but it only reaches the
+     * pump of the process hosting the session WHILE the plugin watches: a
+     * rename landing during a restart, a hung turn, or before the
+     * subscription took is missed forever, and the topic wears its birth
+     * name (measured: the desktop said "Bot Telegram" while the thread
+     * still carried its September name). Throttled from track() — the hot
+     * path stays cheap, and any active session heals within minutes.
+     */
+    const titleSyncAt = new Map<string, number>();
+    const syncSessionTitle = async (sessionID: string): Promise<void> => {
+      if (topicStore?.isArchived(sessionID) === true) return;
+      try {
+        const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID));
+        const fresh = info?.title?.trim();
+        const session = sessions.get(sessionID);
+        if (!fresh || !session || fresh === session.title) return;
+        const old = session.title;
+        session.title = fresh;
+        const tid = topicStore?.get(sessionID);
+        if (tid !== undefined && chatId !== undefined) {
+          const name = session.parentID ? `\u{1F916} ${fresh}` : fresh;
+          await telegram.editForumTopic(chatId, tid, name.slice(0, 128)).catch(() => undefined);
+        }
+        log("INFO", `t\u00edtulo sincronizado ("${old.slice(0, 24)}" \u2192 "${fresh.slice(0, 24)}"): ${sessionID.slice(0, 18)}`);
+      } catch {
+        /* not in this server (or the API is down): the event path and the
+           next throttle window carry it */
+      }
+    };
     const track = (id: string): TrackedSession => {
       // A closed thread whose session woke up: reopen it and pick the
       // mirroring back up where it left off.
@@ -843,6 +882,11 @@ export default {
       }
       session.lastSeen = Date.now();
       session.idle = false;
+      // Rename drift check, throttled: one API probe per session per 5 min.
+      if (!dry && (titleSyncAt.get(id) ?? 0) < Date.now() - 5 * 60_000) {
+        titleSyncAt.set(id, Date.now());
+        void syncSessionTitle(id);
+      }
       return session;
     };
     /**
@@ -3167,7 +3211,14 @@ export default {
             log("WARN", "unarchive", safe(error));
             topicStore.setArchived(target, false);
             const tracked = sessions.get(target);
-            const raw = (tracked?.title ?? target.slice(0, 18)).replace(/^📦 /, "");
+            // The live title first — a woken thread must wear the name the
+            // desktop shows, not the cached one.
+            const live = await forms
+              .request<ApiSession>("GET", "/session/" + encodeURIComponent(target))
+              .then((info) => info?.title?.trim() ?? "")
+              .catch(() => "");
+            if (live && tracked && tracked.title !== live) tracked.title = live;
+            const raw = (live || tracked?.title || target.slice(0, 18)).replace(/^📦 /, "");
             // If the old topic still lives (a forum archive, or the badge-only
             // one), dropping the badge is the whole wake-up — a rename that
             // lands proves the thread exists.

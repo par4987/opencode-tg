@@ -130,7 +130,14 @@ export class TopicResolver {
     private readonly store: TopicStore,
     private readonly chatId: number,
     private readonly telegram: { createForumTopic: (chatId: number, name: string) => Promise<number | undefined> },
-    private readonly titleOf: (sessionId: string) => string,
+    /**
+     * The name a new topic gets. May be async: the live title from the
+     * server beats every cached copy — a topic (re)born must carry the
+     * name the desktop shows, not the stale `<id>.json` (measured: a
+     * thread recreated after a native delete wore its September name
+     * while the session had long been "Bot Telegram").
+     */
+    private readonly titleOf: (sessionId: string) => string | Promise<string>,
     private readonly onUnavailable?: () => void,
   ) {}
 
@@ -148,7 +155,7 @@ export class TopicResolver {
   }
 
   private async create(sessionId: string): Promise<void> {
-    const title = this.titleOf(sessionId).trim() || sessionId.slice(0, 24);
+    const title = ((await this.titleOf(sessionId)) ?? "").trim() || sessionId.slice(0, 24);
     try {
       const threadId = await this.telegram.createForumTopic(this.chatId, title);
       if (threadId !== undefined) this.store.set(sessionId, threadId);

@@ -208,6 +208,10 @@ allowed-chats list in `~/.opencode/tg/.env`.
   new one with `/new`. The project commands (`/ls`, `/git`, `/find`,
   `/config`, `/worktree`) and `/export` keep working regardless because
   they read from disk.
+- **The thread's name follows the session's title**: when the desktop
+  renames a session, the thread renames itself — and a rename lost to a
+  restart is caught by a drift check within 5 minutes of the next
+  activity.
 - Inline texts travel complete in numbered parts; anything over 12 KB
   rides as a document.
 

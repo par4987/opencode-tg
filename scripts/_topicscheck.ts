@@ -82,6 +82,33 @@ async function main(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 30));
   check("se notifica la baja (una vez)", downgraded === 1, `${downgraded} bajas`);
   check("sin hilo tras la baja", resolver3.get("ses_z") === undefined);
+
+  // 4. Async titleOf: a topic (re)born must await the LIVE title — the
+  //    server's current name, not a cached copy (the drift incident: a
+  //    recreated thread wore its September name while the desktop said
+  //    "Bot Telegram").
+  const calls4: Array<{ chatId: number; name: string }> = [];
+  const stub4 = {
+    async createForumTopic(chatId: number, name: string): Promise<number | undefined> {
+      calls4.push({ chatId, name });
+      return 888;
+    },
+  };
+  const store4 = new TopicStore(444, FILE);
+  const resolver4 = new TopicResolver(
+    store4,
+    444,
+    stub4,
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return "Titulo vivo del server";
+    },
+    () => undefined,
+  );
+  resolver4.get("ses_w");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  check("titleOf async: el topico nace con el titulo resuelto", calls4[0]?.name === "Titulo vivo del server", calls4[0]?.name ?? "sin llamadas");
+  check("y el mapeo quedo", store4.get("ses_w") === 888);
 }
 
 void main()
