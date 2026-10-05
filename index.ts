@@ -384,13 +384,30 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
       if (needsLock) releaseLock();
       throw error;
     }
-    // Keep proving we are alive, and step down if another process took the
-    // lock from us — the file is the arbiter, not our own belief that we won.
-    // Also check our own stream: the pump can end silently when OpenCode
-    // dismantles the instance, and a dead leader must make room rather than
-    // hold the lock while pumping nothing.
-    timer = setInterval(() => {
-      if (reg.leader !== guarded) return;
+  } else {
+    const reason = reg.leader ? "líder en este proceso" : "líder en otro proceso";
+    log("INFO", `instancia en espera (${reason}; ${reg.members.size} en el proceso)`);
+  }
+
+  /**
+   * The watchdog EVERY instance runs, leader or waiter. Before this, only a
+   * joining leader ever got a monitor: a leader installed by hand-off never
+   * did, and when its poll hung mid-handler the lock heartbeat froze with
+   * it — no waiting instance ever re-contested (they only tried once, at
+   * join), and an "alive but silent" holder could not be replaced. The
+   * bridge went silent for every process until a manual restart. One tick
+   * per instance closes all three gaps: it watches WHOEVER holds the
+   * registry seat (hand-off leaders included), replaces one whose poll
+   * heartbeat froze, and re-contests a leaderless seat the lock says is
+   * contestable.
+   */
+  timer = setInterval(() => {
+    const leader = reg.leader;
+    if (leader === guarded) {
+      // We lead: the file is the arbiter, not our own belief that we won,
+      // and a frozen pollAlive means the loop is stuck inside one call or
+      // one handler — make room rather than hold the seat while polling
+      // nothing.
       const holder = lockHeldBy();
       if (needsLock && holder !== process.pid) {
         log("WARN", `lock perdido (lo tiene #${holder ?? "?"}) — este proceso deja de sondear`);
@@ -401,33 +418,76 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
       }
       const alive = guarded.alive ? guarded.alive() : true;
       if (!alive) {
-        log("WARN", "líder muerto: el stream se cerró; cediendo el liderazgo");
+        log("WARN", "l\u00edder muerto: el stream o el poll se congel\u00f3; cediendo el asiento");
         reg.leader = undefined;
         reg.leaderMode = undefined;
-        if (needsLock) releaseLock();
-        void guarded.stop().catch((error) => log("ERROR", "stop del líder muerto", safe(error)));
+        void guarded.stop().catch((error) => log("ERROR", "stop del l\u00edder muerto", safe(error)));
         // Hand the seat to a *different* live member: picking ourselves would
-        // restart the same dead instance and loop forever.
+        // restart the same dead instance and loop forever. If there is none,
+        // the seat stays open for any other process to contest below — and
+        // this process's own waiters will keep watching.
         const next = [...reg.members].find((member) => member !== instance);
-        if (!next) return;
-        const wrapper = reg.wrappers.get(next);
-        if (!wrapper) return;
-        reg.leader = wrapper;
-        reg.leaderMode = reg.memberModes.get(next);
-        log("INFO", "traspaso de liderazgo a otra instancia");
-        wrapper.start().catch((error) => {
-          reg.leader = undefined;
-          reg.leaderMode = undefined;
-          log("ERROR", "traspaso", safe(error));
-        });
+        const wrapper = next ? reg.wrappers.get(next) : undefined;
+        if (next && wrapper) {
+          reg.leader = wrapper;
+          reg.leaderMode = reg.memberModes.get(next);
+          log("INFO", "traspaso de liderazgo a otra instancia");
+          wrapper.start().catch((error) => {
+            if (reg.leader === wrapper) {
+              reg.leader = undefined;
+              reg.leaderMode = undefined;
+            }
+            log("ERROR", "traspaso", safe(error));
+          });
+          // The lock stays with this pid: the promoted member refreshes its
+          // heartbeat on its own next tick. Releasing here would open a
+          // window where another process grabs the lock mid-hand-off while
+          // our own replacement is already starting to poll.
+        } else if (needsLock) {
+          releaseLock();
+        }
         return;
       }
       if (needsLock) heartbeat();
-    }, LOCK_INTERVAL);
-  } else {
-    const reason = reg.leader ? "líder en este proceso" : "líder en otro proceso";
-    log("INFO", `instancia en espera (${reason}; ${reg.members.size} en el proceso)`);
-  }
+      return;
+    }
+    if (leader) {
+      // Another member of THIS process holds the seat. Its own watchdog may
+      // be the piece that died — watch it: a leader nobody watches is how
+      // the bridge went dark for good.
+      const holder = lockHeldBy();
+      if (needsLock && holder !== process.pid) {
+        log("WARN", `lock en manos de #${holder ?? "?"} — el líder local cede el asiento`);
+        reg.leader = undefined;
+        reg.leaderMode = undefined;
+        void leader.stop().catch((error) => log("ERROR", "stop del líder con lock ajeno", safe(error)));
+      } else {
+        const alive = leader.alive ? leader.alive() : true;
+        if (alive) return;
+        log("WARN", "líder local muerto — el asiento queda libre");
+        reg.leader = undefined;
+        reg.leaderMode = undefined;
+        void leader.stop().catch((error) => log("ERROR", "stop del líder muerto", safe(error)));
+      }
+    }
+    // The seat is empty and we are alive: contest it. Waiting instances
+    // never re-tried before — a leaderless bridge stayed leaderless until a
+    // restart. The lock decides: a fresh foreign holder keeps it, a dead or
+    // wedged one does not (see leader.ts for the wedge margin).
+    if (!needsLock || acquireLock()) {
+      reg.leader = guarded;
+      reg.leaderMode = mode;
+      log("INFO", `toma el liderazgo (pid ${process.pid})`);
+      guarded.start().catch((error) => {
+        if (reg.leader === guarded) {
+          reg.leader = undefined;
+          reg.leaderMode = undefined;
+        }
+        if (needsLock) releaseLock();
+        log("ERROR", "toma de liderazgo", safe(error));
+      });
+    }
+  }, LOCK_INTERVAL);
 
   return async () => {
     reg.members.delete(instance);
@@ -726,6 +786,22 @@ export default {
             },
           )
         : null;
+    if (telegram instanceof Telegram && topicStore) {
+      // A topic deleted on the phone (Telegram's own "delete thread") leaves
+      // a stale mapping behind: the resolver would keep sending into a
+      // grave forever. When the transport hits "message thread not found"
+      // it calls this — the mapping goes, the archived flag survives (a
+      // deleted window on an archived session must not resurrect it), and
+      // the next event builds the fresh topic.
+      telegram.onDeadThread = (_chatId, tid) => {
+        const sid = topicStore.sessionOf(tid);
+        if (sid === undefined) return;
+        const wasArchived = topicStore.isArchived(sid);
+        topicStore.remove(sid);
+        if (wasArchived) topicStore.setArchived(sid, true);
+        log("INFO", `hilo ${tid} borrado desde el teléfono — mapeo soltado, se recrea con el próximo evento (${sid.slice(0, 18)})`);
+      };
+    }
     const track = (id: string): TrackedSession => {
       // A closed thread whose session woke up: reopen it and pick the
       // mirroring back up where it left off.
@@ -733,9 +809,22 @@ export default {
         topicStore.setArchived(id, false);
         const tid = topicStore.get(id);
         if (chatId !== undefined && tid !== undefined) {
-          void telegram.reopenForumTopic(chatId, tid).catch((error) => log("WARN", "reopen", safe(error)));
+          void telegram
+            .reopenForumTopic(chatId, tid)
+            .then(() => log("INFO", "sesi\u00f3n revivida \u2014 hilo reabierto: " + id.slice(0, 18)))
+            .catch((error) => {
+              if (!/not a supergroup/i.test(String((error as Error)?.message ?? ""))) {
+                log("WARN", "reopen", safe(error));
+                return;
+              }
+              // Private chat: the archive DELETED the topic, so there is
+              // nothing to reopen. Drop the mapping and let the resolver
+              // build the window fresh on the next event — one straggler
+              // in the root, then business as usual in the new thread.
+              topicStore.remove(id);
+              log("INFO", "sesi\u00f3n revivida \u2014 hilo se recrea con el pr\u00f3ximo evento: " + id.slice(0, 18));
+            });
         }
-        log("INFO", "sesi\u00f3n revivida \u2014 hilo reabierto: " + id.slice(0, 18));
       }
       let session = sessions.get(id);
       if (!session) {
@@ -767,6 +856,27 @@ export default {
       topicStore?.isArchived(id) !== true;
     const threadOf = (id: string | undefined): number | undefined =>
       id ? (isWatched(id) ? topicResolver?.get(id) : undefined) : undefined;
+
+    /**
+     * Archive a thread the way THIS chat can. In a supergroup forum that is
+     * Telegram's own `close` (visible, read-only, reopenable). A private
+     * chat cannot close topics (verified live: "the chat is not a
+     * supergroup") but CAN delete them — so there, archive means what the
+     * phone expects: the thread leaves the chat and the session stays
+     * silent until /unarchive (or a revival) rebuilds the window.
+     */
+    const archiveThread = (tid: number): void => {
+      if (chatId === undefined) return;
+      void telegram.closeForumTopic(chatId, tid).catch((error) => {
+        if (!/not a supergroup/i.test(String((error as Error)?.message ?? ""))) {
+          log("WARN", "archive", safe(error));
+          return;
+        }
+        telegram
+          .deleteForumTopic(chatId, tid)
+          .catch((delError) => log("WARN", "archive delete", safe(delError)));
+      });
+    };
 
     const renderer = new TurnRenderer(
       telegram, chatId ?? 0, config.render, isWatched,
@@ -1369,7 +1479,7 @@ export default {
     };
     /**
      * The question for the wizard's current step, numbered and with the
-     * progress so far â€” the same function serves a fresh step, a re-ask after
+     * progress so far — the same function serves a fresh step, a re-ask after
      * a bad answer, and the resume after a restart ate the live one.
      */
     const wizardAsk = async (thread?: string): Promise<void> => {
@@ -1594,7 +1704,7 @@ export default {
         const tid = topicStore.get(s.id);
         if (tid === undefined || topicStore.isArchived(s.id)) continue;
         topicStore.setArchived(s.id, true);
-        void telegram.closeForumTopic(chatId, tid).catch((error) => log("WARN", "auto archive", safe(error)));
+        archiveThread(tid);
         log("INFO", "auto-archivada (" + days + "d sin actividad): " + s.id.slice(0, 18));
       }
     };
@@ -1707,8 +1817,8 @@ export default {
       { command: "newtask", description: "Create a scheduled task" },
       { command: "new", description: "New session: /new <title?>" },
       { command: "skill", description: "Run a skill prompt: /skill <id> <text>" },
-      { command: "archive", description: "Close a session\u0027s thread (archive)" },
-      { command: "unarchive", description: "Reopen an archived thread" },
+      { command: "archive", description: "Archive a session's thread (closes or removes it)" },
+      { command: "unarchive", description: "Wake an archived session — rebuilds its thread" },
       { command: "delthread", description: "Delete a session\u0027s thread" },
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
@@ -3019,17 +3129,20 @@ export default {
             await reply("\u{1F4E6} Hilo archivado (cerrado, no se puede escribir) \u2014 <code>/unarchive</code> lo reabre. Si la sesi\u00f3n revive, se reabre sola.");
           } catch (error) {
             log("WARN", "archive", safe(error));
-            // Private chats cannot close or reopen topics (verified live:
-            // "the chat is not a supergroup") but they CAN rename them.
-            // Archive on the plugin's side — silence: no mirror, no typing,
-            // no prompts into it — and badge the title so the forum reads
-            // "parked" at a glance.
+            if (!/not a supergroup/i.test(String((error as Error)?.message ?? ""))) {
+              await reply("\u274C No se pudo archivar: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+              return;
+            }
+            // A private chat cannot close topics (verified live: "the chat
+            // is not a supergroup") but CAN delete them — so archive here is
+            // what the phone expects: the thread leaves the chat, the
+            // session goes silent, and /unarchive rebuilds the window.
             topicStore.setArchived(target, true);
-            const tracked = sessions.get(target);
-            const name = `\u{1F4E6} ${tracked?.title ?? target.slice(0, 18)}`.slice(0, 128);
-            await telegram.editForumTopic(chatId, tid, name).catch(() => undefined);
-            await reply(
-              "\u{1F4E6} Archivado (silenciado): Telegram no permite cerrar t\u00f3picos en un chat privado \u2014 el hilo queda visible pero mudo, sin espejo ni avisos. <code>/unarchive</code> lo despierta.",
+            await telegram.deleteForumTopic(chatId, tid).catch((delError) => log("WARN", "archive delete", safe(delError)));
+            // The confirmation cannot ride the thread that just died — it
+            // goes to the chat root.
+            await send(
+              "\u{1F4E6} Archivado \u2014 hilo eliminado del chat y sesi\u00f3n silenciada. <code>/unarchive</code> lo trae de vuelta cuando quieras.",
             );
           }
           return;
@@ -3052,15 +3165,32 @@ export default {
             await reply("\u{1F4C2} Hilo reabierto.");
           } catch (error) {
             log("WARN", "unarchive", safe(error));
-            // The private-chat fallback: nothing was closed on Telegram's
-            // side, so waking it up is clearing our flag and dropping the
-            // badge from the title.
             topicStore.setArchived(target, false);
             const tracked = sessions.get(target);
-            const raw = tracked?.title ?? target.slice(0, 18);
-            const name = raw.startsWith("\u{1F4E6} ") ? raw.slice(3) : raw;
-            await telegram.editForumTopic(chatId, tid, name.slice(0, 128)).catch(() => undefined);
-            await reply("\u{1F4C2} Despertado \u2014 el espejo de la sesi\u00f3n vuelve a este hilo.");
+            const raw = (tracked?.title ?? target.slice(0, 18)).replace(/^📦 /, "");
+            // If the old topic still lives (a forum archive, or the badge-only
+            // one), dropping the badge is the whole wake-up — a rename that
+            // lands proves the thread exists.
+            const renamed = await telegram.editForumTopic(chatId, tid, raw.slice(0, 128)).then(() => true).catch(() => false);
+            if (renamed) {
+              await reply("\u{1F4C2} Despertado \u2014 el espejo de la sesi\u00f3n vuelve a este hilo.");
+              return;
+            }
+            // The topic is gone (deleted on the phone, or our private-chat
+            // archive removed it): rebuild the window fresh, rebind the
+            // mapping, and greet inside \u2014 the mirror continues there.
+            const fresh = await telegram.createForumTopic(chatId, raw.slice(0, 128)).catch(() => undefined);
+            if (fresh !== undefined) {
+              topicStore.set(target, fresh);
+              await telegram
+                .sendMessage(chatId, "\u{1F4C2} Despertado \u2014 hilo nuevo; el espejo de la sesi\u00f3n sigue ac\u00e1.", {
+                  parseMode: "HTML",
+                  messageThreadId: fresh,
+                })
+                .catch(() => undefined);
+            } else {
+              await reply("\u{1F4C2} Despertado \u2014 no pude recrear el hilo; el pr\u00f3ximo evento de la sesi\u00f3n lo crea solo.");
+            }
           }
           return;
         }
@@ -3366,7 +3496,7 @@ export default {
             const subThreadId = threadOf(sessionID);
             if (subThreadId !== undefined) {
               topicStore?.setArchived(sessionID, true);
-              void telegram.closeForumTopic(chatId, subThreadId).catch((error) => log("WARN", "subagent archive", safe(error)));
+              archiveThread(subThreadId);
               log("INFO", `subagente ${sessionID.slice(0, 18)} termin\u00f3 \u2014 hilo archivado`);
             }
           }
@@ -3469,7 +3599,7 @@ export default {
                 return;
               }
               // An inbox edit is armed: this message replaces that pending
-              // item â€” cancel it and send the new text through the same inbox.
+              // item — cancel it and send the new text through the same inbox.
               if (inboxEdit && text && !text.startsWith("/") && (byThread ?? targetSession()) === inboxEdit.session) {
                 const item = inboxEdit;
                 inboxEdit = undefined;

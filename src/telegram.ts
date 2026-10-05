@@ -124,6 +124,21 @@ export class Telegram {
    * the bridge's alive() uses this to notice and hand leadership over.
    */
   private lastPollAt = Date.now();
+
+  /**
+   * Dead-thread healing, registered by the plugin. When a send hits a topic
+   * that was deleted on the phone (verified live: "Bad Request: message
+   * thread not found"), this drops the stale mapping so the resolver builds
+   * a fresh topic on the next event; the transport then retries the send
+   * once at the chat root. One straggler per healing — the transcript
+   * continues in the new thread instead of vanishing with the old one.
+   */
+  onDeadThread?: (chatId: number, threadId: number) => void;
+
+  /** True when Telegram just said that thread does not exist anymore. */
+  private isDeadThreadError(error: unknown): boolean {
+    return error instanceof TelegramError && /message thread not found/i.test(error.message);
+  }
   /** True while the long poll is actually turning (or was, seconds ago). */
   pollAlive(maxGapMs = 90_000): boolean {
     return !this.aborted && Date.now() - this.lastPollAt < maxGapMs;
@@ -276,6 +291,27 @@ export class Telegram {
       return message?.message_id ?? null;
     } catch (error) {
       if (error instanceof TelegramError && error.isStaleTarget) return null;
+      if (options.messageThreadId !== undefined && this.isDeadThreadError(error)) {
+        this.onDeadThread?.(chatId, options.messageThreadId);
+        const healed: Record<string, unknown> = { ...body };
+        delete healed.message_thread_id;
+        const message = await this.call<{ message_id: number }>("sendMessage", healed);
+        return message?.message_id ?? null;
+      }
+      // "can't parse entities" must not eat a message: one raw `<` in the
+      // text used to lose the whole send. Retry once with no parse mode —
+      // plain but delivered (verified live: the mirror died silently on
+      // an "Unsupported start tag" until this).
+      if (error instanceof TelegramError && /can't parse entities/i.test(error.message)) {
+        const plain: Record<string, unknown> = { ...body };
+        delete plain.parse_mode;
+        try {
+          const message = await this.call<{ message_id: number }>("sendMessage", plain);
+          return message?.message_id ?? null;
+        } catch {
+          throw error;
+        }
+      }
       throw error;
     }
   }
@@ -333,33 +369,44 @@ export class Telegram {
     filePath: string,
     options: { caption?: string; messageThreadId?: number } = {},
   ): Promise<number | null> {
-    const fs = await import("node:fs");
-    const buffer = fs.readFileSync(filePath);
-    const boundary = "----opencode-tg-" + Date.now();
-    const parts: Buffer[] = [];
-    const push = (name: string, value: string): void => {
-      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+    const sendOnce = async (tid?: number): Promise<ApiResult<{ message_id: number }>> => {
+      const fs = await import("node:fs");
+      const buffer = fs.readFileSync(filePath);
+      const boundary = "----opencode-tg-" + Date.now();
+      const parts: Buffer[] = [];
+      const push = (name: string, value: string): void => {
+        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+      };
+      push("chat_id", String(chatId));
+      if (options.caption) push("caption", options.caption.slice(0, 1024));
+      if (tid) push("message_thread_id", String(tid));
+      const name = filePath.split(/[\\/]/).pop() ?? "photo.png";
+      parts.push(
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
+      );
+      parts.push(buffer, Buffer.from(`\r\n--${boundary}--\r\n`));
+      const body = Buffer.concat(parts);
+      const signal =
+        typeof AbortSignal.any === "function"
+          ? AbortSignal.any([this.signal, AbortSignal.timeout(30_000)])
+          : this.signal;
+      const response = await fetch(`${this.base}/sendPhoto`, {
+        method: "POST",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body,
+        signal,
+      });
+      return (await response.json()) as ApiResult<{ message_id: number }>;
     };
-    push("chat_id", String(chatId));
-    if (options.caption) push("caption", options.caption.slice(0, 1024));
-    if (options.messageThreadId) push("message_thread_id", String(options.messageThreadId));
-    const name = filePath.split(/[\\/]/).pop() ?? "photo.png";
-    parts.push(
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
-    );
-    parts.push(buffer, Buffer.from(`\r\n--${boundary}--\r\n`));
-    const body = Buffer.concat(parts);
-    const signal =
-      typeof AbortSignal.any === "function"
-        ? AbortSignal.any([this.signal, AbortSignal.timeout(30_000)])
-        : this.signal;
-    const response = await fetch(`${this.base}/sendPhoto`, {
-      method: "POST",
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-      body,
-      signal,
-    });
-    const payload = (await response.json()) as ApiResult<{ message_id: number }>;
+    let payload = await sendOnce(options.messageThreadId);
+    if (
+      !payload.ok &&
+      options.messageThreadId !== undefined &&
+      /message thread not found/i.test(payload.description ?? "")
+    ) {
+      this.onDeadThread?.(chatId, options.messageThreadId);
+      payload = await sendOnce(undefined);
+    }
     return payload.ok ? (payload.result?.message_id ?? null) : null;
   }
 
@@ -371,33 +418,44 @@ export class Telegram {
     filePath: string,
     options: { caption?: string; messageThreadId?: number } = {},
   ): Promise<number | null> {
-    const fs = await import("node:fs");
-    const buffer = fs.readFileSync(filePath);
-    const boundary = "----opencode-tg-" + Date.now();
-    const parts: Buffer[] = [];
-    const push = (name: string, value: string): void => {
-      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+    const sendOnce = async (tid?: number): Promise<ApiResult<{ message_id: number }>> => {
+      const fs = await import("node:fs");
+      const buffer = fs.readFileSync(filePath);
+      const boundary = "----opencode-tg-" + Date.now();
+      const parts: Buffer[] = [];
+      const push = (name: string, value: string): void => {
+        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+      };
+      push("chat_id", String(chatId));
+      if (options.caption) push("caption", options.caption.slice(0, 1024));
+      if (tid) push("message_thread_id", String(tid));
+      const name = filePath.split(/[\\/]/).pop() ?? "archivo.bin";
+      parts.push(
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
+      );
+      parts.push(buffer, Buffer.from(`\r\n--${boundary}--\r\n`));
+      const body = Buffer.concat(parts);
+      const signal =
+        typeof AbortSignal.any === "function"
+          ? AbortSignal.any([this.signal, AbortSignal.timeout(30_000)])
+          : this.signal;
+      const response = await fetch(`${this.base}/sendDocument`, {
+        method: "POST",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body,
+        signal,
+      });
+      return (await response.json()) as ApiResult<{ message_id: number }>;
     };
-    push("chat_id", String(chatId));
-    if (options.caption) push("caption", options.caption.slice(0, 1024));
-    if (options.messageThreadId) push("message_thread_id", String(options.messageThreadId));
-    const name = filePath.split(/[\\/]/).pop() ?? "archivo.bin";
-    parts.push(
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
-    );
-    parts.push(buffer, Buffer.from(`\r\n--${boundary}--\r\n`));
-    const body = Buffer.concat(parts);
-    const signal =
-      typeof AbortSignal.any === "function"
-        ? AbortSignal.any([this.signal, AbortSignal.timeout(30_000)])
-        : this.signal;
-    const response = await fetch(`${this.base}/sendDocument`, {
-      method: "POST",
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-      body,
-      signal,
-    });
-    const payload = (await response.json()) as ApiResult<{ message_id: number }>;
+    let payload = await sendOnce(options.messageThreadId);
+    if (
+      !payload.ok &&
+      options.messageThreadId !== undefined &&
+      /message thread not found/i.test(payload.description ?? "")
+    ) {
+      this.onDeadThread?.(chatId, options.messageThreadId);
+      payload = await sendOnce(undefined);
+    }
     return payload.ok ? (payload.result?.message_id ?? null) : null;
   }
 

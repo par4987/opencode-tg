@@ -3,8 +3,8 @@
  *
  * When the agent calls `question` the server opens a *form* and blocks the turn
  * until somebody answers it. Answering is `POST /session/{sid}/form/{fid}/reply`
- * â€” and the plugin context cannot reach that: `ctx.session` is built from a
- * fixed list in the promise adapter (`create/get/prompt/interrupt/â€¦`) and
+ * — and the plugin context cannot reach that: `ctx.session` is built from a
+ * fixed list in the promise adapter (`create/get/prompt/interrupt/…`) and
  * `form` is deliberately not on it. Only the TUI plugin gets the method.
  *
  * So the bridge goes out through the same process' HTTP API instead. Two things
@@ -16,7 +16,7 @@
  *   - the Basic-auth password. Read (never written) from `service.json`, the
  *     same file `opencode service` uses; the API user is the fixed `opencode`.
  *
- * This is additive by design: if discovery fails, nothing here throws â€” the
+ * This is additive by design: if discovery fails, nothing here throws — the
  * caller falls back to telling the user the answer belongs on the PC, and the
  * PC's own path to the form is untouched.
  */
@@ -38,7 +38,7 @@ export interface FormField {
   title?: string;
   description?: string;
   required?: boolean;
-  /** Present on `string`/`multiselect` fields â€” what the buttons map to. */
+  /** Present on `string`/`multiselect` fields — what the buttons map to. */
   options?: FormOption[];
 }
 
@@ -53,7 +53,7 @@ export type FormAnswer = Record<string, string | number | boolean | string[]>;
 
 /** One option-bearing field of a form, flattened for the buttons. */
 export interface FormChoice {
-  /** Position in `form.fields` â€” how the callback data names the field. */
+  /** Position in `form.fields` — how the callback data names the field. */
   fieldIndex: number;
   fieldKey: string;
   title: string;
@@ -78,7 +78,7 @@ export function choicesOf(form: FormInfo): FormChoice[] {
     .filter((choice) => choice.options.length > 0);
 }
 
-/** `{answer: â€¦}` collapsed to something readable in a receipt line. */
+/** `{answer: …}` collapsed to something readable in a receipt line. */
 export function formatAnswer(answer: unknown): string {
   if (!answer || typeof answer !== "object") return "";
   const values = Object.values(answer as Record<string, unknown>).map((value) =>
@@ -87,7 +87,7 @@ export function formatAnswer(answer: unknown): string {
   return values.join(" \u00b7 ").slice(0, 200);
 }
 
-/** One option picked for one field â€” a multiselect field expects an array. */
+/** One option picked for one field — a multiselect field expects an array. */
 export function answerFor(choice: FormChoice, option: FormOption): Record<string, string | string[]> {
   return choice.multiple ? { [choice.fieldKey]: [option.value] } : { [choice.fieldKey]: option.value };
 }
@@ -150,7 +150,7 @@ export function answerFree(choice: FormChoice, text: string): Record<string, str
 }
 
 /**
- * `/txt <respuesta>` â€” the explicit door to a free-text answer. The
+ * `/txt <respuesta>` — the explicit door to a free-text answer. The
  * `@BotName` suffix that group chats add to commands is ignored.
  */
 export function parseFreeCommand(text: string): string | undefined {
@@ -190,7 +190,7 @@ export function servicePassword(): string {
  * Ports this process is listening on.
  *
  * The HTTP server lives in the plugin's own process, so its listener is one of
- * our active handles â€” no subprocess, no scan. `_getActiveHandles` is internal
+ * our active handles — no subprocess, no scan. `_getActiveHandles` is internal
  * and absent on runtimes that do not ship it, in which case `netstat` answers
  * the same question the slow way.
  */
@@ -253,8 +253,8 @@ export class FormClient {
   }
 
   /**
-   * Find this process' API port and load the password. Resolves false â€” never
-   * throws â€” when either is unavailable, so callers can degrade to "answer on
+   * Find this process' API port and load the password. Resolves false — never
+   * throws — when either is unavailable, so callers can degrade to "answer on
    * the PC".
    */
   async connect(): Promise<boolean> {
@@ -264,7 +264,7 @@ export class FormClient {
     try {
       const password = servicePassword();
       if (!password) {
-        log("WARN", "forms: sin password en service.json â€” no se puede responder desde acÃ¡");
+        log("WARN", "forms: sin password en service.json — no se puede responder desde acÃ¡");
         return false;
       }
       const auth = `Basic ${Buffer.from(`opencode:${password}`, "utf8").toString("base64")}`;
@@ -273,7 +273,7 @@ export class FormClient {
       for (const port of candidates) {
         const info = await probe(port, auth);
         if (!info) continue;
-        // The plugin runs inside the server, so its pid is the server's pid â€”
+        // The plugin runs inside the server, so its pid is the server's pid —
         // that match is what stops us from talking to some other OpenCode.
         if (info.pid !== undefined && info.pid === process.pid) {
           this.set(`http://127.0.0.1:${port}/api`, auth);
@@ -284,11 +284,11 @@ export class FormClient {
       }
       if (confirmed.length === 1) {
         this.set(confirmed[0], auth);
-        log("WARN", `forms: API local en ${confirmed[0]} pero su pid no coincide con ${process.pid} â€” se usa igual`);
+        log("WARN", `forms: API local en ${confirmed[0]} pero su pid no coincide con ${process.pid} — se usa igual`);
         return true;
       }
       if (confirmed.length > 1) {
-        log("WARN", `forms: ${confirmed.length} APIs candidatas, ninguna con nuestro pid â€” omitido`);
+        log("WARN", `forms: ${confirmed.length} APIs candidatas, ninguna con nuestro pid — omitido`);
       } else {
         log("WARN", `forms: ninguna API local respondiÃ³ entre ${candidates.length} puertos`);
       }
@@ -314,7 +314,7 @@ export class FormClient {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (!response.ok) {
-      // 409 is the form already settled (answered on the PC first) â€” callers
+      // 409 is the form already settled (answered on the PC first) — callers
       // treat it as success-with-nothing-to-do, so surface it verbatim.
       const text = await response.text().catch(() => "");
       throw new Error(`${method} ${path} â†’ ${response.status}${text ? ` ${text.slice(0, 200)}` : ""}`);
@@ -344,7 +344,7 @@ export class FormClient {
   }
 
   /**
-   * Any other endpoint of the local API â€” models, agents, providers, MCP,
+   * Any other endpoint of the local API — models, agents, providers, MCP,
    * per-session stats. The form endpoints stay private; this is the door for
    * the rest of the surface. Resolves undefined for empty bodies (204).
    */
@@ -355,7 +355,7 @@ export class FormClient {
   /**
    * Answer a form.
    *
-   * `409` is somebody â€” the PC, or a second tap â€” settling it first. `400` is
+   * `409` is somebody — the PC, or a second tap — settling it first. `400` is
    * declared for two opposite things: a rejected answer, and a form that is no
    * longer there (they are ephemeral, and the body comes back empty, so the
    * status alone cannot say which). Asking the server is one extra GET, on the
@@ -374,7 +374,7 @@ export class FormClient {
     }
   }
 
-  /** Anything but a successful read means the form is gone â€” settled already. */
+  /** Anything but a successful read means the form is gone — settled already. */
   private async stillOpen(sessionID: string, formID: string): Promise<boolean> {
     try {
       await this.get(sessionID, formID);

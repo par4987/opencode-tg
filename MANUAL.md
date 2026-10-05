@@ -177,7 +177,8 @@ autorizados en `~/.opencode/tg/.env`.
 ## Estado conocido
 
 - **Notas de voz**: transcripción opt-in por usuario — whisper.cpp local (default) o cualquier API compatible con OpenAI; ver la sección Voz del README.
-- **Archivar en chat privado**: Telegram no permite que un bot cierre tópicos en un chat privado — `/archive` silencia del lado del bot (sin espejo ni avisos) y marca el hilo con 📦; `/unarchive` lo despierta. `/delthread` sí borra el tópico, pero una sesión activa lo recrea con su próximo evento.
+- **Archivar en chat privado**: Telegram no permite que un bot cierre tópicos en un chat privado — así que `/archive` elimina el hilo del chat y silencia la sesión (sin espejo ni avisos); `/unarchive` lo recrea nuevo y despierta la sesión. `/delthread` borra el hilo sin silenciar: una sesión activa lo recrea con su próximo evento (para sacártela de encima de verdad: `/archive`).
+- **Borrar un hilo con el eliminar nativo de Telegram**: el bot lo nota solo — el próximo mensaje del agente cae en General una única vez y el hilo se reconstruye solo. No hace falta hacer nada.
 - **Sesiones tras un reinicio del server**: el server solo tiene en memoria las sesiones abiertas en la PC — después de un reinicio, mandarle un mensaje a un hilo cuyo session ya no está abierto responde «🚫 esa sesión no está activa en el server». No es un error del bot: abrila en la PC y sigue andando, o creá otra con `/new`. Los comandos de proyecto (`/ls`, `/git`, `/find`, `/config`, `/worktree`) y `/export` siguen funcionando igual porque leen del disco.
 - Los textos inline viajan completos en partes numeradas; los mayores de 12 KB como documento.
 

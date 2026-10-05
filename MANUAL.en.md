@@ -193,10 +193,14 @@ allowed-chats list in `~/.opencode/tg/.env`.
 - **Voice notes**: opt-in per user — local whisper.cpp (default) or any
   OpenAI-compatible API; see the README's Voice section.
 - **Archiving in a private chat**: Telegram does not let a bot close topics
-  there — `/archive` goes silent on the bot's side (no mirror, no
-  heads-ups) and badges the thread with 📦; `/unarchive` wakes it.
-  `/delthread` does delete the topic, but an active session recreates it
-  on its next event.
+  there — so `/archive` removes the thread from the chat and silences the
+  session (no mirror, no heads-ups); `/unarchive` rebuilds it fresh and
+  wakes the session. `/delthread` deletes the thread without silencing: an
+  active session recreates it on its next event (to get rid of it for
+  real: `/archive`).
+- **Deleting a thread with Telegram's native delete**: the bot heals it on
+  its own — the agent's next message lands in General once and the thread
+  rebuilds itself. Nothing to do.
 - **Sessions after a server restart**: the server only holds sessions the
   PC keeps open — after a restart, writing to a thread whose session is
   no longer open answers "🚫 that session is not active in the server".

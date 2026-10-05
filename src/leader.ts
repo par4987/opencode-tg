@@ -23,9 +23,17 @@ import { join } from "node:path";
 const LOCK_DIR = join(homedir(), ".opencode", "tg");
 const LOCK_FILE = join(LOCK_DIR, "leader.lock");
 
-/** No heartbeat in this window means the holder died without releasing. */
-const STALE_MS = 15_000;
 const HEARTBEAT_MS = 5_000;
+/**
+ * A live pid whose heartbeat froze this long is *wedged* — the process
+ * breathes but its event loop (or just its poll) is stuck, so no code of
+ * its will ever release the lock. Measured failure: a hand-off-installed
+ * leader lost its monitor, the poll hung mid-handler, the heartbeat froze,
+ * and every healthy process waited forever on an "alive" holder. Past this
+ * margin the lock must be contestable or one hung process takes the whole
+ * bridge down.
+ */
+export const WEDGED_MS = 60_000;
 
 interface LockFile {
   pid: number;
@@ -33,9 +41,14 @@ interface LockFile {
   beat: number;
 }
 
+/** Tests point this at a temp file so they never touch the real election. */
+function lockPath(): string {
+  return process.env.TG_LOCK_FILE ?? LOCK_FILE;
+}
+
 function readLock(): LockFile | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(LOCK_FILE, "utf8")) as LockFile;
+    const parsed = JSON.parse(readFileSync(lockPath(), "utf8")) as LockFile;
     if (typeof parsed.pid !== "number" || typeof parsed.beat !== "number") return undefined;
     return parsed;
   } catch {
@@ -45,7 +58,7 @@ function readLock(): LockFile | undefined {
 
 function writeLock(lock: LockFile): void {
   try {
-    writeFileSync(LOCK_FILE, JSON.stringify(lock));
+    writeFileSync(lockPath(), JSON.stringify(lock));
   } catch {
     /* the lock is best effort; the plugin still works without it */
   }
@@ -62,21 +75,18 @@ function pidAlive(pid: number): boolean {
 }
 
 /**
- * Take the lock if it is free or its holder is dead. Returns whether this
- * process is now the leader.
+ * Take the lock if it is free, its holder is dead, or its holder is wedged
+ * (alive but heartbeat-frozen past WEDGED_MS). Returns whether this process
+ * is now the leader.
  */
 export function acquireLock(): boolean {
   const now = Date.now();
   const existing = readLock();
 
   if (existing && existing.pid !== process.pid) {
-    const dead = !pidAlive(existing.pid) || now - existing.beat > STALE_MS;
-    if (!dead) return false;
-    if (existing.pid > 0 && pidAlive(existing.pid)) {
-      // Alive but silent: another contender may be racing us, so let the
-      // heartbeat margin decide rather than seizing on a single stale read.
-      return false;
-    }
+    const dead = !pidAlive(existing.pid);
+    const wedged = !dead && now - existing.beat > WEDGED_MS;
+    if (!dead && !wedged) return false;
   }
 
   writeLock({ pid: process.pid, since: existing?.since ?? now, beat: now });
@@ -98,7 +108,7 @@ export function releaseLock(): void {
   const existing = readLock();
   if (!existing || existing.pid !== process.pid) return;
   try {
-    unlinkSync(LOCK_FILE);
+    unlinkSync(lockPath());
   } catch {
     /* already gone */
   }

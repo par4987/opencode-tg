@@ -106,6 +106,8 @@ Common `stt` options: `whisper` and `model` (local paths), `baseUrl` +
 
 - **Permissions**: servers 2.0.19+ ship the build agent with `{"*", "*", "allow"}` as its first rule, so `ask` rules from the config's `permissions` (root or `agents.*`) are shadowed — permission prompts only arrive when the *server* decides to ask (e.g. `external_directory` or `.env` reads). When one arrives, the bot shows its three buttons (✅ once · 🔁 always · ✖ deny) and settles it over the local API.
 - **Inactive sessions**: the server only serves sessions it holds in memory by id — after a restart (or once the PC closes one) every id-addressed endpoint 404s until it is reopened (verified live: GET, prompt, inbox, fork, context). The plugin absorbs it where it can: `/ls`, `/git`, `/find`, `/config`, `/worktree` and `/new` resolve the directory from the plugin's own records (tracked session + on-disk `<id>.json`), and `/export` falls back to the on-disk `<id>.jsonl`, so they keep working. What genuinely needs the server (prompts, `/usage`, `/context`, `/compact`, `/fork`, `/revert`, `/kill`, `/queue`) answers with the honest "not active — open it on the PC" notice instead of a cryptic 404.
+- **Poll watchdog**: every plugin instance watches the leadership seat — its own or another member's — and waiting instances re-contest the election every 5s. Before this, a hand-off-installed leader had no watcher: its poll hung, the lock heartbeat froze, and no healthy instance ever re-contested — the bot went deaf until a manual restart (measured 2026-10-05). A live process whose heartbeat froze past 60s loses the lock (wedged seizure, see `_leadercheck`).
+- **Topics deleted from the phone**: removing a thread with Telegram's native delete used to leave an orphaned mapping — the mirror talked to a grave forever. The transport now detects "message thread not found", drops the mapping (keeping the archived state) and retries at the chat root; the next event rebuilds the thread. Symmetrically: `/archive` in a private chat removes the thread (Telegram cannot close topics there) and `/unarchive` rebuilds it fresh.
 - The plugin has been exercised against 2.0.15–2.0.22; typechecking uses the current generation's `@opencode/plugin`.
 
 ## Tests and verification
@@ -113,7 +115,7 @@ Common `stt` options: `whisper` and `model` (local paths), `baseUrl` +
 ```sh
 npm install
 npm run typecheck   # tsc with the project's tsconfig — 0 errors
-npm test            # the 12 suites (~160 checks) with their own runner
+npm test            # the 13 suites (~175 checks) with their own runner
 ```
 
 GitHub Actions runs both on every push (`.github/workflows/ci.yml`).
