@@ -102,7 +102,8 @@ Opciones comunes de `stt`: `whisper` y `model` (paths locales),
 
 ## Compatibilidad de servidores
 
-- **Permisos**: los servidores 2.0.19+ traen el agent build con `{"*", "*", "allow"}` como primera regla, y las reglas `ask` del `permissions` del config (raíz o `agents.*`) quedan tapadas — los permisos solo llegan cuando el *server* decide preguntar (por ejemplo `external_directory` o lecturas de `.env`). Cuando uno llega, el bot muestra los tres botones (✅ una vez · 🔁 siempre · ✖ rechazar) y resuelve por la API local.
+- **Permisos**: los servidores 2.0.19+ traen el agent build con `{"*", "*", "allow"}` como primera regla, y las reglas `ask` del `permissions` del config (raíz o `agents.*`) quedan tapadas — los permisos solo llegan cuando el *server* decide preguntar (por ejemplo `external_directory` o lecturas de `.env`). Cuando uno llega, el bot muestra los tres botones (✅ una vez · 🔁 siempre · ✖ rechazar) y responde por la API local.
+- **Sesiones no activas**: el server solo sirve por id las sesiones que tiene en memoria — tras un reinicio (o al cerrarlas en la PC), todo endpoint por id responde 404 hasta reabrirlas (verificado en vivo: GET, prompt, inbox, fork y context). El plugin lo absorbe donde puede: `/ls`, `/git`, `/find`, `/config`, `/worktree` y `/new` resuelven el directorio desde los registros propios del plugin (sesión tracked + `<id>.json` en disco), y `/export` cae al `<id>.jsonl` de disco, así que siguen funcionando. Lo que exige al server (prompts, `/usage`, `/context`, `/compact`, `/fork`, `/revert`, `/kill`, `/queue`) responde con el aviso honesto "no está activa — abrila en la PC" en vez de un 404 críptico.
 - El plugin se probó contra 2.0.15–2.0.22; el tipocheck usa `@opencode/plugin` de la generación actual.
 
 ## Tests y verificación
@@ -110,12 +111,12 @@ Opciones comunes de `stt`: `whisper` y `model` (paths locales),
 ```sh
 npm install
 npm run typecheck   # tsc con el tsconfig del proyecto — 0 errores
-npm test            # las 11 suites (~150 checks) con el runner propio
+npm test            # las 12 suites (~160 checks) con el runner propio
 ```
 
 GitHub Actions corre ambos en cada push (`.github/workflows/ci.yml`).
 
-Once suites (`_setupcheck` … `_mediaoutcheck`, ~140 checks) cubren el pump
+Doce suites (`_setupcheck` … `_mediaoutcheck`, ~160 checks) cubren el pump
 de eventos, render, tópicos, formularios, configuración, tareas, ingesta y
 el pipeline de archivos salientes. Typecheck: `tsc --noEmit index.ts`.
 

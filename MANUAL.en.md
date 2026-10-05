@@ -197,6 +197,13 @@ allowed-chats list in `~/.opencode/tg/.env`.
   heads-ups) and badges the thread with 📦; `/unarchive` wakes it.
   `/delthread` does delete the topic, but an active session recreates it
   on its next event.
+- **Sessions after a server restart**: the server only holds sessions the
+  PC keeps open — after a restart, writing to a thread whose session is
+  no longer open answers "🚫 that session is not active in the server".
+  It is not a bot bug: open it on the PC and it keeps working, or make a
+  new one with `/new`. The project commands (`/ls`, `/git`, `/find`,
+  `/config`, `/worktree`) and `/export` keep working regardless because
+  they read from disk.
 - Inline texts travel complete in numbered parts; anything over 12 KB
   rides as a document.
 

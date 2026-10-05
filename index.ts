@@ -832,6 +832,37 @@ export default {
      */
     const forms = new FormClient();
 
+    /**
+     * A session's project directory, restart-proof.
+     *
+     * The server only serves sessions it holds in memory: after a restart
+     * every id-addressed endpoint 404s (verified live — GET info, prompt,
+     * inbox, fork and context all answer SessionNotFound on an idle
+     * session, and all go 200 the moment it is opened on the PC). The
+     * plugin's own records survive restarts — the tracked map and the
+     * session's <id>.json on disk — so directory questions never depend
+     * on the server's mood.
+     */
+    const directoryOf = async (sessionID: string | undefined): Promise<string | undefined> => {
+      if (!sessionID) return undefined;
+      const info = await forms
+        .request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID))
+        .catch(() => undefined);
+      return (
+        info?.location?.directory ?? sessions.get(sessionID)?.directory ?? readSessionMeta(sessionID)?.directory
+      );
+    };
+
+    /** True when the server answered "session not found" — after a restart
+     *  that is every session not re-opened on the PC. */
+    const isSessionNotFound = (error: unknown): boolean =>
+      String((error as Error)?.message ?? "").includes("SessionNotFound");
+
+    /** The one honest answer for id-addressed calls on an unloaded session. */
+    const SESSION_UNLOADED =
+      "\u{1F634} Esa sesi\u00f3n no est\u00e1 activa en el server \u2014 se reinici\u00f3 o la cerraste en la PC.\n" +
+      "Abrila en la PC y reintent\u00e1, o cre\u00e1 otra con <code>/new</code>.";
+
     /** The form waiting on this session, if any. */
     const openFormFor = (sessionID: string): OpenForm | undefined => {
       for (const form of openForms.values()) {
@@ -1246,13 +1277,14 @@ export default {
       } catch (error) {
         log("ERROR", "prompt", safe(error));
         const raw = String((error as Error).message);
-        // A SessionNotFound on a young session is the server-restart race:
-        // freshly created sessions live in memory until the server persists
-        // them, so a restart in between loses them. Saying so plainly beats
-        // a cryptic 404 the user cannot act on.
+        // SessionNotFound is the unloaded-session state, verified live: the
+        // server only holds sessions in memory and never reloads them from
+        // disk — after a restart (or once the PC closes one) every
+        // id-addressed call 404s until it is opened again. Saying so plainly
+        // beats a cryptic 404 the user cannot act on.
         if (raw.includes("SessionNotFound")) {
           await send(
-            "\u{1F6AB} Esa sesi\u00f3n ya no existe \u2014 el server se reinici\u00f3 desde que la creaste (las sesiones nuevas viven en memoria hasta persistirse). Cre\u00e1 otra con <code>/new</code>.",
+            "\u{1F6AB} Esa sesi\u00f3n no est\u00e1 activa en el server \u2014 se reinici\u00f3 o la cerraste en la PC, y no se recarga sola.\nAbrila en la PC y reintent\u00e1, o cre\u00e1 otra con <code>/new</code>.",
             replyThread,
           );
         } else {
@@ -1781,7 +1813,17 @@ export default {
             await reply("La API local no responde \u2014 no puedo leer los n\u00fameros.");
             return;
           }
-          const info = await forms.request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`);
+          let info: ApiSession | undefined;
+          try {
+            info = await forms.request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`);
+          } catch (error) {
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED
+                : "No pude leer la sesi\u00f3n: " + escapeHtml(String((error as Error).message).slice(0, 150)),
+            );
+            return;
+          }
           if (!info) {
             await reply("Esa sesi\u00f3n no existe (o la API no la encuentra).");
             return;
@@ -1864,9 +1906,10 @@ export default {
           const current = await forms
             .request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`)
             .catch(() => undefined);
-          const curated = configProviders(
-            current?.location?.directory ? [current.location.directory] : [],
-          );
+          // The curated lookup needs the directory; for an unloaded session
+          // the API GET 404s — the plugin's own records know it anyway.
+          const currentDirectory = current?.location?.directory ?? (await directoryOf(target));
+          const curated = configProviders(currentDirectory ? [currentDirectory] : []);
           const enabledKeys = curated
             .map((p) => [p.id, p.models.filter((m) => !m.disabled)] as const)
             .filter(([, models]) => models.length > 0);
@@ -1994,8 +2037,7 @@ export default {
             await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto), o <code>/use</code> primero.");
             return;
           }
-          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
-          const directory = info?.location?.directory;
+          const directory = await directoryOf(target);
           if (!directory) {
             await reply("No pude ver el proyecto de la sesi\u00f3n.");
             return;
@@ -2096,8 +2138,7 @@ export default {
             await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
             return;
           }
-          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
-          const directory = info?.location?.directory;
+          const directory = await directoryOf(target);
           if (!directory) {
             await reply("No pude ver el proyecto de la sesi\u00f3n.");
             return;
@@ -2114,8 +2155,7 @@ export default {
             await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
             return;
           }
-          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
-          const directory = info?.location?.directory;
+          const directory = await directoryOf(target);
           if (!directory) {
             await reply("No pude ver el proyecto de la sesi\u00f3n.");
             return;
@@ -2193,8 +2233,7 @@ export default {
             await reply("Decime qu\u00e9 buscar: <code>/find parte-del-nombre</code> \u2014 en el hilo de una sesi\u00f3n.");
             return;
           }
-          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
-          const directory = info?.location?.directory;
+          const directory = await directoryOf(target);
           if (!directory) {
             await reply("No pude ver el proyecto de la sesi\u00f3n.");
             return;
@@ -2235,7 +2274,13 @@ export default {
             await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/context <ses_id></code>.");
             return;
           }
-          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+          let info: ApiSession | undefined;
+          try {
+            info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target));
+          } catch (error) {
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : "No encontr\u00e9 esa sesi\u00f3n.");
+            return;
+          }
           if (!info) {
             await reply("No encontr\u00e9 esa sesi\u00f3n.");
             return;
@@ -2286,8 +2331,7 @@ export default {
             await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
             return;
           }
-          const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
-          const directory = info?.location?.directory;
+          const directory = await directoryOf(target);
           if (!directory) {
             await reply("No pude ver el proyecto de la sesi\u00f3n.");
             return;
@@ -2295,7 +2339,9 @@ export default {
           const projects = await forms.request<Array<Record<string, unknown>>>("GET", "/api/project").catch(() => undefined);
           const list = Array.isArray(projects) ? projects : [];
           const proj = list.find((p) => String(p.canonical ?? "").replace(/\\/g, "/") === directory.replace(/\\/g, "/"));
-          const projectID = proj ? String(proj.id) : info ? String(info.projectID ?? "") : "";
+          // /api/worktree wants the 40-char projectID from /api/project —
+          // the 39-char one inside the session 404s the endpoint.
+          const projectID = proj ? String(proj.id) : "";
           if (!projectID) {
             await reply("No encontr\u00e9 el proyecto en el server.");
             return;
@@ -2360,7 +2406,11 @@ export default {
             );
           } catch (error) {
             log("WARN", "fork", safe(error));
-            await reply("No se pudo forkear: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED
+                : "No se pudo forkear: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+            );
           }
           return;
         }
@@ -2404,10 +2454,10 @@ export default {
             }
           } catch (error) {
             log("WARN", "export", safe(error));
-            // The 2.0.19+ export only knows the NEW storage format; sessions
-            // born before it answer 404 (same reason a direct GET does).
-            // Their transcript lives in the legacy .jsonl on disk — same
-            // content, different shelf. Send that one.
+            // The server only exports sessions it holds in memory — after a
+            // restart (or once the PC closes one) the endpoint 404s until it
+            // is opened again (verified live). The transcript on disk is the
+            // same history either way, so the file IS the export here.
             try {
               const fs = await import("node:fs");
               const os = await import("node:os");
@@ -2422,7 +2472,7 @@ export default {
                 if (chatId !== undefined) {
                   await telegram
                     .sendDocument(chatId, legacy, {
-                      caption: `\u{1F4C2} ${escapeHtml(tracked?.title ?? target.slice(0, 18))} \u00b7 transcript legacy \u00b7 ${(size / 1024 / 1024).toFixed(1)} MB`,
+                      caption: `\u{1F4C2} ${escapeHtml(tracked?.title ?? target.slice(0, 18))} \u00b7 transcript de disco \u00b7 ${(size / 1024 / 1024).toFixed(1)} MB`,
                       messageThreadId: threadOf(threadSession),
                     })
                     .catch((sendError) => log("WARN", "export legacy send", safe(sendError)));
@@ -2579,10 +2629,16 @@ export default {
             await reply("La API local no responde.");
             return;
           }
-          const inbox = await forms.request<Array<Record<string, unknown>>>(
-            "GET",
-            `/session/${encodeURIComponent(target)}/inbox`,
-          );
+          let inbox: Array<Record<string, unknown>> | undefined;
+          try {
+            inbox = await forms.request<Array<Record<string, unknown>>>(
+              "GET",
+              `/session/${encodeURIComponent(target)}/inbox`,
+            );
+          } catch (error) {
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : `No pude leer el inbox: ${escapeHtml(String((error as Error).message).slice(0, 150))}`);
+            return;
+          }
           inboxThread = target;
           inboxItems = (Array.isArray(inbox) ? inbox : []).map((item) => {
             const payload = item.payload as { text?: string } | undefined;
@@ -2616,7 +2672,7 @@ export default {
           // those messages never reached the server, so flushing the inbox
           // alone would miss them.
           for (const pending of [...coalescing.keys()]) flushCoalesced(pending);
-          // Texto: steering directo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â entra al turno en curso YA.
+          // Texto: steering directo — entra al turno en curso YA.
           if (body.length > 0) {
             // A subagent takes no direct prompts — the flush must not be the
             // back door around the deliver guard.
@@ -2643,10 +2699,16 @@ export default {
             return;
           }
           // Sin texto: adelantar todo lo que el inbox retenga.
-          const inbox = await forms.request<Array<Record<string, unknown>>>(
-            "GET",
-            `/session/${encodeURIComponent(session)}/inbox`,
-          );
+          let inbox: Array<Record<string, unknown>> | undefined;
+          try {
+            inbox = await forms.request<Array<Record<string, unknown>>>(
+              "GET",
+              `/session/${encodeURIComponent(session)}/inbox`,
+            );
+          } catch (error) {
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : `No pude leer el inbox: ${escapeHtml(String((error as Error).message).slice(0, 150))}`);
+            return;
+          }
           const items = Array.isArray(inbox) ? inbox : [];
           let moved = 0;
           for (const item of items) {
@@ -2682,10 +2744,16 @@ export default {
             await reply("La API local no responde.");
             return;
           }
-          const inbox = await forms.request<Array<Record<string, unknown>>>(
-            "GET",
-            `/session/${encodeURIComponent(target)}/inbox`,
-          );
+          let inbox: Array<Record<string, unknown>> | undefined;
+          try {
+            inbox = await forms.request<Array<Record<string, unknown>>>(
+              "GET",
+              `/session/${encodeURIComponent(target)}/inbox`,
+            );
+          } catch (error) {
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : `No pude leer el inbox: ${escapeHtml(String((error as Error).message).slice(0, 150))}`);
+            return;
+          }
           const items = Array.isArray(inbox) ? inbox : [];
           let cancelled = 0;
           for (const item of items) {
@@ -2755,7 +2823,11 @@ export default {
             );
           } catch (error) {
             log("WARN", "kill", safe(error));
-            await reply(`\u274C no se pudo cancelar: ${escapeHtml(String((error as Error).message).slice(0, 200))}`);
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED + "\n(No est\u00e1 activa \u2014 no hay turno que cancelar.)"
+                : `\u274C no se pudo cancelar: ${escapeHtml(String((error as Error).message).slice(0, 200))}`,
+            );
           }
           return;
         }
@@ -2767,10 +2839,7 @@ export default {
             await reply("La API local no responde.");
             return;
           }
-          const info = target
-            ? await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined)
-            : undefined;
-          const directory = info?.location?.directory;
+          const directory = await directoryOf(target);
           if (!directory) {
             await reply("No s\u00e9 en qu\u00e9 proyecto \u2014 us\u00e1 <code>/projects</code> y eleg\u00ed uno.");
             return;
@@ -2871,7 +2940,11 @@ export default {
             await reply("\u{1F4DC} Compactaci\u00f3n solicitada.");
           } catch (error) {
             log("WARN", "compact", safe(error));
-            await reply("\u274C No se pudo compactar: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED
+                : "\u274C No se pudo compactar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+            );
           }
           return;
         }
@@ -3619,8 +3692,7 @@ export default {
                 // project, as a preview plus the full patch downloadable.
                 const sessionID = payload.slice(8);
                 await ack("Cargando el diff\u2026");
-                const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined);
-                const directory = info?.location?.directory;
+                const directory = await directoryOf(sessionID);
                 if (!directory || chatId === undefined || !cq.message) {
                   await ack("No pude ver el proyecto.");
                   return;
@@ -3667,7 +3739,11 @@ export default {
                   }
                 } catch (error) {
                   log("WARN", "revert commit", safe(error));
-                  await ack("No se pudo deshacer: " + String((error as Error).message).slice(0, 120));
+                  await ack(
+                    isSessionNotFound(error)
+                      ? "Esa sesi\u00f3n no est\u00e1 activa en el server \u2014 abrila en la PC primero."
+                      : "No se pudo deshacer: " + String((error as Error).message).slice(0, 120),
+                  );
                 }
                 return;
               }
@@ -3695,8 +3771,7 @@ export default {
                   await ack("No s\u00e9 a qu\u00e9 proyecto \u2014 abrilo en el hilo de una sesi\u00f3n.");
                   return;
                 }
-                const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined);
-                const directory = info?.location?.directory;
+                const directory = await directoryOf(sessionID);
                 if (!directory) {
                   await ack("No pude ver el proyecto.");
                   return;
@@ -3711,8 +3786,7 @@ export default {
                 const rel = lsKeys.get(key);
                 const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                 const sessionID = menuSession ?? targetSession();
-                const info = sessionID ? await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined) : undefined;
-                const directory = info?.location?.directory;
+                const directory = await directoryOf(sessionID);
                 if (rel === undefined) {
                   await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
                   return;
@@ -3745,8 +3819,7 @@ export default {
                 const rel = lsKeys.get(key);
                 const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                 const sessionID = menuSession ?? targetSession();
-                const info = sessionID ? await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID)).catch(() => undefined) : undefined;
-                const directory = info?.location?.directory;
+                const directory = await directoryOf(sessionID);
                 if (rel === undefined) {
                   await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
                   return;

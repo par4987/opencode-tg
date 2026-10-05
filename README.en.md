@@ -105,6 +105,7 @@ Common `stt` options: `whisper` and `model` (local paths), `baseUrl` +
 ## Server compatibility
 
 - **Permissions**: servers 2.0.19+ ship the build agent with `{"*", "*", "allow"}` as its first rule, so `ask` rules from the config's `permissions` (root or `agents.*`) are shadowed — permission prompts only arrive when the *server* decides to ask (e.g. `external_directory` or `.env` reads). When one arrives, the bot shows its three buttons (✅ once · 🔁 always · ✖ deny) and settles it over the local API.
+- **Inactive sessions**: the server only serves sessions it holds in memory by id — after a restart (or once the PC closes one) every id-addressed endpoint 404s until it is reopened (verified live: GET, prompt, inbox, fork, context). The plugin absorbs it where it can: `/ls`, `/git`, `/find`, `/config`, `/worktree` and `/new` resolve the directory from the plugin's own records (tracked session + on-disk `<id>.json`), and `/export` falls back to the on-disk `<id>.jsonl`, so they keep working. What genuinely needs the server (prompts, `/usage`, `/context`, `/compact`, `/fork`, `/revert`, `/kill`, `/queue`) answers with the honest "not active — open it on the PC" notice instead of a cryptic 404.
 - The plugin has been exercised against 2.0.15–2.0.22; typechecking uses the current generation's `@opencode/plugin`.
 
 ## Tests and verification
