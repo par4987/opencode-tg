@@ -30,7 +30,7 @@ import { TopicResolver, TopicStore } from "./src/topics.js";
 import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
-import { readHistory, jsonlPath, type HistoryEntry } from "./src/history.js";
+import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
 
@@ -60,6 +60,7 @@ const HELP = [
   "/new \u2014 sesi\u00f3n nueva en el proyecto actual",
   "/skill <id> <texto> \u2014 corre un prompt con la skill cargada",
   "/archive \u00b7 /unarchive \u00b7 /delthread \u2014 archivar, reabrir o borrar el hilo de una sesi\u00f3n",
+  "/rebuild \u2014 borrar TODOS los hilos y reconstruir el foro limpio (los activos primero)",
   "/compact \u2014 compactar el contexto de la sesi\u00f3n",
   "/usagestats <d\u00edas?> \u2014 tokens y costo de los \u00faltimos d\u00edas",
   "/ls <carpeta?> \u2014 navegar los archivos del proyecto: toc\u00e1 para descargar, \u{1F4CE} adjunta al pr\u00f3ximo",
@@ -1871,6 +1872,7 @@ export default {
       { command: "archive", description: "Archive a session's thread (closes or removes it)" },
       { command: "unarchive", description: "Wake an archived session — rebuilds its thread" },
       { command: "delthread", description: "Delete a session\u0027s thread" },
+      { command: "rebuild", description: "Wipe all threads & rebuild the forum clean" },
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
 
@@ -2644,7 +2646,11 @@ export default {
             } catch (legacyError) {
               log("WARN", "export legacy", safe(legacyError));
             }
-            await reply("No se pudo exportar: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+            await reply(
+              isSessionNotFound(error)
+                ? "Esa sesi\u00f3n no est\u00e1 activa en el server y no hay transcript en disco \u2014 las sesiones nuevas viven solo en su memoria (y el server a veces falla al persistirlas: \u00abFailed to drain Session\u00bb en su log). Abrila en la PC y reintent\u00e1: activa, el export funciona."
+                : "No se pudo exportar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+            );
           }
           return;
         }
@@ -2942,10 +2948,25 @@ export default {
             return;
           }
           const label = sessions.get(target)?.title ?? target.slice(0, 18);
-          const path = jsonlPath(target);
-          const entries = readHistory(path, 16);
+          // The API export first: newer sessions live only in the server's
+          // memory, so the legacy .jsonl never appears for them — but while
+          // the session is loaded, the export endpoint carries the whole
+          // conversation (verified live).
+          let entries: HistoryEntry[] = [];
+          if (await forms.connect()) {
+            const exported = await forms
+              .request<Record<string, unknown>>(
+                "GET",
+                "/api/experimental/session/" + encodeURIComponent(target) + "/export",
+              )
+              .catch(() => undefined);
+            if (exported) entries = entriesFromExport(exported, 16);
+          }
+          if (entries.length === 0) entries = readHistory(jsonlPath(target), 16);
           if (entries.length === 0) {
-            await reply(`\u{1F4DC} <b>${escapeHtml(label)}</b> — sin historial todav\u00eda.`);
+            await reply(
+              `\u{1F4DC} <b>${escapeHtml(label)}</b> \u2014 sin historial accesible: la sesi\u00f3n no est\u00e1 activa en el server y no hay transcript en disco (las sesiones nuevas viven en su memoria). Abrila en la PC y reintent\u00e1.`,
+            );
             return;
           }
           const ROLE_ICON: Record<HistoryEntry["role"], string> = {
@@ -3284,6 +3305,42 @@ export default {
             log("WARN", "delthread", safe(error));
             await reply("\u274C No se pudo eliminar el hilo.");
           }
+          return;
+        }
+
+        case "rebuild": {
+          // /rebuild — wipe every session thread and rebuild the forum
+          // clean. The desktop's session list cannot be mirrored into
+          // Telegram's order, and months of topics pile up stale; this is
+          // the reset button. Every mapped thread goes, then the sessions
+          // the server holds get fresh threads — oldest first so the most
+          // recent ends at the top — and everything else rebuilds on its
+          // next event (the resolver's whole job).
+          if (!topicStore || chatId === undefined) {
+            await reply("Solo tiene sentido en modo foro.");
+            return;
+          }
+          const total = topicStore.entries().length;
+          await telegram
+            .sendMessage(
+              chatId,
+              "\u{1F9F9} <b>Reconstruir el foro</b>\n" +
+                `Borra TODOS los hilos de sesiones (${total} mapeados) y recrea los de las sesiones activas del server (hasta 12, la m\u00e1s reciente queda arriba).\n` +
+                "El resto vuelve solo: cada sesi\u00f3n crea su hilo nuevo con su pr\u00f3xima actividad. Los mensajes viejos no se re-importan \u2014 <code>/export</code> baja el transcript de cada una.",
+              {
+                parseMode: "HTML",
+                messageThreadId: threadOf(threadSession),
+                replyMarkup: {
+                  inline_keyboard: [
+                    [
+                      { text: "\u{1F9F9} S\u00ed, reconstruir", callback_data: "rbld:ok" },
+                      { text: "\u274C Cancelar", callback_data: "rbld:no" },
+                    ],
+                  ],
+                },
+              },
+            )
+            .catch((error) => log("WARN", "rebuild ask", safe(error)));
           return;
         }
 
@@ -3882,6 +3939,70 @@ export default {
                 }
                 await ack("Esta pregunta ya no está activa");
               };
+              if (payload === "rbld:ok" || payload === "rbld:no") {
+                if (payload === "rbld:no") {
+                  await ack("Cancelado \u2014 no se toc\u00f3 nada");
+                  if (cq.message) {
+                    await telegram
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, "\u274C Reconstrucci\u00f3n cancelada.", { parseMode: "HTML" })
+                      .catch(() => undefined);
+                  }
+                  return;
+                }
+                if (!topicStore || !cq.message) {
+                  await ack("No pude reconstruir \u2014 prob\u00e1 /rebuild de nuevo.");
+                  return;
+                }
+                await ack("Reconstruyendo\u2026");
+                const chat = cq.message.chat.id;
+                try {
+                  // 1) every mapped thread goes — long-dead topic ids simply
+                  //    answer an error the catch tolerates.
+                  const all = topicStore.entries();
+                  for (const [, tid] of all) {
+                    void telegram.deleteForumTopic(chat, tid).catch(() => undefined);
+                  }
+                  topicStore.clear();
+                  // 2) fresh threads for the sessions the server holds,
+                  //    oldest first so the most recent lands at the top of
+                  //    the topic list; the flood gate serializes the burst.
+                  let created = 0;
+                  if (await forms.connect()) {
+                    const list = await forms.request<Array<ApiSession>>("GET", "/session").catch(() => undefined);
+                    const rows = (Array.isArray(list) ? list : [])
+                      .filter((s) => s?.id && (s.time?.updated ?? 0) > 0)
+                      .sort((a, b) => (a.time?.updated ?? 0) - (b.time?.updated ?? 0))
+                      .slice(-12);
+                    for (const s of rows) {
+                      const title = (s.title?.trim() || s.id.slice(0, 24)).slice(0, 128);
+                      const tid = await telegram.createForumTopic(chat, title).catch(() => undefined);
+                      if (tid === undefined) continue;
+                      topicStore.set(s.id, tid);
+                      created += 1;
+                      await telegram
+                        .sendMessage(
+                          chat,
+                          "\u{1F9F1} Hilo reconstruido \u2014 <code>/history</code> ve el final de la conversaci\u00f3n; <code>/export</code> baja el transcript completo.",
+                          { parseMode: "HTML", messageThreadId: tid },
+                        )
+                        .catch(() => undefined);
+                    }
+                  }
+                  log("INFO", `rebuild: ${all.length} hilos borrados, ${created} recreados`);
+                  await telegram
+                    .editMessageText(
+                      chat,
+                      cq.message.message_id,
+                      `\u{1F9F9} ${all.length} hilo(s) borrado(s) \u00b7 ${created} recreado(s) para las sesiones activas.\nEl resto vuelve solo con su pr\u00f3xima actividad.`,
+                      { parseMode: "HTML" },
+                    )
+                    .catch(() => undefined);
+                } catch (error) {
+                  log("WARN", "rebuild", safe(error));
+                  await ack("No se pudo completar la reconstrucci\u00f3n \u2014 /rebuild de nuevo.");
+                }
+                return;
+              }
               if (payload.startsWith("gitdiff:")) {
                 // gitdiff:<sessionID> — the working diff of the session's
                 // project, as a preview plus the full patch downloadable.

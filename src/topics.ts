@@ -109,6 +109,12 @@ export class TopicStore {
     this.persist();
   }
 
+  /** Every mapping, for the wipe in /rebuild. */
+  entries(): Array<[string, number]> {
+    this.load();
+    return [...this.cache.entries()];
+  }
+
   /** Forget every mapping — used when topics are unavailable. */
   clear(): void {
     this.cache.clear();

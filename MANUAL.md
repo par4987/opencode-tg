@@ -88,7 +88,7 @@ los oculta por completo.
 | `/use <id>` | Fija la sesión con la que hablás desde el General |
 | `/watch <id>` / `/watch off` | Vigila (o deja de vigilar) una sesión |
 | `/running` | Solo las sesiones trabajando ahora |
-| `/history` | Historial de la sesión del hilo (o `/history <id>`) |
+| `/history` | Historial de la sesión del hilo (o `/history <id>`) — lee del server mientras la sesión está activa, del transcript en disco si no |
 | `/kill` | Interrumpe el turno en curso de la sesión |
 | `/new` | Sesión nueva con hilo propio — `/new <título>` la crea ya bautizada; el hilo sigue el nombre si la sesión se renombra |
 | `/send <id> <texto>` | Manda un prompt a una sesión sin cambiar de hilo |
@@ -144,6 +144,7 @@ el prompt y el resultado llega al hilo de esa tarea.
 | `/archive` | Archiva el hilo de la sesión (queda visible pero cerrado) |
 | `/unarchive` | Lo reabre |
 | `/delthread` | Borra el hilo del foro (la sesión sigue en OpenCode) |
+| `/rebuild` | Borra TODOS los hilos y reconstruye el foro limpio: hilos nuevos para las sesiones activas (la más reciente arriba), el resto vuelve solo con su próxima actividad |
 
 Los hilos se archivan solos tras días de inactividad (`archiveAfterDays`)
 y se reabren solos si la sesión revive.
@@ -180,6 +181,7 @@ autorizados en `~/.opencode/tg/.env`.
 - **Archivar en chat privado**: Telegram no permite que un bot cierre tópicos en un chat privado — así que `/archive` elimina el hilo del chat y silencia la sesión (sin espejo ni avisos); `/unarchive` lo recrea nuevo y despierta la sesión. `/delthread` borra el hilo sin silenciar: una sesión activa lo recrea con su próximo evento (para sacártela de encima de verdad: `/archive`).
 - **Borrar un hilo con el eliminar nativo de Telegram**: el bot lo nota solo — el próximo mensaje del agente cae en General una única vez y el hilo se reconstruye solo. No hace falta hacer nada.
 - **Sesiones tras un reinicio del server**: el server solo tiene en memoria las sesiones abiertas en la PC — después de un reinicio, mandarle un mensaje a un hilo cuyo session ya no está abierto responde «🚫 esa sesión no está activa en el server». No es un error del bot: abrila en la PC y sigue andando, o creá otra con `/new`. Los comandos de proyecto (`/ls`, `/git`, `/find`, `/config`, `/worktree`) y `/export` siguen funcionando igual porque leen del disco.
+- **Transcripts de sesiones nuevas**: los servers 2.0.19+ no siempre persisten la conversación a disco (su propio log registra fallos de «Failed to drain Session»). Para esas sesiones, `/history` y `/export` funcionan con la sesión abierta en la PC; cerrada, responden con el aviso honesto en lugar de inventar un historial vacío.
 - **El nombre del hilo sigue al título de la sesión**: si el desktop la renombra, el hilo se renombra solo — y si el renombrado se pierde (un reinicio de por medio), un chequeo de deriva lo alcanza dentro de los 5 minutos de la próxima actividad.
 - Los textos inline viajan completos en partes numeradas; los mayores de 12 KB como documento.
 

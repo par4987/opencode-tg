@@ -101,7 +101,7 @@ answered — with **all the answers together**.
 | `/use <id>` | Pins the session you talk to from General |
 | `/watch <id>` / `/watch off` | Watch (or stop watching) a session |
 | `/running` | Only the sessions working right now |
-| `/history` | History of the topic's session (or `/history <id>`) |
+| `/history` | History of the topic's session (or `/history <id>`) — reads from the server while the session is active, from the on-disk transcript otherwise |
 | `/kill` | Interrupts the current turn |
 | `/new` | New session with its own topic — `/new <title>` creates it already named; the topic follows session renames |
 | `/send <id> <text>` | Send a prompt to a session without switching topics |
@@ -157,6 +157,7 @@ prompt, and the result lands in the task's topic.
 | `/archive` | Archives the session's topic (visible but closed) |
 | `/unarchive` | Reopens it |
 | `/delthread` | Deletes the forum topic (the session lives on in OpenCode) |
+| `/rebuild` | Wipes ALL threads and rebuilds the forum clean: fresh threads for the active sessions (most recent on top), the rest return on their next activity |
 
 Topics archive themselves after idle days (`archiveAfterDays`) and reopen
 on their own if the session revives.
@@ -208,6 +209,11 @@ allowed-chats list in `~/.opencode/tg/.env`.
   new one with `/new`. The project commands (`/ls`, `/git`, `/find`,
   `/config`, `/worktree`) and `/export` keep working regardless because
   they read from disk.
+- **Transcripts of newer sessions**: the 2.0.19+ servers do not always
+  persist a conversation to disk (their own log records "Failed to drain
+  Session" failures). For those sessions, `/history` and `/export` work
+  while the session is open on the PC; closed, they answer with the honest
+  notice instead of inventing an empty history.
 - **The thread's name follows the session's title**: when the desktop
   renames a session, the thread renames itself — and a rename lost to a
   restart is caught by a drift check within 5 minutes of the next

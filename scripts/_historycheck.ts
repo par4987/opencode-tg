@@ -4,7 +4,7 @@
  * user picked, and it is also what stops the `session/load` ClientError —
  * that error is the server refusing a second owner for a running turn.
  */
-import { readHistory, parseEventLine, jsonlPath, sessionsDir } from "../src/history.js";
+import { readHistory, parseEventLine, jsonlPath, sessionsDir, entriesFromExport } from "../src/history.js";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {
@@ -69,6 +69,32 @@ check("sessionsDir contiene opencode/sessions", sessionsDir().includes("opencode
 
 // readHistory of a missing file yields nothing instead of throwing.
 check("archivo inexistente -> []", readHistory(jsonlPath("ses_does_not_exist")).length === 0);
+
+// entriesFromExport: the API export as history source. The 2.0.19+ servers
+// keep newer sessions in memory only — the legacy .jsonl never appears for
+// them — so /history reads the export while the session is loaded.
+{
+  const exported = {
+    info: { id: "ses_x" },
+    messages: [
+      { type: "model-switched", model: { id: "m" }, previous: { id: "o" } },
+      { type: "user", metadata: { displayText: "Hola, que ve el historial?" }, time: { created: 1 } },
+      { type: "assistant", content: [{ type: "reasoning", text: "pensamiento oculto" }, { type: "text", text: "El final de la conversación." }], time: { created: 2 } },
+      { type: "idle", outcome: "succeeded" },
+      { type: "assistant", content: [{ type: "reasoning", text: "solo razonamiento, sin texto visible" }] },
+      { type: "user", metadata: {} },
+      { type: "compaction", summary: "resumen" },
+    ],
+  };
+  const rows = entriesFromExport(exported, 5);
+  check("export: solo user/assistant con texto", rows.length === 2, JSON.stringify(rows.map((r) => r.role)));
+  check("export: el texto del user por displayText", rows[0]?.role === "user" && rows[0]?.text === "Hola, que ve el historial?");
+  check("export: assistant une bloques text (sin reasoning)", rows[1]?.role === "assistant" && rows[1]?.text === "El final de la conversación.");
+  check("export: garbage no rompe", entriesFromExport(undefined).length === 0 && entriesFromExport({ messages: "no" }).length === 0);
+  // maxEntries recorta por el final.
+  const many = entriesFromExport({ messages: Array.from({ length: 10 }, (_, i) => ({ type: "user", metadata: { displayText: "m" + i } })) }, 3);
+  check("export: recorta al final (maxEntries)", many.length === 3 && many[2]?.text === "m9", many.map((r) => r.text).join(","));
+}
 
 if (failures === 0) console.log("TODO OK");
 else {

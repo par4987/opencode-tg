@@ -46,6 +46,46 @@ export function jsonlPath(sessionId: string): string {
 }
 
 /**
+ * The API export as a history source. The 2.0.19+ servers keep newer
+ * sessions in memory only — their transcript never lands in the legacy
+ * `.jsonl` dir (measured: the server's own drain can fail upstream, and
+ * even healthy sessions do not show up there). While the session is
+ * loaded, though, `/experimental/session/{id}/export` hands the full
+ * conversation over — this maps that shape into history entries.
+ *
+ * Export shape (verified live): `messages` is an event log — `type:
+ * "user"` carries `metadata.displayText`, `type: "assistant"` carries
+ * `content` blocks (`text` is the visible answer, `reasoning` is skipped),
+ * and the rest (idle, model-switched, agent-switched, compaction, system,
+ * synthetic) is lifecycle noise the history view does not need.
+ */
+export function entriesFromExport(exported: unknown, maxEntries = 20): HistoryEntry[] {
+  const messages = (exported as { messages?: unknown } | undefined)?.messages;
+  if (!Array.isArray(messages)) return [];
+  const entries: HistoryEntry[] = [];
+  for (const raw of messages) {
+    const m = raw as {
+      type?: string;
+      metadata?: { displayText?: unknown };
+      content?: Array<{ type?: string; text?: unknown }>;
+      time?: { created?: number };
+    };
+    if (m.type === "user") {
+      const text = typeof m.metadata?.displayText === "string" ? m.metadata.displayText.trim() : "";
+      if (text) entries.push({ role: "user", text, timestamp: m.time?.created });
+    } else if (m.type === "assistant") {
+      const text = (Array.isArray(m.content) ? m.content : [])
+        .filter((block) => block?.type === "text" && typeof block.text === "string")
+        .map((block) => block.text as string)
+        .join("")
+        .trim();
+      if (text) entries.push({ role: "assistant", text, timestamp: m.time?.created });
+    }
+  }
+  return entries.slice(-maxEntries);
+}
+
+/**
  * Parse the most recent `maxEntries` entries from a transcript.
  *
  * The window grows until something is found: a long session whose last
