@@ -145,6 +145,7 @@ el prompt y el resultado llega al hilo de esa tarea.
 | `/unarchive` | Lo reabre |
 | `/delthread` | Borra el hilo del foro (la sesión sigue en OpenCode) |
 | `/rebuild` | Borra TODOS los hilos y reconstruye el foro limpio: hilos nuevos para las sesiones activas (la más reciente arriba), el resto vuelve solo con su próxima actividad |
+| `/rename` | Renombra la sesión del hilo (o `/rename <ses_id> <título>`) — el hilo y el desktop siguen el cambio |
 
 Los hilos se archivan solos tras días de inactividad (`archiveAfterDays`)
 y se reabren solos si la sesión revive.

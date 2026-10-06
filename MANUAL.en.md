@@ -158,6 +158,7 @@ prompt, and the result lands in the task's topic.
 | `/unarchive` | Reopens it |
 | `/delthread` | Deletes the forum topic (the session lives on in OpenCode) |
 | `/rebuild` | Wipes ALL threads and rebuilds the forum clean: fresh threads for the active sessions (most recent on top), the rest return on their next activity |
+| `/rename` | Renames the topic's session (or `/rename <ses_id> <title>`) — the thread and the desktop follow |
 
 Topics archive themselves after idle days (`archiveAfterDays`) and reopen
 on their own if the session revives.

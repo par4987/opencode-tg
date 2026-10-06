@@ -61,6 +61,7 @@ const HELP = [
   "/skill <id> <texto> \u2014 corre un prompt con la skill cargada",
   "/archive \u00b7 /unarchive \u00b7 /delthread \u2014 archivar, reabrir o borrar el hilo de una sesi\u00f3n",
   "/rebuild \u2014 borrar TODOS los hilos y reconstruir el foro limpio (los activos primero)",
+  "/rename \u2014 renombrar la sesi\u00f3n del hilo: /rename <nuevo t\u00edtulo>",
   "/compact \u2014 compactar el contexto de la sesi\u00f3n",
   "/usagestats <d\u00edas?> \u2014 tokens y costo de los \u00faltimos d\u00edas",
   "/ls <carpeta?> \u2014 navegar los archivos del proyecto: toc\u00e1 para descargar, \u{1F4CE} adjunta al pr\u00f3ximo",
@@ -1873,6 +1874,7 @@ export default {
       { command: "unarchive", description: "Wake an archived session — rebuilds its thread" },
       { command: "delthread", description: "Delete a session\u0027s thread" },
       { command: "rebuild", description: "Wipe all threads & rebuild the forum clean" },
+      { command: "rename", description: "Rename a session: /rename <title>" },
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
 
@@ -3341,6 +3343,53 @@ export default {
               },
             )
             .catch((error) => log("WARN", "rebuild ask", safe(error)));
+          return;
+        }
+
+        case "rename": {
+          // /rename <título> — rename a session from the phone (the
+          // thread's own session, or /rename <ses_id> <título>). The
+          // desktop's renames ride the same endpoint (verified live:
+          // PATCH /session/{id} -> 204, the title follows), and its
+          // `session.renamed` event would carry it here anyway — doing it
+          // eagerly means the receipt is instant and the topic follows now.
+          const first = argument.trim().split(/\s+/)[0] ?? "";
+          const looksLikeId = /^ses_[a-z0-9]+$/i.test(first);
+          const target = looksLikeId ? first : threadSession || targetSession();
+          const title = (looksLikeId ? argument.slice(first.length) : argument).trim();
+          if (!target) {
+            await reply("No s\u00e9 qu\u00e9 sesi\u00f3n \u2014 escribilo en su hilo, o <code>/rename <ses_id> <t\u00edtulo></code>.");
+            return;
+          }
+          if (!title) {
+            await reply("Decime el t\u00edtulo: <code>/rename <nuevo t\u00edtulo></code>");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          // 128 is Telegram's topic-name ceiling; the server takes more,
+          // but a title the thread cannot wear is half a rename.
+          const clean = title.slice(0, 128);
+          const tracked = sessions.get(target);
+          try {
+            await forms.request("PATCH", "/session/" + encodeURIComponent(target), { title: clean });
+            if (tracked) tracked.title = clean;
+            const tid = topicStore?.get(target);
+            if (tid !== undefined && chatId !== undefined) {
+              const name = tracked?.parentID ? `\u{1F916} ${clean}` : clean;
+              await telegram.editForumTopic(chatId, tid, name).catch(() => undefined);
+            }
+            await reply(`\u{1F3F7}\uFE0F Sesi\u00f3n renombrada: <b>${escapeHtml(clean)}</b>`);
+          } catch (error) {
+            log("WARN", "rename", safe(error));
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED + "\n(Renombrar necesita la sesi\u00f3n activa en el server.)"
+                : "No se pudo renombrar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+            );
+          }
           return;
         }
 
