@@ -115,7 +115,7 @@ Common `stt` options: `whisper` and `model` (local paths), `baseUrl` +
 ```sh
 npm install
 npm run typecheck   # tsc with the project's tsconfig — 0 errors
-npm test            # the 13 suites (~175 checks) with their own runner
+npm test            # the 14 suites (~190 checks) with their own runner
 ```
 
 GitHub Actions runs both on every push (`.github/workflows/ci.yml`).

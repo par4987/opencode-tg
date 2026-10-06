@@ -29,6 +29,7 @@ import { TurnRenderer } from "./src/stream.js";
 import { TopicResolver, TopicStore } from "./src/topics.js";
 import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
+import { MessageCards } from "./src/message-cards.js";
 import { readHistory, jsonlPath, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
@@ -595,8 +596,10 @@ export default {
     /**
      * The /models picker's whole state — providers first, then the chosen
      * provider's models with their display names, mirroring the desktop
-     * selector. One picker at a time: a new /models overwrites the previous
-     * one, and a restart empties it — stale taps say so plainly.
+     * selector. The state rides on the message carrying its keyboard: a
+     * callback only ever addresses the card it lives in, so two threads
+     * can hold two pickers without one acting on the other's session
+     * ("queue mezcla chats" was this class).
      */
     interface ModelPicker {
       target: string;
@@ -609,13 +612,14 @@ export default {
       /** Wizard mode: picking sets the task's model instead of POSTing. */
       taskMode?: boolean;
     }
-    let modelPicker: ModelPicker | undefined;
-    let agentPickerItems: ApiAgent[] = [];
-    /** Projects behind the last /projects picker, freshest first. */
-    let projectsPicker: Array<{ directory: string; name: string; updated?: number }> = [];
-    /** The last /queue listing, so its buttons can address an item by index. */
-    let inboxItems: Array<{ id: string; text: string }> = [];
-    let inboxThread: string | undefined;
+    /** One card per message, for every index-addressed picker. */
+    const modelCards = new MessageCards<ModelPicker>();
+    const agentCards = new MessageCards<{ target: string; items: ApiAgent[] }>();
+    /** Projects behind a /projects or wizard card, freshest first. */
+    const projectCards = new MessageCards<Array<{ directory: string; name: string; updated?: number }>>();
+    /** A /queue card: its session and its items — a button addresses only
+     *  the list it was drawn from, never another thread's inbox. */
+    const inboxCards = new MessageCards<{ session: string; items: Array<{ id: string; text: string }> }>();
     /** Armed by the edit button: the next message replaces that inbox item. */
     let inboxEdit: { id: string; text: string; session: string } | undefined;
     /**
@@ -623,12 +627,14 @@ export default {
      * steer, cancel and replace — plus the "send in this order" button that
      * replays the arranged sequence into the running turn.
      */
-    const renderInboxList = (): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } => {
-      const label = inboxThread ? (sessions.get(inboxThread)?.title ?? inboxThread.slice(0, 18)) : "?";
-      const lines = inboxItems.map((item, i) => `${i + 1}. ${escapeHtml(item.text.slice(0, 120))}`);
-      const keyboard = inboxItems.map((_, i) => [
+    const renderInboxList = (
+      card: { session: string; items: Array<{ id: string; text: string }> },
+    ): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } => {
+      const label = sessions.get(card.session)?.title ?? card.session.slice(0, 18);
+      const lines = card.items.map((item, i) => `${i + 1}. ${escapeHtml(item.text.slice(0, 120))}`);
+      const keyboard = card.items.map((_, i) => [
         ...(i > 0 ? [{ text: "\u2191", callback_data: `ib:up:${i}` }] : []),
-        ...(i < inboxItems.length - 1 ? [{ text: "\u2193", callback_data: `ib:down:${i}` }] : []),
+        ...(i < card.items.length - 1 ? [{ text: "\u2193", callback_data: `ib:down:${i}` }] : []),
         { text: "\u25B6", callback_data: `ib:steer:${i}` },
         { text: "\u2716", callback_data: `ib:cancel:${i}` },
         { text: "\u270F\uFE0F", callback_data: `ib:edit:${i}` },
@@ -636,7 +642,7 @@ export default {
       keyboard.push([{ text: "\u25B6 Enviar en este orden", callback_data: "ib:order:all" }]);
       return {
         text:
-          `\u{1F4E5} <b>${escapeHtml(label)}</b> \u2014 ${inboxItems.length} en el inbox.\n` +
+          `\u{1F4E5} <b>${escapeHtml(label)}</b> \u2014 ${card.items.length} en el inbox.\n` +
           `\u2191\u2193 reordena, \u25B6 adelanta, \u2716 cancela, \u270F\uFE0F reemplaza.\n${lines.join("\n")}`,
         keyboard,
       };
@@ -644,7 +650,6 @@ export default {
 
 
 
-    let agentPickerTarget = "";
     /**
      * The forms behind those questions, keyed by form id — the same object the
      * desktop client answers, so either side can settle it and `form.replied`
@@ -1553,7 +1558,7 @@ export default {
           return;
         }
         const projects = await forms.request<Array<{ canonical?: string; time?: { updated?: number } }>>("GET", "/project").catch(() => undefined);
-        projectsPicker = (Array.isArray(projects) ? projects : [])
+        const projectList = (Array.isArray(projects) ? projects : [])
           .filter((p) => typeof p.canonical === "string" && existsSync(p.canonical as string))
           .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
           .slice(0, 12)
@@ -1561,16 +1566,17 @@ export default {
             directory: p.canonical as string,
             name: ((p.canonical as string).split(/[\\/]/).filter(Boolean).pop() ?? p.canonical) as string,
           }));
-        if (chatId === undefined || projectsPicker.length === 0) {
+        if (chatId === undefined || projectList.length === 0) {
           await send("No pude listar proyectos \u2014 prob\u00e1 /newtask m\u00e1s tarde.", thread);
           return;
         }
-        const keyboard = projectsPicker.map((p, i) => [{ text: p.name.slice(0, 64), callback_data: "task:proj:" + i }]);
-        await telegram.sendMessage(chatId, sofar + "(3/6) \u{1F4C1} \u00bfEn qu\u00e9 proyecto corre? Toc\u00e1 uno:", {
+        const keyboard = projectList.map((p, i) => [{ text: p.name.slice(0, 64), callback_data: "task:proj:" + i }]);
+        const sent = await telegram.sendMessage(chatId, sofar + "(3/6) \u{1F4C1} \u00bfEn qu\u00e9 proyecto corre? Toc\u00e1 uno:", {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
           replyMarkup: { inline_keyboard: keyboard },
         });
+        if (sent !== null) projectCards.set(sent, projectList);
         return;
       }
       if (w.step === "model") {
@@ -1784,10 +1790,9 @@ export default {
     };
     /** The chosen provider's models, display names first — like the selector. */
     const modelPickerPage = (
+      state: ModelPicker,
       page: number,
     ): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } => {
-      const state = modelPicker;
-      if (!state) return { text: "El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo.", keyboard: [] };
       const scoped = state.items
         .map((m, idx) => ({ m, idx }))
         .filter(({ m }) => (state.chosen ? m.providerID === state.chosen : true));
@@ -1823,13 +1828,15 @@ export default {
     };
 
     /** The /agents picker — few enough to need no pagination. */
-    const agentPickerPage = (): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } => {
-      const keyboard = agentPickerItems.map((a, i) => [
+    const agentPickerPage = (
+      card: { target: string; items: ApiAgent[] },
+    ): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } => {
+      const keyboard = card.items.map((a, i) => [
         { text: (a.name ?? a.id).slice(0, 64), callback_data: `ag:${i}` },
       ]);
-      const tracked = sessions.get(agentPickerTarget);
+      const tracked = sessions.get(card.target);
       return {
-        text: `\u{1F916} Agente para <b>${escapeHtml(tracked?.title ?? agentPickerTarget.slice(0, 18))}</b>\nToc\u00e1 uno para cambiarlo.`,
+        text: `\u{1F916} Agente para <b>${escapeHtml(tracked?.title ?? card.target.slice(0, 18))}</b>\nToc\u00e1 uno para cambiarlo.`,
         keyboard,
       };
     };
@@ -2124,15 +2131,16 @@ export default {
             );
             return;
           }
-          modelPicker = { target, items, providers: provList, chosen, search };
+          const state: ModelPicker = { target, items, providers: provList, chosen, search };
           if (chatId === undefined) return;
           const chosenPage = chosen || search;
-          const { text, keyboard } = chosenPage ? modelPickerPage(0) : modelProviderPage(modelPicker);
-          await telegram.sendMessage(chatId, text, {
+          const { text, keyboard } = chosenPage ? modelPickerPage(state, 0) : modelProviderPage(state);
+          const sent = await telegram.sendMessage(chatId, text, {
             parseMode: "HTML",
             messageThreadId: threadOf(threadSession),
             replyMarkup: { inline_keyboard: keyboard },
           });
+          if (sent !== null) modelCards.set(sent, state);
           return;
         }
 
@@ -2152,15 +2160,15 @@ export default {
             await reply("No encontr\u00e9 agentes.");
             return;
           }
-          agentPickerItems = all.slice(0, 20);
-          agentPickerTarget = target;
+          const card = { target, items: all.slice(0, 20) };
           if (chatId === undefined) return;
-          const { text, keyboard } = agentPickerPage();
-          await telegram.sendMessage(chatId, text, {
+          const { text, keyboard } = agentPickerPage(card);
+          const sent = await telegram.sendMessage(chatId, text, {
             parseMode: "HTML",
             messageThreadId: threadOf(threadSession),
             replyMarkup: { inline_keyboard: keyboard },
           });
+          if (sent !== null) agentCards.set(sent, card);
           return;
         }
 
@@ -2655,7 +2663,7 @@ export default {
           }
           // Most recently touched first — that is the order the desktop
           // shows, and folders nobody opens are noise in a picker.
-          projectsPicker = projects
+          const projectList = projects
             .filter((p) => typeof p.canonical === "string" && existsSync(p.canonical as string))
             .sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
             .slice(0, 12)
@@ -2665,17 +2673,18 @@ export default {
               updated: p.time?.updated,
             }));
           if (chatId === undefined) return;
-          const keyboard = projectsPicker.map((p, i) => [
+          const keyboard = projectList.map((p, i) => [
             {
               text: `${p.name}${p.updated ? ` \u00b7 ${fmtAgo(p.updated)}` : ""}`.slice(0, 64),
               callback_data: `proj:${i}`,
             },
           ]);
-          await telegram.sendMessage(
+          const sent = await telegram.sendMessage(
             chatId,
             "\u{1F4C1} Eleg\u00ed un proyecto para abrir una sesi\u00f3n nueva en \u00e9l.",
             { parseMode: "HTML", messageThreadId: threadOf(threadSession), replyMarkup: { inline_keyboard: keyboard } },
           );
+          if (sent !== null) projectCards.set(sent, projectList);
           return;
         }
         case "sessions": {
@@ -2793,22 +2802,27 @@ export default {
             await reply(isSessionNotFound(error) ? SESSION_UNLOADED : `No pude leer el inbox: ${escapeHtml(String((error as Error).message).slice(0, 150))}`);
             return;
           }
-          inboxThread = target;
-          inboxItems = (Array.isArray(inbox) ? inbox : []).map((item) => {
-            const payload = item.payload as { text?: string } | undefined;
-            return { id: String(item.id ?? ""), text: payload?.text ?? "(sin texto)" };
-          });
-          if (inboxItems.length === 0) {
+          const card = {
+            session: target,
+            items: (Array.isArray(inbox) ? inbox : []).map((item) => {
+              const payload = item.payload as { text?: string } | undefined;
+              return { id: String(item.id ?? ""), text: payload?.text ?? "(sin texto)" };
+            }),
+          };
+          if (card.items.length === 0) {
             await reply("\u{1F4E5} Inbox vac\u00edo. Los mensajes que mand\u00e9s mientras la sesi\u00f3n trabaja quedan ac\u00e1 y salen solos al terminar el turno.");
             return;
           }
           if (chatId === undefined) return;
-          const { text, keyboard } = renderInboxList();
-          await telegram.sendMessage(chatId, text, {
+          const { text, keyboard } = renderInboxList(card);
+          // The card is BOUND to this message: its buttons address this
+          // list and no other thread's, no matter what gets queued later.
+          const sent = await telegram.sendMessage(chatId, text, {
             parseMode: "HTML",
             messageThreadId: threadOf(threadSession),
             replyMarkup: { inline_keyboard: keyboard },
           });
+          if (sent !== null) inboxCards.set(sent, card);
           return;
         }
         case "flush": {
@@ -4188,7 +4202,7 @@ export default {
                 return;
               }
               if (payload.startsWith("mpv:")) {
-                const state = modelPicker;
+                const state = modelCards.get(cq.message?.message_id);
                 const prov = state?.providers[Number(payload.slice(4))];
                 if (!state || !prov) {
                   await ack("El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo");
@@ -4197,7 +4211,7 @@ export default {
                 state.chosen = prov.id;
                 state.search = "";
                 if (cq.message) {
-                  const { text, keyboard } = modelPickerPage(0);
+                  const { text, keyboard } = modelPickerPage(state, 0);
                   await telegram
                     .editMessageText(cq.message.chat.id, cq.message.message_id, text, {
                       parseMode: "HTML",
@@ -4209,7 +4223,7 @@ export default {
                 return;
               }
               if (payload.startsWith("mpb:")) {
-                const state = modelPicker;
+                const state = modelCards.get(cq.message?.message_id);
                 if (!state) {
                   await ack("El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo");
                   return;
@@ -4229,13 +4243,14 @@ export default {
                 return;
               }
               if (payload.startsWith("mp:")) {
-                if (!modelPicker) {
+                const state = modelCards.get(cq.message?.message_id);
+                if (!state) {
                   await ack("El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo");
                   return;
                 }
                 if (payload !== "mp:noop" && cq.message) {
                   const page = Number(payload.slice(3));
-                  const { text, keyboard } = modelPickerPage(Number.isFinite(page) ? page : 0);
+                  const { text, keyboard } = modelPickerPage(state, Number.isFinite(page) ? page : 0);
                   await telegram
                     .editMessageText(cq.message.chat.id, cq.message.message_id, text, {
                       parseMode: "HTML",
@@ -4247,15 +4262,16 @@ export default {
                 return;
               }
               if (payload.startsWith("mpk:")) {
-                const chosen = modelPicker?.items[Number(payload.slice(4))];
-                const target = modelPicker?.target;
+                const state = modelCards.get(cq.message?.message_id);
+                const chosen = state?.items[Number(payload.slice(4))];
+                const target = state?.target;
                 // Wizard mode: the pick becomes the task's model, not a switch.
-                if (modelPicker?.taskMode && taskWizard && chosen) {
+                if (state?.taskMode && taskWizard && chosen) {
                   const t = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                   taskWizard.model = { id: chosen.id, providerID: chosen.providerID };
                   taskWizard.step = "type";
                   writeDraft(taskWizard);
-                  modelPicker = undefined;
+                  modelCards.drop(cq.message?.message_id);
                   await ack("Modelo elegido: " + (chosen.name ?? chosen.id));
                   if (cq.message) {
                     await telegram
@@ -4288,6 +4304,9 @@ export default {
                       .catch(() => undefined);
                   }
                   await ack("Modelo cambiado");
+                  // A settled pick must not be re-applied by a second tap on
+                  // the same card.
+                  modelCards.drop(cq.message?.message_id);
                 } catch (error) {
                   log("WARN", "model set", safe(error));
                   await ack("No se pudo cambiar el modelo");
@@ -4308,9 +4327,10 @@ export default {
                 const [, action, arg] = payload.split(":");
                 const task = arg !== undefined && arg !== "save" && arg !== "cancel" ? readTasks().find((t) => t.id === arg) : undefined;
                 if (action === "proj") {
-                  const chosen = projectsPicker[Number(arg)];
+                  const chosen = projectCards.get(cq.message?.message_id)?.[Number(arg)];
                   const t = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                   if (taskWizard && chosen) {
+                    projectCards.drop(cq.message?.message_id);
                     taskWizard.directory = chosen.directory;
                     taskWizard.directoryName = chosen.name;
                     taskWizard.step = "model";
@@ -4365,7 +4385,7 @@ export default {
                       }
                     }
                     items.sort((a, b) => a.id.localeCompare(b.id));
-                    modelPicker = {
+                    const wizardPicker: ModelPicker = {
                       target: t ?? "",
                       items,
                       providers: [...new Set(items.map((m) => m.providerID))].map((pid) => ({ id: pid, name: provNames.get(pid) ?? pid })).sort((a, b) => a.name.localeCompare(b.name)),
@@ -4373,7 +4393,8 @@ export default {
                       taskMode: true,
                     };
                     if (cq.message && chatId !== undefined) {
-                      const { text, keyboard } = modelProviderPage(modelPicker);
+                      const { text, keyboard } = modelProviderPage(wizardPicker);
+                      modelCards.set(cq.message.message_id, wizardPicker);
                       await telegram
                         .editMessageText(cq.message.chat.id, cq.message.message_id, text, { parseMode: "HTML", replyMarkup: { inline_keyboard: keyboard } })
                         .catch(() => undefined);
@@ -4522,11 +4543,13 @@ export default {
               if (payload.startsWith("ib:")) {
                 // Inbox item buttons: reorder, steer, cancel, replace — the
                 // same handle the desktop gives its pending-message list.
+                // The state is THIS message's card: a /queue opened in
+                // another thread never rebinds these buttons.
                 const [, action, indexText] = payload.split(":");
                 const index = Number(indexText);
-                const item = inboxItems[index];
-                const session = inboxThread;
-                if (!session || (action !== "order" && !item)) {
+                const card = inboxCards.get(cq.message?.message_id);
+                const session = card?.session;
+                if (!card || !session) {
                   await ack("La lista expir\u00f3 \u2014 mand\u00e1 /queue de nuevo");
                   return;
                 }
@@ -4536,7 +4559,7 @@ export default {
                 }
                 const rerender = async (): Promise<void> => {
                   if (!cq.message) return;
-                  const { text, keyboard } = renderInboxList();
+                  const { text, keyboard } = renderInboxList(card);
                   await telegram
                     .editMessageText(cq.message.chat.id, cq.message.message_id, text, {
                       parseMode: "HTML",
@@ -4544,21 +4567,11 @@ export default {
                     })
                     .catch((error) => log("WARN", "inbox render", safe(error)));
                 };
-                if (action === "up" || action === "down") {
-                  const to = action === "up" ? index - 1 : index + 1;
-                  if (to >= 0 && to < inboxItems.length) {
-                    const [moved] = inboxItems.splice(index, 1);
-                    inboxItems.splice(to, 0, moved);
-                    await rerender();
-                  }
-                  await ack("Reordenado");
-                  return;
-                }
                 if (action === "order") {
                   // Replay the arranged sequence: cancel the pending items on
                   // the server, then steer each text back in exactly this
                   // order — the agent receives them in the user's arrangement.
-                  const ordered = [...inboxItems];
+                  const ordered = [...card.items];
                   for (const entry of ordered) {
                     await forms
                       .request("DELETE", `/session/${encodeURIComponent(session)}/inbox/${encodeURIComponent(entry.id)}`)
@@ -4575,6 +4588,22 @@ export default {
                       .editMessageText(cq.message.chat.id, cq.message.message_id, `\u25B6 ${ordered.length} mensaje(s) enviados en el orden elegido.`, { parseMode: "HTML" })
                       .catch(() => undefined);
                   }
+                  inboxCards.drop(cq.message?.message_id);
+                  return;
+                }
+                const item = card.items[index];
+                if (!item) {
+                  await ack("La lista expir\u00f3 \u2014 mand\u00e1 /queue de nuevo");
+                  return;
+                }
+                if (action === "up" || action === "down") {
+                  const to = action === "up" ? index - 1 : index + 1;
+                  if (to >= 0 && to < card.items.length) {
+                    const [moved] = card.items.splice(index, 1);
+                    card.items.splice(to, 0, moved);
+                    await rerender();
+                  }
+                  await ack("Reordenado");
                   return;
                 }
                 if (action === "steer") {
@@ -4598,8 +4627,9 @@ export default {
                   await forms
                     .request("DELETE", `/session/${encodeURIComponent(session)}/inbox/${encodeURIComponent(item.id)}`)
                     .catch((error) => log("WARN", "inbox cancel", safe(error)));
-                  inboxItems.splice(index, 1);
-                  if (inboxItems.length === 0) {
+                  card.items.splice(index, 1);
+                  if (card.items.length === 0) {
+                    inboxCards.drop(cq.message?.message_id);
                     if (cq.message) {
                       await telegram
                         .editMessageText(cq.message.chat.id, cq.message.message_id, "\u{1F5D1} Inbox vac\u00edo.", { parseMode: "HTML" })
@@ -4621,7 +4651,7 @@ export default {
                 return;
               }
               if (payload.startsWith("proj:")) {
-                const chosen = projectsPicker[Number(payload.slice(5))];
+                const chosen = projectCards.get(cq.message?.message_id)?.[Number(payload.slice(5))];
                 if (!chosen) {
                   await ack("El picker expir\u00f3 \u2014 mand\u00e1 /projects de nuevo");
                   return;
@@ -4657,8 +4687,9 @@ export default {
                 }
                 return;
               }              if (payload.startsWith("ag:")) {
-                const chosen = agentPickerItems[Number(payload.slice(3))];
-                const target = agentPickerTarget;
+                const card = agentCards.get(cq.message?.message_id);
+                const chosen = card?.items[Number(payload.slice(3))];
+                const target = card?.target;
                 if (!chosen || !target) {
                   await ack("El picker expiró — mandá /agents de nuevo");
                   return;
