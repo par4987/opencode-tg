@@ -1024,6 +1024,36 @@ export default {
       "\u{1F634} Esa sesi\u00f3n no est\u00e1 activa en el server \u2014 se reinici\u00f3 o la cerraste en la PC.\n" +
       "Abrila en la PC y reintent\u00e1, o cre\u00e1 otra con <code>/new</code>.";
 
+    /**
+     * A session's model and agent, even when the server's payload forgets
+     * them. Measured (the CJ31 ALV report): a session with 106K input
+     * tokens answered GET /session with `model: undefined` and
+     * `agent: undefined` — the fields are simply not tracked for some
+     * sessions. The transcript always knows: the LAST assistant message
+     * carries the model that produced it. Read-only and cheap when the
+     * payload is healthy — the export is only fetched on the miss.
+     */
+    const sessionIdentityOf = async (
+      sessionID: string,
+      info: ApiSession | undefined,
+    ): Promise<{ model?: { id?: string; providerID?: string }; agent?: string } | undefined> => {
+      if (info?.model?.id) return { model: info.model, agent: info.agent };
+      const exported = await forms
+        .request<{ messages?: Array<{ type?: string; model?: { id?: string; providerID?: string }; agent?: string }> }>(
+          "GET",
+          "/api/experimental/session/" + encodeURIComponent(sessionID) + "/export",
+        )
+        .catch(() => undefined);
+      const messages = Array.isArray(exported?.messages) ? exported.messages : [];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.type === "assistant" && m.model?.id) {
+          return { model: m.model, agent: info?.agent ?? m.agent };
+        }
+      }
+      return info ? { model: info.model, agent: info.agent } : undefined;
+    };
+
     /** The form waiting on this session, if any. */
     const openFormFor = (sessionID: string): OpenForm | undefined => {
       for (const form of openForms.values()) {
@@ -2002,10 +2032,14 @@ export default {
               .map((p) => [p.id as string, p.name ?? (p.id as string)]),
           );
           const tokens = info.tokens ?? {};
+          const identity = (await sessionIdentityOf(target, info)) ?? { model: info.model, agent: info.agent };
+          const modelLine = identity.model?.id
+            ? `🧪 <b>${escapeHtml(identity.model.providerID ? (provName.get(identity.model.providerID) ?? identity.model.providerID) + " · " : "")}</b><code>${escapeHtml(identity.model.id)}</code>`
+            : "🧪 aún sin turnos registrados";
           const lines = [
-            `\u{1F4CA} <b>${escapeHtml(info.title ?? sessions.get(target)?.title ?? target.slice(0, 18))}</b>`,
-            `\u{1F9EA} <b>${escapeHtml(info.model?.providerID ? (provName.get(info.model.providerID) ?? info.model.providerID) + " \u00b7 " : "")}</b><code>${escapeHtml(info.model?.id ?? "?")}</code> \u00b7 agente <code>${escapeHtml(info.agent ?? "?")}</code>`,
-            `\u{1FA99} ${fmtCost(info.cost ?? 0)} \u00b7 \u{1F4E5} ${fmtTokens(tokens.input ?? 0)} \u00b7 \u{1F4E4} ${fmtTokens(tokens.output ?? 0)} \u00b7 \u{1F9E0} ${fmtTokens(tokens.reasoning ?? 0)} \u00b7 \u26A1 ${fmtTokens(tokens.cache?.read ?? 0)}`,
+            `📊 <b>${escapeHtml(info.title ?? sessions.get(target)?.title ?? target.slice(0, 18))}</b>`,
+            `${modelLine} · agente <code>${escapeHtml(identity.agent ?? "?")}</code>`,
+            `🪙 ${fmtCost(info.cost ?? 0)} · 📥 ${fmtTokens(tokens.input ?? 0)} · 📤 ${fmtTokens(tokens.output ?? 0)} · 🧠 ${fmtTokens(tokens.reasoning ?? 0)} · ⚡ ${fmtTokens(tokens.cache?.read ?? 0)}`,
           ];
           if (info.time?.updated) lines.push(`\u{1F550} \u00daltima actividad ${fmtAgo(info.time.updated)}`);
           if (Array.isArray(providers) && providers.length > 0) {
@@ -2452,7 +2486,8 @@ export default {
             return;
           }
           const catalogue = await ctx.model.list().then((res) => res.data ?? []).catch(() => []);
-          const modelRef = info.model;
+          const identity = (await sessionIdentityOf(target, info)) ?? { model: info.model, agent: info.agent };
+          const modelRef = identity.model;
           const modelHit = catalogue.find(
             (m) => m.providerID === modelRef?.providerID && m.modelID === modelRef?.id,
           );
