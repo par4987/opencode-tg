@@ -22,6 +22,7 @@ const suites = [
   "_sttcheck",
   "_leadercheck",
   "_cardscheck",
+  "_extracheck",
 ];
 
 let failed = 0;

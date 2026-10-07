@@ -30,6 +30,8 @@ import { TopicResolver, TopicStore } from "./src/topics.js";
 import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
+import { t } from "./src/locale.js";
+import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
@@ -61,7 +63,15 @@ const HELP = [
   "/skill <id> <texto> \u2014 corre un prompt con la skill cargada",
   "/archive \u00b7 /unarchive \u00b7 /delthread \u2014 archivar, reabrir o borrar el hilo de una sesi\u00f3n",
   "/rebuild \u2014 borrar TODOS los hilos y reconstruir el foro limpio (los activos primero)",
-  "/rename \u2014 renombrar la sesi\u00f3n del hilo: /rename <nuevo t\u00edtulo>",
+  "/rename \u2014 renombrar la sesi\u00f3n del hilo: /rename <nuevo t\u00edtulo> (sin t\u00edtulo, sugiere tres)",
+  "/sh \u2014 correr un comando shell DENTRO de la sesi\u00f3n (ojo: PowerShell \u2014 us\u00e1 ; en vez de &&)",
+  "/note \u2014 dejar una nota en el transcript sin despertar al agente",
+  "/instructions \u2014 ver/editar las instrucciones persistentes de la sesi\u00f3n",
+  "/perms \u2014 los permisos «siempre» guardados (y /perms del <id> para revocar)",
+  "/turns \u2014 qu\u00e9 cambiaron los turnos de la sesi\u00f3n",
+  "/log \u2014 una muestra del log de la sesi\u00f3n (server-side)",
+  "/terminal \u2014 la terminal de la sesi\u00f3n, solo lectura",
+  "/detach \u2014 desacoplar la ra\u00edz del chat de su sesi\u00f3n",
   "/compact \u2014 compactar el contexto de la sesi\u00f3n",
   "/usagestats <d\u00edas?> \u2014 tokens y costo de los \u00faltimos d\u00edas",
   "/ls <carpeta?> \u2014 navegar los archivos del proyecto: toc\u00e1 para descargar, \u{1F4CE} adjunta al pr\u00f3ximo",
@@ -622,6 +632,8 @@ export default {
     /** A /queue card: its session and its items — a button addresses only
      *  the list it was drawn from, never another thread's inbox. */
     const inboxCards = new MessageCards<{ session: string; items: Array<{ id: string; text: string }> }>();
+    /** /rename suggestions, bound to the message that offers them. */
+    const suggestCards = new MessageCards<{ session: string; options: string[] }>();
     /** Armed by the edit button: the next message replaces that inbox item. */
     let inboxEdit: { id: string; text: string; session: string } | undefined;
     /**
@@ -1052,6 +1064,30 @@ export default {
         }
       }
       return info ? { model: info.model, agent: info.agent } : undefined;
+    };
+
+    /**
+     * Rename a session everywhere at once: server title, tracked title,
+     * forum topic. Returns an error message, or undefined on success —
+     * shared by /rename and the suggestion picker so both paths behave
+     * identically.
+     */
+    const applyRename = async (target: string, clean: string): Promise<string | undefined> => {
+      const tracked = sessions.get(target);
+      try {
+        await forms.request("PATCH", "/session/" + encodeURIComponent(target), { title: clean });
+        if (tracked) tracked.title = clean;
+        const tid = topicStore?.get(target);
+        if (tid !== undefined && chatId !== undefined) {
+          const name = tracked?.parentID ? `\u{1F916} ${clean}` : clean;
+          await telegram.editForumTopic(chatId, tid, name).catch(() => undefined);
+        }
+        return undefined;
+      } catch (error) {
+        log("WARN", "rename", safe(error));
+        if (isSessionNotFound(error)) return SESSION_UNLOADED + "\n(Renombrar necesita la sesi\u00f3n activa en el server.)";
+        return "No se pudo renombrar: " + escapeHtml(String((error as Error).message).slice(0, 200));
+      }
     };
 
     /** The form waiting on this session, if any. */
@@ -1905,6 +1941,14 @@ export default {
       { command: "delthread", description: "Delete a session\u0027s thread" },
       { command: "rebuild", description: "Wipe all threads & rebuild the forum clean" },
       { command: "rename", description: "Rename a session: /rename <title>" },
+      { command: "sh", description: "Run a shell command inside the session" },
+      { command: "note", description: "Leave a note in the transcript (agent asleep)" },
+      { command: "instructions", description: "The session's persistent instructions" },
+      { command: "perms", description: "Saved permissions: list, or /perms del <id>" },
+      { command: "turns", description: "What the session's turns changed" },
+      { command: "log", description: "A sample of the session's server log" },
+      { command: "terminal", description: "Read-only look at the session's terminal" },
+      { command: "detach", description: "Detach the chat root from its session" },
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
 
@@ -3388,6 +3432,8 @@ export default {
           // PATCH /session/{id} -> 204, the title follows), and its
           // `session.renamed` event would carry it here anyway — doing it
           // eagerly means the receipt is instant and the topic follows now.
+          // Without a title, the one-shot generator reads the transcript
+          // and proposes three tappables.
           const first = argument.trim().split(/\s+/)[0] ?? "";
           const looksLikeId = /^ses_[a-z0-9]+$/i.test(first);
           const target = looksLikeId ? first : threadSession || targetSession();
@@ -3396,35 +3442,346 @@ export default {
             await reply("No s\u00e9 qu\u00e9 sesi\u00f3n \u2014 escribilo en su hilo, o <code>/rename <ses_id> <t\u00edtulo></code>.");
             return;
           }
-          if (!title) {
-            await reply("Decime el t\u00edtulo: <code>/rename <nuevo t\u00edtulo></code>");
-            return;
-          }
           if (!(await forms.connect())) {
             await reply("La API local no responde.");
             return;
           }
           // 128 is Telegram's topic-name ceiling; the server takes more,
           // but a title the thread cannot wear is half a rename.
-          const clean = title.slice(0, 128);
-          const tracked = sessions.get(target);
-          try {
-            await forms.request("PATCH", "/session/" + encodeURIComponent(target), { title: clean });
-            if (tracked) tracked.title = clean;
-            const tid = topicStore?.get(target);
-            if (tid !== undefined && chatId !== undefined) {
-              const name = tracked?.parentID ? `\u{1F916} ${clean}` : clean;
-              await telegram.editForumTopic(chatId, tid, name).catch(() => undefined);
+          if (!title) {
+            // Suggestions: the model must be explicit (verified: without
+            // one the endpoint 400s) and cold-starts can outlast the
+            // regular timeout — a raw call carries the long one.
+            await reply(t("rename_suggesting"));
+            try {
+              const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
+              const identity = await sessionIdentityOf(target, info);
+              const modelRef = identity?.model;
+              if (!modelRef?.id) throw new Error("sin modelo para la sesión");
+              const exported = await forms
+                .request<Record<string, unknown>>("GET", "/api/experimental/session/" + encodeURIComponent(target) + "/export")
+                .catch(() => undefined);
+              const recent = entriesFromExport(exported, 6)
+                .map((e) => e.role + ": " + e.text.slice(0, 120))
+                .join(" | ")
+                .slice(0, 700);
+              const raw = await forms.raw(
+                "POST",
+                "/api/experimental/generate",
+                {
+                  prompt:
+                    `Una conversación se titula "${info?.title ?? identity?.model?.id ?? ""}". ` +
+                    `Fragmentos recientes: ${recent || "(sin mensajes)"}.\n` +
+                    "Proponé 3 títulos cortos (máximo 6 palabras cada uno) para esta conversación. " +
+                    "Respondé SOLO los 3 títulos, uno por línea, sin numeración ni comillas.",
+                  model: { id: modelRef.id, providerID: modelRef.providerID },
+                },
+                150_000,
+              );
+              const options = titleOptionsFrom(generateTextOf(raw));
+              if (options.length === 0) throw new Error("sin sugerencias");
+              const keyboard = options.map((o, i) => [{ text: o.slice(0, 60), callback_data: `rnme:${i}` }]);
+              const sent = await telegram.sendMessage(chatId ?? 0, "\u{1F3F7}\uFE0F Eleg\u00ed el nuevo t\u00edtulo:", {
+                parseMode: "HTML",
+                messageThreadId: threadOf(threadSession),
+                replyMarkup: { inline_keyboard: keyboard },
+              });
+              if (sent !== null) suggestCards.set(sent, { session: target, options });
+            } catch (error) {
+              log("WARN", "rename suggest", safe(error));
+              await reply(t("rename_suggest_fail"));
             }
-            await reply(`\u{1F3F7}\uFE0F Sesi\u00f3n renombrada: <b>${escapeHtml(clean)}</b>`);
+            return;
+          }
+          const clean = title.slice(0, 128);
+          const failure = await applyRename(target, clean);
+          if (failure) await reply(failure);
+          return;
+        }
+
+        case "sh": {
+          // /sh <cmd> — run a shell command INSIDE the session (verified
+          // live: POST /session/{id}/shell -> 204 async; the output lands
+          // on a type:"shell" message with {command, status, exit,
+          // output.output}). Background by contract — the agent is not
+          // disturbed. On Windows the session's shell is PowerShell: `&&`
+          // exits 1 (measured), the warning says so.
+          const cmdText = argument.trim();
+          const target = threadSession || targetSession();
+          if (!cmdText) {
+            await reply(t("sh_needs_cmd"));
+            return;
+          }
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n (o <code>/use</code> primero).");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          try {
+            await forms.request("POST", "/session/" + encodeURIComponent(target) + "/shell", { command: cmdText });
+            await reply(
+              t("sh_sent") + (cmdText.includes("&&") ? "\n\u26A0\uFE0F " + t("sh_ps_note") : ""),
+            );
+            const deadline = Date.now() + 45_000;
+            let settled = false;
+            while (Date.now() < deadline && !settled) {
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              const messages = await forms
+                .request<Array<Record<string, unknown>>>("GET", "/session/" + encodeURIComponent(target) + "/message")
+                .catch(() => undefined);
+              const shells = (Array.isArray(messages) ? messages : []).filter((m) => m?.type === "shell");
+              const last = shells[shells.length - 1];
+              if (last && last.command === cmdText && (last.status === "exited" || last.status === "failed")) {
+                settled = true;
+                const output = String((last.output as { output?: unknown } | undefined)?.output ?? "");
+                const exit = Number(last.exit ?? "?");
+                const tail = output.length > 900 ? "\u2026" + output.slice(-900) : output || "(sin salida)";
+                await reply(`${t("sh_done", { exit })}\n<code>${escapeHtml(tail)}</code>`);
+              }
+            }
+            if (!settled) await reply(t("sh_timeout", { secs: 45 }));
           } catch (error) {
-            log("WARN", "rename", safe(error));
+            log("WARN", "sh", safe(error));
             await reply(
               isSessionNotFound(error)
-                ? SESSION_UNLOADED + "\n(Renombrar necesita la sesi\u00f3n activa en el server.)"
-                : "No se pudo renombrar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                ? SESSION_UNLOADED
+                : "No se pudo correr: " + escapeHtml(String((error as Error).message).slice(0, 200)),
             );
           }
+          return;
+        }
+
+        case "note": {
+          // /note <texto> — a synthetic message in the transcript: the
+          // agent reads it as part of the conversation on its next turn,
+          // but nothing runs now (verified: 200, no turn started).
+          const text = argument.trim();
+          const target = threadSession || targetSession();
+          if (!text) {
+            await reply(t("note_needs_text"));
+            return;
+          }
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n (o <code>/use</code> primero).");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          try {
+            await forms.request("POST", "/session/" + encodeURIComponent(target) + "/synthetic", { text });
+            await reply(t("note_added"));
+          } catch (error) {
+            log("WARN", "note", safe(error));
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED
+                : "No se pudo anotar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+            );
+          }
+          return;
+        }
+
+        case "instructions": {
+          // /instructions — the session's persistent instruction entries
+          // (verified live: GET {data:[{key,value}]}, PUT {value} -> 204,
+          // DELETE -> 204). The session's long-lived rules, from the phone.
+          const target = threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n (o <code>/use</code> primero).");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          const parts = argument.trim().split(/\s+/);
+          const sub = (parts[0] ?? "").toLowerCase();
+          try {
+            if (sub === "del") {
+              const key = parts[1] ?? "";
+              if (!key) {
+                await reply(t("instr_del_needs_key"));
+                return;
+              }
+              await forms.request(
+                "DELETE",
+                "/api/experimental/session/" + encodeURIComponent(target) + "/instructions/entries/" + encodeURIComponent(key),
+              );
+              await reply(t("instr_deleted", { key }));
+              return;
+            }
+            if (sub && parts.length >= 2) {
+              const key = parts[0] ?? "";
+              const value = argument.trim().slice(key.length).trim();
+              if (!value) {
+                await reply(t("instr_needs_key_value"));
+                return;
+              }
+              await forms.request(
+                "PUT",
+                "/api/experimental/session/" + encodeURIComponent(target) + "/instructions/entries/" + encodeURIComponent(key),
+                { value },
+              );
+              await reply(t("instr_added", { key }));
+              return;
+            }
+            const entries = await forms.request<Array<{ key?: string; value?: string }>>(
+              "GET",
+              "/api/experimental/session/" + encodeURIComponent(target) + "/instructions/entries",
+            );
+            const rows = Array.isArray(entries) ? entries : [];
+            if (rows.length === 0) {
+              await reply(t("instr_empty"));
+              return;
+            }
+            const lines = rows
+              .slice(0, 15)
+              .map((e) => `\u2022 <code>${escapeHtml(String(e.key ?? "?"))}</code> \u2014 ${escapeHtml(String(e.value ?? "").slice(0, 120))}`);
+            await reply(t("instr_header") + "\n" + lines.join("\n"));
+          } catch (error) {
+            log("WARN", "instructions", safe(error));
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED
+                : "No pude leer las instrucciones: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+            );
+          }
+          return;
+        }
+
+        case "perms": {
+          // /perms — the "always" answers saved in the server (verified:
+          // GET /api/permission/saved -> [{id, projectID, action, ...}]).
+          // The natural pair of the 🔁 button: see what accumulated,
+          // take one back.
+          const parts = argument.trim().split(/\s+/);
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          try {
+            if ((parts[0] ?? "").toLowerCase() === "del") {
+              const id = parts[1] ?? "";
+              if (!id) {
+                await reply(t("perms_needs_id"));
+                return;
+              }
+              await forms.request("DELETE", "/api/permission/saved/" + encodeURIComponent(id));
+              await reply(t("perms_deleted"));
+              return;
+            }
+            const saved = await forms.request<Array<Record<string, unknown>>>("GET", "/api/permission/saved");
+            const rows = Array.isArray(saved) ? saved : [];
+            if (rows.length === 0) {
+              await reply(t("perms_empty"));
+              return;
+            }
+            const lines = rows.slice(0, 20).map(
+              (p) =>
+                `\u2022 <code>${escapeHtml(String(p.id ?? "?").slice(0, 24))}</code> ${escapeHtml(String(p.action ?? "?").slice(0, 60))}` +
+                (p.projectID ? ` \u00b7 ${escapeHtml(String(p.projectID).slice(0, 8))}` : ""),
+            );
+            await reply(t("perms_header") + "\n" + lines.join("\n"));
+          } catch (error) {
+            log("WARN", "perms", safe(error));
+            await reply("No pude leer los permisos: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+          }
+          return;
+        }
+
+        case "turns": {
+          // /turns — the session's own turn diff (verified: 200 {data:[]}
+          // when nothing is recorded). Finer-grained than /git: what THIS
+          // session's turns changed.
+          const target = argument.trim() || threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/turns <ses_id></code>.");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          const diff = await forms
+            .request<Array<Record<string, unknown>>>("GET", "/session/" + encodeURIComponent(target) + "/diff")
+            .catch(() => undefined);
+          const rows = Array.isArray(diff) ? diff : [];
+          if (rows.length === 0) {
+            await reply(t("turns_empty"));
+            return;
+          }
+          const lines = rows.slice(0, 20).map((d) => "\u2022 " + escapeHtml(JSON.stringify(d).slice(0, 140)));
+          await reply(t("turns_header") + "\n" + lines.join("\n"));
+          return;
+        }
+
+        case "log": {
+          // /log — a sample of the session's server-side log (verified:
+          // SSE "data: {json}" lines). The raw call reads a window and
+          // cuts; the tail is what the phone sees.
+          const target = argument.trim() || threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/log <ses_id></code>.");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          const raw = await forms
+            .raw("GET", "/api/experimental/session/" + encodeURIComponent(target) + "/log", undefined, 8000, 4000)
+            .catch(() => "");
+          const events = parseSseData(raw).slice(-10);
+          if (events.length === 0) {
+            await reply(t("log_empty"));
+            return;
+          }
+          const lines = events.map((e) => "\u2022 " + escapeHtml(e.slice(0, 130)));
+          await reply(t("log_header", { n: events.length }) + "\n" + lines.join("\n"));
+          return;
+        }
+
+        case "terminal": {
+          // /terminal — read-only look at the session's persistent PTY
+          // (verified: {data:null} when nothing is attached). Interactive
+          // control stays on the PC on purpose — this is the viewport.
+          const target = argument.trim() || threadSession || targetSession();
+          if (!target) {
+            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/terminal <ses_id></code>.");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          const read = await forms
+            .request<{ lines?: unknown } | null>("GET", "/api/experimental/session/" + encodeURIComponent(target) + "/terminal/read")
+            .catch(() => undefined);
+          if (!read) {
+            await reply(t("term_none"));
+            return;
+          }
+          const lines = Array.isArray(read.lines) ? (read.lines as string[]) : [JSON.stringify(read)];
+          const tail = lines.slice(-15).join("\n");
+          await reply(t("term_header") + "\n<code>" + escapeHtml(tail.slice(0, 1500)) + "</code>");
+          return;
+        }
+
+        case "detach": {
+          // /detach — the chat root stops pointing at a session: what you
+          // type at the root goes nowhere until /use or a thread. The
+          // competitor's detach, ours: per-thread sessions stay put.
+          if (foreground === undefined) {
+            await reply(t("detach_none"));
+            return;
+          }
+          foreground = undefined;
+          await reply(t("detach_done"));
           return;
         }
 
@@ -4023,6 +4380,27 @@ export default {
                 }
                 await ack("Esta pregunta ya no está activa");
               };
+              if (payload.startsWith("rnme:")) {
+                const card = suggestCards.get(cq.message?.message_id);
+                const option = card?.options[Number(payload.slice(5))];
+                if (!card || !option) {
+                  await ack("Las sugerencias expiraron \u2014 /rename de nuevo");
+                  return;
+                }
+                await ack("Renombrando\u2026");
+                const failure = await applyRename(card.session, option.slice(0, 128));
+                if (failure) {
+                  await ack(failure.replace(/<[^>]+>/g, "").slice(0, 160));
+                  return;
+                }
+                suggestCards.drop(cq.message?.message_id);
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, `\u{1F3F7}\uFE0F Renombrada: <b>${escapeHtml(option.slice(0, 128))}</b>`, { parseMode: "HTML" })
+                    .catch(() => undefined);
+                }
+                return;
+              }
               if (payload === "rbld:ok" || payload === "rbld:no") {
                 if (payload === "rbld:no") {
                   await ack("Cancelado \u2014 no se toc\u00f3 nada");

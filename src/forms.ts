@@ -264,7 +264,7 @@ export class FormClient {
     try {
       const password = servicePassword();
       if (!password) {
-        log("WARN", "forms: sin password en service.json — no se puede responder desde acÃ¡");
+        log("WARN", "forms: sin password en service.json — no se puede responder desde acá");
         return false;
       }
       const auth = `Basic ${Buffer.from(`opencode:${password}`, "utf8").toString("base64")}`;
@@ -290,7 +290,7 @@ export class FormClient {
       if (confirmed.length > 1) {
         log("WARN", `forms: ${confirmed.length} APIs candidatas, ninguna con nuestro pid — omitido`);
       } else {
-        log("WARN", `forms: ninguna API local respondiÃ³ entre ${candidates.length} puertos`);
+        log("WARN", `forms: ninguna API local respondió entre ${candidates.length} puertos`);
       }
       return false;
     } finally {
@@ -303,7 +303,58 @@ export class FormClient {
     this.auth = auth;
   }
 
-  private async call(method: "GET" | "POST" | "DELETE" | "PATCH", path: string, body?: unknown): Promise<unknown> {
+  /**
+   * A raw call for the slow corners: one-shot generation cold-starts can
+   * take well past the regular timeout, and the session log is an SSE
+   * stream — `call` is tuned for snappy request/response. Returns the
+   * BODY TEXT (streams are not JSON); with `readWindowMs` the stream is
+   * read for that window and cut, which is the sample the phone sees.
+   */
+  async raw(
+    method: "GET" | "POST",
+    path: string,
+    body: unknown,
+    timeoutMs: number,
+    readWindowMs?: number,
+  ): Promise<string> {
+    if (!this.ready && !(await this.connect())) throw new Error("API local de OpenCode no disponible");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), readWindowMs ?? timeoutMs);
+    try {
+      const response = await fetch(`${this.base}${path}`, {
+        method,
+        headers: {
+          Authorization: this.auth,
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(`${method} ${path} \u2192 ${response.status}${text ? ` ${text.slice(0, 200)}` : ""}`);
+      }
+      if (readWindowMs === undefined) return await response.text();
+      const reader = response.body?.getReader();
+      if (!reader) return "";
+      const chunks: Uint8Array[] = [];
+      const deadline = Date.now() + readWindowMs;
+      while (Date.now() < deadline) {
+        const next = await Promise.race([
+          reader.read(),
+          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), Math.max(0, deadline - Date.now()))),
+        ]);
+        if (!next || next.done) break;
+        chunks.push(next.value);
+      }
+      await reader.cancel().catch(() => undefined);
+      return Buffer.concat(chunks).toString("utf8");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async call(method: "GET" | "POST" | "DELETE" | "PATCH" | "PUT", path: string, body?: unknown): Promise<unknown> {
     if (!this.ready && !(await this.connect())) throw new Error("API local de OpenCode no disponible");
     const response = await fetch(`${this.base}${path}`, {
       method,
@@ -348,7 +399,7 @@ export class FormClient {
    * per-session stats. The form endpoints stay private; this is the door for
    * the rest of the surface. Resolves undefined for empty bodies (204).
    */
-  async request<T = unknown>(method: "GET" | "POST" | "DELETE" | "PATCH", path: string, body?: unknown): Promise<T | undefined> {
+  async request<T = unknown>(method: "GET" | "POST" | "DELETE" | "PATCH" | "PUT", path: string, body?: unknown): Promise<T | undefined> {
     return (await this.call(method, path, body)) as T | undefined;
   }
 

@@ -1,0 +1,26 @@
+# OpenCode with the Telegram bridge, ready to run.
+#
+#   docker compose -f docker/compose.yaml up -d
+#
+services:
+  opencode:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["serve", "--port", "4096"]
+    ports:
+      - "4096:4096"
+    volumes:
+      # Your project — the sessions' workspace.
+      - ..:/workspace
+      # The plugin, mounted where the config registers it.
+      - .:/plugins/opencode-tg
+      # The bot's state + secrets (TELEGRAM_BOT_TOKEN, ALLOWED_USERS).
+      # Create tg/.env on the host first — see README.
+      - tg-data:/root/.opencode/tg
+      # The server config that registers the plugin.
+      - ./docker/opencode.jsonc:/root/.config/opencode/opencode.jsonc:ro
+    working_dir: /workspace
+
+volumes:
+  tg-data:

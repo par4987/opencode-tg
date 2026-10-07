@@ -146,6 +146,14 @@ el prompt y el resultado llega al hilo de esa tarea.
 | `/delthread` | Borra el hilo del foro (la sesión sigue en OpenCode) |
 | `/rebuild` | Borra TODOS los hilos y reconstruye el foro limpio: hilos nuevos para las sesiones activas (la más reciente arriba), el resto vuelve solo con su próxima actividad |
 | `/rename` | Renombra la sesión del hilo (o `/rename <ses_id> <título>`) — el hilo y el desktop siguen el cambio |
+| `/sh <cmd>` | Corre un comando shell DENTRO de la sesión (fondo, sin despertar al agente). Ojo: el shell es PowerShell — `;` en vez de `&&` |
+| `/note <texto>` | Deja una nota en el transcript — el agente la lee en su próximo turno |
+| `/instructions` | Instrucciones persistentes de la sesión: lista, `<clave> <texto>` agrega, `del <clave>` borra |
+| `/perms` | Los permisos «siempre» guardados; `del <id>` revoca uno |
+| `/turns` | Qué cambiaron los turnos de la sesión |
+| `/log` | Una muestra del log server-side de la sesión |
+| `/terminal` | La terminal de la sesión, solo lectura |
+| `/detach` | Desacopla la raíz del chat de su sesión (los hilos siguen igual) |
 
 Los hilos se archivan solos tras días de inactividad (`archiveAfterDays`)
 y se reabren solos si la sesión revive.
@@ -183,6 +191,8 @@ autorizados en `~/.opencode/tg/.env`.
 - **Borrar un hilo con el eliminar nativo de Telegram**: el bot lo nota solo — el próximo mensaje del agente cae en General una única vez y el hilo se reconstruye solo. No hace falta hacer nada.
 - **Sesiones tras un reinicio del server**: el server solo tiene en memoria las sesiones abiertas en la PC — después de un reinicio, mandarle un mensaje a un hilo cuyo session ya no está abierto responde «🚫 esa sesión no está activa en el server». No es un error del bot: abrila en la PC y sigue andando, o creá otra con `/new`. Los comandos de proyecto (`/ls`, `/git`, `/find`, `/config`, `/worktree`) y `/export` siguen funcionando igual porque leen del disco.
 - **Transcripts de sesiones nuevas**: los servers 2.0.19+ no siempre persisten la conversación a disco (su propio log registra fallos de «Failed to drain Session»). Para esas sesiones, `/history` y `/export` funcionan con la sesión abierta en la PC; cerrada, responden con el aviso honesto en lugar de inventar un historial vacío.
+- **Idioma**: la interfaz es español por defecto; `TG_LOCALE=en` en el `.env` la cambia a inglés. Los catálogos viven en `src/locale.ts` — un idioma nuevo es un objeto nuevo, nada más.
+- **Mantenimiento automático**: el flujo `deps-audit` de GitHub Actions corre lunes y jueves 09:00 UTC — actualiza dependencias, sella vulnerabilidades, corre typecheck y las suites, y solo entonces empuja. Si algo falla, abre un issue con el log. No depende de que tu PC esté encendida.
 - **El nombre del hilo sigue al título de la sesión**: si el desktop la renombra, el hilo se renombra solo — y si el renombrado se pierde (un reinicio de por medio), un chequeo de deriva lo alcanza dentro de los 5 minutos de la próxima actividad.
 - Los textos inline viajan completos en partes numeradas; los mayores de 12 KB como documento.
 

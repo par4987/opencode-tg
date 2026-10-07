@@ -1,0 +1,5 @@
+// The container's server config: register the mounted plugin.
+// See docs/DOCKER.md for the full picture.
+{
+  "plugins": [{ "package": "/plugins/opencode-tg" }],
+}

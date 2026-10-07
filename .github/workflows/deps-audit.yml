@@ -1,0 +1,84 @@
+# Dependency & vulnerability review — twice a week, fully automatic.
+#
+# Mondays and Thursdays at 09:00 UTC (plus manual dispatch): update the
+# dev toolchain, seal whatever npm audit found, prove the plugin still
+# typechecks and passes its suites, and only then push. When the proof
+# fails — or audit finds highs the fix could not seal — an issue carries
+# the log instead.
+#
+# Runs in the cloud — the user's PC does not need to be on.
+name: deps-audit
+
+on:
+  schedule:
+    - cron: "0 9 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Report what is outdated
+        run: |
+          echo "::group::npm outdated"
+          npm outdated || true
+          echo "::endgroup::"
+
+      - name: Update and seal
+        run: |
+          npm update
+          npm audit fix || true
+          if npm audit --audit-level=high; then
+            echo "AUDIT_FINDINGS=" >> "$GITHUB_ENV"
+          else
+            echo "AUDIT_FINDINGS=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prove it still works
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Push the update
+        if: ${{ success() }}
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "Nada que actualizar — semana limpia."
+            exit 0
+          fi
+          git config user.name "deps-audit[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(deps): revisión semiautomática — update + audit fix (deps-audit)"
+          git push
+
+      - name: Flag what could not be sealed
+        if: ${{ success() && env.AUDIT_FINDINGS == '1' }}
+        run: |
+          gh issue create \
+            --title "deps-audit: quedan vulnerabilidades high sin sellar" \
+            --body "La revisión semiautomática actualizó y empujó, pero \`npm audit\` sigue encontrando vulnerabilidades high que \`npm audit fix\` no pudo sellar (probablemente requieren breaking changes). Revisar la run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Open an issue when the proof failed
+        if: ${{ failure() }}
+        run: |
+          gh issue create \
+            --title "deps-audit: la actualización falló las pruebas" \
+            --body "El flujo semiautomático no pudo completarse — typecheck o suites en rojo tras la actualización. Nada se empujó. Revisar el log de la run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}

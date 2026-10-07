@@ -113,15 +113,33 @@ Opciones comunes de `stt`: `whisper` y `model` (paths locales),
 ```sh
 npm install
 npm run typecheck   # tsc con el tsconfig del proyecto — 0 errores
-npm test            # las 14 suites (~190 checks) con el runner propio
+npm test            # las 15 suites (~205 checks) con el runner propio
 ```
 
 GitHub Actions corre ambos en cada push (`.github/workflows/ci.yml`).
 
-Catorce suites (`_setupcheck` … `_cardscheck`, ~190 checks) cubren el pump
+Quince suites (`_setupcheck` … `_extracheck`, ~205 checks) cubren el pump
 de eventos, render, tópicos, formularios, configuración, tareas, ingesta,
-elección de líder, tarjetas por mensaje y el pipeline de archivos
-salientes. Typecheck: `tsc --noEmit index.ts`.
+elección de líder, tarjetas por mensaje, helpers de la API y el pipeline
+de archivos salientes. Typecheck: `tsc --noEmit index.ts`.
+
+## Mantenimiento
+
+El flujo [`deps-audit`](.github/workflows/deps-audit.yml) corre lunes y
+jueves 09:00 UTC: actualiza dependencias, sella vulnerabilidades, corre
+typecheck y las suites, y empuja solo si todo quedó verde — si no, abre un
+issue con el log. Corre en la nube: no necesita tu PC encendida.
+
+## Docker
+
+`docker/` trae el `Dockerfile`, el `compose.yaml` y el config que montan
+OpenCode + el plugin en un contenedor — ver `docs/DOCKER.md` para el
+recorrido completo.
+
+## Idioma
+
+Español por defecto, inglés con `TG_LOCALE=en` en el `.env`. Los catálogos
+están en `src/locale.ts`: un idioma nuevo es un objeto nuevo.
 
 ## Estructura
 

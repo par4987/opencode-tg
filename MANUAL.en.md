@@ -159,6 +159,14 @@ prompt, and the result lands in the task's topic.
 | `/delthread` | Deletes the forum topic (the session lives on in OpenCode) |
 | `/rebuild` | Wipes ALL threads and rebuilds the forum clean: fresh threads for the active sessions (most recent on top), the rest return on their next activity |
 | `/rename` | Renames the topic's session (or `/rename <ses_id> <title>`) — the thread and the desktop follow |
+| `/sh <cmd>` | Runs a shell command INSIDE the session (background, agent undisturbed). Note: the shell is PowerShell — `;` not `&&` |
+| `/note <text>` | Leaves a note in the transcript — the agent reads it on its next turn |
+| `/instructions` | The session's persistent instructions: list, `<key> <text>` adds, `del <key>` removes |
+| `/perms` | The saved "always" permissions; `del <id>` revokes one |
+| `/turns` | What the session's turns changed |
+| `/log` | A sample of the session's server-side log |
+| `/terminal` | The session's terminal, read-only |
+| `/detach` | Detaches the chat root from its session (threads unchanged) |
 
 Topics archive themselves after idle days (`archiveAfterDays`) and reopen
 on their own if the session revives.
@@ -215,6 +223,13 @@ allowed-chats list in `~/.opencode/tg/.env`.
   Session" failures). For those sessions, `/history` and `/export` work
   while the session is open on the PC; closed, they answer with the honest
   notice instead of inventing an empty history.
+- **Language**: Spanish by default; `TG_LOCALE=en` in the `.env` switches
+  the interface to English. Catalogs live in `src/locale.ts` — a new
+  language is a new object, nothing else.
+- **Automated maintenance**: the `deps-audit` GitHub Actions workflow runs
+  Mondays and Thursdays at 09:00 UTC — updates dependencies, seals
+  vulnerabilities, runs typecheck and the suites, and only then pushes.
+  On failure it opens an issue with the log. It does not need your PC on.
 - **The thread's name follows the session's title**: when the desktop
   renames a session, the thread renames itself — and a rename lost to a
   restart is caught by a drift check within 5 minutes of the next
