@@ -154,6 +154,8 @@ el prompt y el resultado llega al hilo de esa tarea.
 | `/log` | Una muestra del log server-side de la sesión |
 | `/terminal` | La terminal de la sesión, solo lectura |
 | `/detach` | Desacopla la raíz del chat de su sesión (los hilos siguen igual) |
+| `/move` | Mueve la sesi?n del hilo a otro proyecto |
+| `/commands` | Lista los comandos custom del config o corre uno |
 
 Los hilos se archivan solos tras días de inactividad (`archiveAfterDays`)
 y se reabren solos si la sesión revive.

@@ -8,6 +8,7 @@
  * title options — deduplicated, unnumbered, length-capped.
  */
 import { parseSseData, generateTextOf, titleOptionsFrom } from "../src/extra.js";
+import { commandSections, mdToHtml } from "../src/help.js";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {
@@ -49,6 +50,16 @@ function main(): void {
   check("titles: la larga queda afuera", options.every((o) => o.length <= 64), JSON.stringify(options));
   check("titles: elige los primeros 3", titleOptionsFrom("aa\nbb\ncc\ndd").length === 3);
   check("titles: basura no produce opciones", titleOptionsFrom("?\n!\n ").length === 0);
+
+  // 4. The help reference: every command parses, briefs extract, HTML converts.
+  const sections = commandSections();
+  check("help: se parsean las secciones", sections.length >= 30, String(sections.length));
+  const newSection = sections.find((s) => s.name === "new");
+  check("help: /new tiene brief", !!newSection?.brief.includes("Crea una sesión"), newSection?.brief ?? "?");
+  check("help: /new tiene ejemplos en el body", !!newSection?.body.includes("Ejemplos"));
+  check("help: las categorias agrupan", new Set(sections.map((s) => s.category)).size >= 4);
+  check("help: mdToHtml convierte bold y code", mdToHtml("**Qué hace**: `x`") === "<b>Qué hace</b>: <code>x</code>");
+  check("help: mdToHtml convierte listas", mdToHtml("- a\n- b") === "• a\n• b");
 
   console.log(failures === 0 ? "\nEXTRA OK" : `\n${failures} FALLOS`);
   process.exit(failures === 0 ? 0 : 1);

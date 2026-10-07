@@ -167,6 +167,8 @@ prompt, and the result lands in the task's topic.
 | `/log` | A sample of the session's server-side log |
 | `/terminal` | The session's terminal, read-only |
 | `/detach` | Detaches the chat root from its session (threads unchanged) |
+| `/move` | Moves the topic's session to another project |
+| `/commands` | Lists the custom commands, or runs one |
 
 Topics archive themselves after idle days (`archiveAfterDays`) and reopen
 on their own if the session revives.

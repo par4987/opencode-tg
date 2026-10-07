@@ -32,6 +32,7 @@ import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
 import { t } from "./src/locale.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
+import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
@@ -1032,9 +1033,7 @@ export default {
       String((error as Error)?.message ?? "").includes("SessionNotFound");
 
     /** The one honest answer for id-addressed calls on an unloaded session. */
-    const SESSION_UNLOADED =
-      "\u{1F634} Esa sesi\u00f3n no est\u00e1 activa en el server \u2014 se reinici\u00f3 o la cerraste en la PC.\n" +
-      "Abrila en la PC y reintent\u00e1, o cre\u00e1 otra con <code>/new</code>.";
+    const SESSION_UNLOADED = t("session_not_found_restart");
 
     /**
      * A session's model and agent, even when the server's payload forgets
@@ -1949,6 +1948,8 @@ export default {
       { command: "log", description: "A sample of the session's server log" },
       { command: "terminal", description: "Read-only look at the session's terminal" },
       { command: "detach", description: "Detach the chat root from its session" },
+      { command: "move", description: "Move a session to another project" },
+      { command: "commands", description: "List custom commands, or /commands run <text>" },
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
 
@@ -1973,9 +1974,34 @@ export default {
       const reply = (text: string): Promise<void> => send(text, threadSession);
       switch (name) {
         case "start":
-        case "help":
-          await reply(`<pre>${HELP}</pre>`);
+        case "help": {
+          // /help ? the brief list PLUS a menu: tap a command and get its
+          // detailed section (what it does, syntax, examples, notes) from
+          // docs/COMMANDS.md, the single source of truth.
+          const sections = commandSections();
+          if (sections.length === 0) {
+            await reply("No pude cargar la ayuda ? <code>docs/COMMANDS.md</code> no est?.");
+            return;
+          }
+          const brief = sections.map((s) => `? <code>/${s.name}</code> ? ${escapeHtml(s.brief.slice(0, 60))}`).join("\n");
+          // One button per command, grouped under its category header.
+          const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+          let lastCategory = "";
+          for (const s of sections) {
+            if (s.category !== lastCategory) {
+              keyboard.push([{ text: s.category, callback_data: "help:_" }]);
+              lastCategory = s.category;
+            }
+            keyboard.push([{ text: "/" + s.name, callback_data: "help:" + s.name }]);
+          }
+          if (chatId === undefined) return;
+          await telegram.sendMessage(chatId, `?? <b>Comandos</b> ? toc? uno para el detalle:\n\n${brief}`, {
+            parseMode: "HTML",
+            messageThreadId: threadOf(threadSession),
+            replyMarkup: { inline_keyboard: keyboard },
+          });
           return;
+        }
 
         case "txt": {
           if (!argument) {
@@ -2100,6 +2126,30 @@ export default {
         case "mcp": {
           if (!(await forms.connect())) {
             await reply("La API local no responde.");
+            return;
+          }
+          // /mcp connect|disconnect <server> — the ops pair of the list
+          // (verified: POST /experimental/mcp/{server}/connect|disconnect
+          // with no body -> 204).
+          const parts = argument.trim().split(/\s+/);
+          const action = (parts[0] ?? "").toLowerCase();
+          if (action === "connect" || action === "disconnect") {
+            const name = parts.slice(1).join(" ");
+            if (!name) {
+              await reply(t("err_no_mcp_server", { action }));
+              return;
+            }
+            try {
+              await forms.request("POST", `/api/experimental/mcp/${encodeURIComponent(name)}/${action}`, {});
+              await reply(
+                `\u{1F50C} MCP ${action === "connect" ? "conectado" : "desconectado"}: <b>${escapeHtml(name)}</b>`,
+              );
+            } catch (error) {
+              log("WARN", "mcp " + action, safe(error));
+              await reply(
+                "No se pudo " + action + ": " + escapeHtml(String((error as Error).message).slice(0, 200)),
+              );
+            }
             return;
           }
           const servers = await forms.request<ApiMcpServer[]>("GET", "/mcp");
@@ -2278,7 +2328,7 @@ export default {
           // default every NEW session is born with.
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto), o <code>/use</code> primero.");
+            await reply(t("err_in_thread_project"));
             return;
           }
           const directory = await directoryOf(target);
@@ -2379,7 +2429,7 @@ export default {
           // download files by tapping, attach one to the next prompt.
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
+            await reply(t("err_in_thread_project"));
             return;
           }
           const directory = await directoryOf(target);
@@ -2396,7 +2446,7 @@ export default {
           // with add/del lines, and the working diff one tap away.
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
+            await reply(t("err_in_thread_project"));
             return;
           }
           const directory = await directoryOf(target);
@@ -2573,7 +2623,7 @@ export default {
           const sub = (argument.split(/\s+/)[0] ?? "").toLowerCase();
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n (ese es su proyecto).");
+            await reply(t("err_in_thread_project"));
             return;
           }
           const directory = await directoryOf(target);
@@ -2607,7 +2657,7 @@ export default {
               await reply(`\u{1F33F} Worktree <b>${escapeHtml(name)}</b> creado. Abr\u00ed una sesi\u00f3n en \u00e9l con <code>/projects</code>.`);
             } catch (error) {
               log("WARN", "worktree create", safe(error));
-              await reply("No se pudo crear el worktree: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+              await reply(t("err_generic", { action: "pudo crear el worktree", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
             }
             return;
           }
@@ -2893,7 +2943,20 @@ export default {
             session: target,
             items: (Array.isArray(inbox) ? inbox : []).map((item) => {
               const payload = item.payload as { text?: string } | undefined;
-              return { id: String(item.id ?? ""), text: payload?.text ?? "(sin texto)" };
+              // The inbox carries more than text now (verified in the API
+              // schemas): synthetic messages, compactions and moves have
+              // no text payload — label them instead of "(sin texto)".
+              const itemType = String(item.type ?? "");
+              const text =
+                payload?.text ??
+                (itemType === "synthetic"
+                  ? "mensaje sintético"
+                  : itemType === "compaction"
+                    ? "compactación"
+                    : itemType === "move"
+                      ? "movimiento"
+                      : "(sin texto)");
+              return { id: String(item.id ?? ""), text };
             }),
           };
           if (card.items.length === 0) {
@@ -3509,11 +3572,11 @@ export default {
           const cmdText = argument.trim();
           const target = threadSession || targetSession();
           if (!cmdText) {
-            await reply(t("sh_needs_cmd"));
+            await reply(t("err_no_cmd"));
             return;
           }
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n (o <code>/use</code> primero).");
+            await reply(t("err_no_sub_arg"));
             return;
           }
           if (!(await forms.connect())) {
@@ -3561,11 +3624,11 @@ export default {
           const text = argument.trim();
           const target = threadSession || targetSession();
           if (!text) {
-            await reply(t("note_needs_text"));
+            await reply(t("err_no_note"));
             return;
           }
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n (o <code>/use</code> primero).");
+            await reply(t("err_no_sub_arg"));
             return;
           }
           if (!(await forms.connect())) {
@@ -3592,7 +3655,7 @@ export default {
           // DELETE -> 204). The session's long-lived rules, from the phone.
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n (o <code>/use</code> primero).");
+            await reply(t("err_in_thread_use"));
             return;
           }
           if (!(await forms.connect())) {
@@ -3605,7 +3668,7 @@ export default {
             if (sub === "del") {
               const key = parts[1] ?? "";
               if (!key) {
-                await reply(t("instr_del_needs_key"));
+                await reply(t("err_no_instr_key"));
                 return;
               }
               await forms.request(
@@ -3689,7 +3752,7 @@ export default {
             await reply(t("perms_header") + "\n" + lines.join("\n"));
           } catch (error) {
             log("WARN", "perms", safe(error));
-            await reply("No pude leer los permisos: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+            await reply(t("err_generic", { action: "leer los permisos", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
           }
           return;
         }
@@ -3782,6 +3845,80 @@ export default {
           }
           foreground = undefined;
           await reply(t("detach_done"));
+          return;
+        }
+
+        case "move": {
+          // /move <proyecto> — move the session to another project
+          // (verified: POST /session/{id}/move with {directory}).
+          const target = threadSession || targetSession();
+          const directory = argument.trim();
+          if (!target) {
+            await reply(t("err_in_thread_move"));
+            return;
+          }
+          if (!directory) {
+            await reply("Decime el proyecto: <code>/move &lt;directorio&gt;</code> \u2014 <code>/projects</code> los lista.");
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          try {
+            await forms.request("POST", "/session/" + encodeURIComponent(target) + "/move", { directory });
+            const tracked = sessions.get(target);
+            if (tracked) tracked.directory = directory;
+            await reply(`\u{1F4E6} Sesi\u00f3n movida a <b>${escapeHtml(directory)}</b>.`);
+          } catch (error) {
+            log("WARN", "move", safe(error));
+            await reply(
+              isSessionNotFound(error)
+                ? SESSION_UNLOADED
+                : "No se pudo mover: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+            );
+          }
+          return;
+        }
+
+        case "commands": {
+          // /commands — the custom commands from the config (verified:
+          // GET /api/command -> {data:[{name, description}]}; running one
+          // is POST /session/{id}/command with {text}).
+          const parts = argument.trim().split(/\s+/);
+          const sub = (parts[0] ?? "").toLowerCase();
+          if (!(await forms.connect())) {
+            await reply("La API local no responde.");
+            return;
+          }
+          if (sub === "run") {
+            const target = threadSession || targetSession();
+            const text = argument.slice(3).trim();
+            if (!target || !text) {
+              await reply("Formato: <code>/commands run &lt;texto&gt;</code> \u2014 en el hilo de una sesi\u00f3n.");
+              return;
+            }
+            try {
+              await forms.request("POST", "/session/" + encodeURIComponent(target) + "/command", { text });
+              await reply(`\u23F1 Comando corriendo: <code>${escapeHtml(text.slice(0, 80))}</code>`);
+            } catch (error) {
+              log("WARN", "command run", safe(error));
+              await reply(t("err_generic", { action: "correr", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
+            }
+            return;
+          }
+          const list = await forms
+            .request<Array<{ name?: string; description?: string }>>("GET", "/api/command")
+            .catch(() => undefined);
+          const rows = Array.isArray(list) ? list : [];
+          if (rows.length === 0) {
+            await reply("Sin comandos custom configurados.");
+            return;
+          }
+          const lines = rows
+            .slice(0, 30)
+            .map((c) => `\u2022 <code>${escapeHtml(String(c.name ?? "?"))}</code> \u2014 ${escapeHtml(String(c.description ?? "").slice(0, 80))}`);
+          await reply(`\u2328\uFE0F Comandos custom (${rows.length}):\n${lines.join("\n")}`);
           return;
         }
 
@@ -4380,6 +4517,38 @@ export default {
                 }
                 await ack("Esta pregunta ya no está activa");
               };
+              if (payload.startsWith("help:")) {
+                // help:<command> — the detailed section of the tapped
+                // command, from docs/COMMANDS.md (the source of truth).
+                const name = payload.slice(5);
+                if (name === "_") {
+                  await ack();
+                  return;
+                }
+                const section = commandSections().find((s) => s.name === name);
+                if (!section) {
+                  await ack("Ese comando ya no existe — /help de nuevo");
+                  return;
+                }
+                await ack();
+                const chat = cq.message?.chat.id ?? chatId ?? 0;
+                const thread = cq.message?.message_thread_id;
+                // Long sections travel in parts — Telegram caps at 4096.
+                const body = section.body;
+                if (body.length > 4000) {
+                  const parts = body.match(/.{1,4000}/gs) ?? [body];
+                  for (const part of parts) {
+                    await telegram
+                      .sendMessage(chat, part, { parseMode: "HTML", ...(thread !== undefined ? { messageThreadId: thread } : {}) })
+                      .catch(() => undefined);
+                  }
+                } else {
+                  await telegram
+                    .sendMessage(chat, body, { parseMode: "HTML", ...(thread !== undefined ? { messageThreadId: thread } : {}) })
+                    .catch(() => undefined);
+                }
+                return;
+              }
               if (payload.startsWith("rnme:")) {
                 const card = suggestCards.get(cq.message?.message_id);
                 const option = card?.options[Number(payload.slice(5))];

@@ -71,6 +71,31 @@ const ES: Catalog = {
   // /rename without argument — suggestions from the transcript.
   rename_suggesting: "🤔 Mirando la conversación para sugerir títulos…",
   rename_suggest_fail: "No pude generar sugerencias — el modelo tardó o falló. Podés pasar el título a mano: <code>/rename <título></code>.",
+
+  // error receipts — the most visible strings when something fails.
+  err_generic: "No se pudo {action}: {detail}",
+  err_no_session: "Escribilo en el hilo de una sesión, o <code>/use</code> primero.",
+  err_no_target: "No sé qué sesión — escribilo en su hilo, o <code>/rename &lt;ses_id&gt; &lt;título&gt;</code>.",
+  err_no_text: "Decime el texto: <code>/send &lt;texto&gt;</code>",
+  err_no_cmd: "Decime el comando: <code>/sh &lt;comando&gt;</code>",
+  err_no_note: "Decime la nota: <code>/note &lt;texto&gt;</code>",
+  err_no_title: "Decime el título: <code>/rename &lt;nuevo título&gt;</code>",
+  err_no_project: "Decime el proyecto: <code>/move &lt;directorio&gt;</code> — <code>/projects</code> los lista.",
+  err_no_perm_id: "Decime el id: <code>/perms del &lt;id&gt;</code>",
+  err_no_instr_key: "Decime la clave: <code>/instructions del &lt;clave&gt;</code>",
+  err_no_mcp_server: "Decime el server: <code>/mcp {action} &lt;server&gt;</code>",
+  err_no_command_text: "Formato: <code>/commands run &lt;texto&gt;</code> — en el hilo de una sesión.",
+  err_no_sub_arg: "Escribilo en el hilo de una sesión (o <code>/use</code> primero).",
+  err_in_thread_use: "Escribilo en el hilo de una sesión (o <code>/use</code> primero).",
+  err_in_thread_project: "Escribilo en el hilo de una sesión (ese es su proyecto).",
+  err_in_thread_revert: "Escribilo en el hilo de una sesión, o <code>/revert &lt;ses_id&gt;</code>.",
+  err_in_thread_context: "Escribilo en el hilo de una sesión, o <code>/context &lt;ses_id&gt;</code>.",
+  err_in_thread_fork: "Escribilo en el hilo de una sesión, o <code>/fork &lt;ses_id&gt;</code>.",
+  err_in_thread_export: "Escribilo en el hilo de una sesión, o <code>/export &lt;ses_id&gt;</code>.",
+  err_in_thread_turns: "Escribilo en el hilo de una sesión, o <code>/turns &lt;ses_id&gt;</code>.",
+  err_in_thread_log: "Escribilo en el hilo de una sesión, o <code>/log &lt;ses_id&gt;</code>.",
+  err_in_thread_terminal: "Escribilo en el hilo de una sesión, o <code>/terminal &lt;ses_id&gt;</code>.",
+  err_in_thread_move: "Escribilo en el hilo de una sesión, o <code>/move &lt;ses_id&gt; &lt;directorio&gt;</code>.",
 };
 
 const EN: Catalog = {
@@ -120,6 +145,30 @@ const EN: Catalog = {
 
   rename_suggesting: "🤔 Reading the conversation to suggest titles…",
   rename_suggest_fail: "Could not generate suggestions — the model took too long or failed. Pass a title by hand: <code>/rename <title></code>.",
+
+  err_generic: "Could not {action}: {detail}",
+  err_no_session: "Write it in a session's thread, or <code>/use</code> first.",
+  err_no_target: "I don't know which session — write it in its thread, or <code>/rename &lt;ses_id&gt; &lt;title&gt;</code>.",
+  err_no_text: "Give me the text: <code>/send &lt;text></code>",
+  err_no_cmd: "Give me the command: <code>/sh &lt;command></code>",
+  err_no_note: "Give me the note: <code>/note <text></code>",
+  err_no_title: "Give me the title: <code>/rename &lt;new title&gt;</code>",
+  err_no_project: "Give me the project: <code>/move &lt;directory&gt;</code> — <code>/projects</code> lists them.",
+  err_no_perm_id: "Give me the id: <code>/perms del &lt;id&gt;</code>",
+  err_no_instr_key: "Give me the key: <code>/instructions del &lt;key&gt;</code>",
+  err_no_mcp_server: "Give me the server: <code>/mcp {action} &lt;server&gt;</code>",
+  err_no_command_text: "Format: <code>/commands run &lt;text></code> — in a session's thread.",
+  err_no_sub_arg: "Write it in a session's thread (or <code>/use</code> first).",
+  err_in_thread_use: "Write it in a session's thread (or <code>/use</code> first).",
+  err_in_thread_project: "Write it in a session's thread (that's its project).",
+  err_in_thread_revert: "Write it in a session's thread, or <code>/revert &lt;ses_id&gt;</code>.",
+  err_in_thread_context: "Write it in a session's thread, or <code>/context &lt;ses_id&gt;</code>.",
+  err_in_thread_fork: "Write it in a session's thread, or <code>/fork &lt;ses_id&gt;</code>.",
+  err_in_thread_export: "Write it in a session's thread, or <code>/export &lt;ses_id&gt;</code>.",
+  err_in_thread_turns: "Write it in a session's thread, or <code>/turns &lt;ses_id&gt;</code>.",
+  err_in_thread_log: "Write it in a session's thread, or <code>/log &lt;ses_id&gt;</code>.",
+  err_in_thread_terminal: "Write it in a session's thread, or <code>/terminal &lt;ses_id&gt;</code>.",
+  err_in_thread_move: "Write it in a session's thread, or <code>/move &lt;ses_id&gt; &lt;directory&gt;</code>.",
 };
 
 const CATALOGS: Record<string, Catalog> = { es: ES, en: EN };

@@ -7,6 +7,8 @@
  * two error codes that actually occur (429 flood, "message is not modified").
  */
 
+import { log } from "./log.js";
+
 export interface TelegramConfig {
   token: string;
   /** Defaults to https://api.telegram.org */
@@ -660,7 +662,17 @@ export class Telegram {
           if (conflicts === 1) {
             onError?.(new Error("409: otro proceso sondea este token — este poller se rinde"));
           }
-          await delay(30_000, () => this.aborted, (cancel) => this.delays.add(cancel));
+          if (conflicts >= 3) {
+            // Three consecutive conflicts: the other process won the
+            // lock and is polling. Stop — the watchdog hands the seat to
+            // another instance, and the bridge keeps working there.
+            log("WARN", "poll: 3 conflictos 409 seguidos — cediendo el poll al otro proceso");
+            return;
+          }
+          // Short backoff with jitter: the system converges faster than
+          // a fixed 30s, and two fighting pollers desynchronize.
+          const backoff = 10_000 + Math.random() * 5_000;
+          await delay(backoff, () => this.aborted, (cancel) => this.delays.add(cancel));
         } else {
           await delay(2000, () => this.aborted, (cancel) => this.delays.add(cancel));
         }

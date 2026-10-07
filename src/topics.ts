@@ -84,6 +84,15 @@ export class TopicStore {
   /** Remember the mapping so a restart reuses the same thread. */
   set(sessionId: string, threadId: number): void {
     this.load();
+    // Case-insensitive dedup: a hand-typed id with wrong case would
+    // otherwise create a second mapping for the same session (measured:
+    // ses_f02b83363ffeyru6a16yrhohco vs ...ffeYRU6A16YRHOhcO in the wild).
+    for (const existing of this.cache.keys()) {
+      if (existing.toLowerCase() === sessionId.toLowerCase() && existing !== sessionId) {
+        this.cache.delete(existing);
+        break;
+      }
+    }
     this.cache.set(sessionId, threadId);
     this.persist();
   }
