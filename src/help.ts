@@ -93,11 +93,11 @@ export function commandSections(): CommandSection[] {
   let category = "";
   let current: { name: string; lines: string[] } | undefined;
   for (const line of raw.split("\n")) {
-    if (line.startsWith("### ")) {
-      category = line.slice(4).trim();
-    } else if (line.startsWith("### /")) {
+    if (line.startsWith("### /")) {
       if (current) sections.push(buildSection(current, category));
       current = { name: line.slice(4).trim(), lines: [] };
+    } else if (line.startsWith("### ")) {
+      category = line.slice(4).trim();
     } else if (current) {
       current.lines.push(line);
     }
