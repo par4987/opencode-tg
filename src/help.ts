@@ -95,9 +95,9 @@ export function commandSections(): CommandSection[] {
   for (const line of raw.split("\n")) {
     if (line.startsWith("### ")) {
       category = line.slice(4).trim();
-    } else if (line.startsWith("## /")) {
+    } else if (line.startsWith("### /")) {
       if (current) sections.push(buildSection(current, category));
-      current = { name: line.slice(3).trim(), lines: [] };
+      current = { name: line.slice(4).trim(), lines: [] };
     } else if (current) {
       current.lines.push(line);
     }
