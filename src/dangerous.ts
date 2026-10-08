@@ -28,6 +28,8 @@
  *    formatted disk, a wiped shadow copy or an exfiltrated key file.
  *  - "confirm" waits for an explicit tap: recoverable, sometimes necessary.
  */
+import { t } from "./locale.js";
+
 export type DangerLevel = "ok" | "confirm" | "forbidden";
 
 export interface ParsedCommand {
@@ -78,36 +80,36 @@ const FORBIDDEN: Array<[string[], string]> = [
     "format-volume", "clear-disk", "initialize-disk", "remove-partition",
     "set-partition", "resize-partition", "format", "diskpart", "cipher",
     "fsutil", "sdelete", "mkfs", "dd", "shred", "wipefs"],
-   "borra o destruye datos sin recuperación"],
+   "danger_data_destruction"],
   // Boot, backups and recovery — the machine may not come back.
   [["bcdedit", "bcdboot", "bootsect", "reagentc", "vssadmin", "wbadmin",
     "disable-computerrestore"],
-   "toca el arranque, los respaldos o la recuperación del sistema"],
+   "danger_boot_recovery"],
   // Machine state and installed software.
   [["stop-computer", "restart-computer", "shutdown", "logoff", "reboot",
     "halt", "poweroff", "remove-computer", "add-computer", "rename-computer",
     "reset-computermachinepassword", "disable-windowsoptionalfeature",
     "remove-windowscapability", "remove-appxpackage", "dism"],
-   "apaga, reinicia o reconfigura la máquina"],
+   "danger_machine_state"],
   // The registry.
   [["reg", "regedit", "regini"],
-   "edita el registro del sistema"],
+   "danger_registry"],
   // Users, permissions and credentials.
   [["new-localuser", "remove-localuser", "set-localuser",
     "add-localgroupmember", "remove-localgroupmember", "set-acl", "icacls",
     "takeown", "cmdkey", "vaultcmd", "ntdsutil", "convertfrom-securestring",
     "set-ad", "new-ad", "remove-ad", "add-ad"],
-   "crea o destruye usuarios, permisos o credenciales"],
+   "danger_users_creds"],
   // Defenses: antivirus, firewall, execution policy, BitLocker.
   [["set-mppreference", "add-mppreference", "set-executionpolicy",
     "set-netfirewallprofile", "new-netfirewallrule", "remove-netfirewallrule",
     "disable-netfirewallrule", "netsh", "auditpol", "disable-bitlocker",
     "enable-bitlocker", "manage-bde"],
-   "desactiva las defensas del sistema (antivirus, firewall, BitLocker)"],
+   "danger_defenses"],
   // Trace clearing — the footprint of something that already happened.
   [["clear-eventlog", "remove-eventlog", "limit-eventlog", "wevtutil",
     "clear-history", "set-psreadlineoption"],
-   "borra rastros o registros del sistema"],
+   "danger_traces"],
   // Evasion vectors — always blocked, per the incident post-mortem.
   // Indirect or hidden execution is how a payload slips past every other rule.
   [["invoke-expression", "invoke-command", "invoke-item",
@@ -115,7 +117,7 @@ const FORBIDDEN: Array<[string[], string]> = [
     "regsvr32", "msbuild", "installutil", "wsl", "bash", "forfiles",
     "add-type", "start-process", "start-job", "start-threadjob",
     "set-alias", "new-alias"],
-   "es un vector de evasión: ejecución indirecta, oculta o de otro intérprete"],
+   "danger_evasion"],
 ];
 
 /** Recoverable but able to interrupt the service or reach outside the box. */
@@ -123,34 +125,34 @@ const CONFIRM: Array<[string[], string]> = [
   // The OpenCode service itself — the incident command. Restarting or
   // stopping it kills the process this plugin lives in.
   [["opencode"],
-   "afecta al servicio de OpenCode (puede cortar este bot y todas las sesiones)"],
+   "danger_service"],
   // Processes and services the bridge depends on.
   [["stop-process", "taskkill", "pkill", "debug-process", "stop-service",
     "set-service", "new-service", "remove-service", "suspend-service"],
-   "mata procesos o servicios (puede cortar el servicio y este bot)"],
+   "danger_processes"],
   // Software installation.
   [["install-module", "install-package", "install-script", "save-module",
     "winget", "choco", "scoop", "msiexec", "add-appxpackage", "uninstall-package"],
-   "instala o desinstala software"],
+   "danger_software"],
   // Network, download and exfiltration.
   [["invoke-webrequest", "invoke-restmethod", "start-bitstransfer",
     "bitsadmin", "certutil", "curl.exe", "ftp", "tftp", "scp", "sftp", "ssh",
     "send-mailmessage", "net", "new-smbshare", "grant-smbshareaccess",
     "enable-psremoting", "winrm", "set-netipaddress", "disable-netadapter",
     "set-dnsclientserveraddress", "route"],
-   "sale a la red o transfiere datos hacia afuera"],
+   "danger_network_egress"],
   // Remote execution.
   [["enter-pssession", "new-pssession", "invoke-wmimethod",
     "invoke-cimmethod", "wmic", "psexec", "winrs"],
-   "ejecuta comandos en otra máquina"],
+   "danger_remote_exec"],
   // Persistence.
   [["register-scheduledtask", "set-scheduledtask", "unregister-scheduledtask",
     "register-scheduledjob", "schtasks", "at", "register-wmievent",
     "set-wmiinstance", "new-ciminstance"],
-   "crea tareas o persistencia que sobrevive al reinicio"],
+   "danger_persistence"],
   // Runtime name resolution — the prelude to calling something by another name.
   [["get-command", "get-alias"],
-   "resuelve nombres de comandos en tiempo de ejecución"],
+   "danger_name_resolution"],
 ];
 
 /** Prefixes of the read-only surface: answers without side effects. */
@@ -175,7 +177,7 @@ const DEV_TOOLS = new Set([
 
 /** Read-only commands that are nonetheless on the confirm list by name. */
 function inList(list: Array<[string[], string]>, name: string): string | undefined {  for (const [names, reason] of list) {
-    if (names.includes(name)) return reason;
+    if (names.includes(name)) return t(reason);
   }
   return undefined;
 }
@@ -187,14 +189,14 @@ function inList(list: Array<[string[], string]>, name: string): string | undefin
  * once — stays blocked.
  */
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
-  [/(?<![\w$])env:/i, "lista variables de entorno (incluye claves y tokens)"],
-  [/(?:^|[\\/.])\.ssh(?:[\\/]|$)/i, "lee claves SSH privadas"],
-  [/\bid_(?:rsa|ed25519|ecdsa)(?:\.pub)?\b/i, "lee una clave privada SSH"],
-  [/(?:^|[\\/\s])\.env(?:[\\/]|$|\.\w)/i, "lee un archivo de entorno con claves"],
+  [/(?<![\w$])env:/i, "danger_secret_env_drive"],
+  [/(?:^|[\\/.])\.ssh(?:[\\/]|$)/i, "danger_secret_ssh_dir"],
+  [/\bid_(?:rsa|ed25519|ecdsa)(?:\.pub)?\b/i, "danger_secret_ssh_key"],
+  [/(?:^|[\\/\s])\.env(?:[\\/]|$|\.\w)/i, "danger_secret_env_file"],
   [/\bcredentials\b|\bkey4\.db\b|\blogin data\b|\bplaces\.sqlite\b/i,
-   "lee credenciales o perfiles de navegadores"],
+   "danger_secret_creds"],
   [/[\\/](?:mozilla|google[\\/]chrome|microsoft[\\/]edge)[\\/]/i,
-   "entra a perfiles de navegadores (cookies, sesiones, contraseñas)"],
+   "danger_secret_browser_profiles"],
 ];
 
 /** Registry hives — the paths, not just the tools. Unanchored on purpose: it
@@ -203,17 +205,17 @@ const REGISTRY_PATH = /(?:registry::|hklm:|hkcu:|hkcr:|hku:|hkcc:)/i;
 
 /** Flags that hide or encode what a command really does. */
 const FORBIDDEN_FLAGS: Array<[RegExp, string]> = [
-  [/-encodedcommand\b|(?<=\s)-enc\b/i, "usa un comando codificado en base64 (evasión)"],
+  [/-encodedcommand\b|(?<=\s)-enc\b/i, "danger_flag_base64"],
   [/-executionpolicy\s+(?:bypass|unrestricted|remotesigned)/i,
-   "pide bypass de la política de ejecución"],
-  [/-windowstyle\s+hidden/i, "se ejecuta en una ventana oculta"],
-  [/-comobject\b/i, "instancia un objeto COM (ejecución indirecta)"],
-  [/\s\/mir\b/i, "robocopy /MIR: refleja y borra el destino"],
+   "danger_flag_execpolicy"],
+  [/-windowstyle\s+hidden/i, "danger_flag_hidden"],
+  [/-comobject\b/i, "danger_flag_com"],
+  [/\s\/mir\b/i, "danger_flag_robocopy"],
 ];
 
 /** Flags that change the reach of a command rather than hiding it. */
 const CONFIRM_FLAGS: Array<[RegExp, string]> = [
-  [/-computername\b/i, "se ejecuta contra otra máquina"],
+  [/-computername\b/i, "danger_flag_computername"],
 ];
 
 /** Bracketed types that touch the filesystem, the process list, the network or
@@ -359,14 +361,14 @@ export function dangerousCommand(text: string, projectDir = ""): DangerMatch {
 
   // 1. Secret paths are unreadable by any command, read-only or not.
   for (const [pattern, reason] of SECRET_PATTERNS) {
-    if (pattern.test(text)) return { level: "forbidden", reason, commands };
+    if (pattern.test(text)) return { level: "forbidden", reason: t(reason), commands };
   }
   // 2. Flags that hide or redirect what runs.
   for (const [pattern, reason] of FORBIDDEN_FLAGS) {
-    if (pattern.test(text)) return { level: "forbidden", reason, commands };
+    if (pattern.test(text)) return { level: "forbidden", reason: t(reason), commands };
   }
   for (const [pattern, reason] of CONFIRM_FLAGS) {
-    if (pattern.test(text)) return { level: "confirm", reason, commands };
+    if (pattern.test(text)) return { level: "confirm", reason: t(reason), commands };
   }
 
   for (const cmd of commands) {
@@ -381,7 +383,7 @@ export function dangerousCommand(text: string, projectDir = ""): DangerMatch {
         if (callsStatic || DANGEROUS_TYPES.some((prefix) => body.startsWith(prefix))) {
           return {
             level: "forbidden",
-            reason: "accede a .NET o COM directamente (evasión)",
+            reason: "danger_dotnet",
             commands,
           };
         }
@@ -389,7 +391,7 @@ export function dangerousCommand(text: string, projectDir = ""): DangerMatch {
       }
       return {
         level: "confirm",
-        reason: "el comando no es un nombre literal (una variable o un tipo .NET) — no sé qué ejecutaría",
+        reason: "danger_dynamic",
         commands,
       };
     }
@@ -398,20 +400,20 @@ export function dangerousCommand(text: string, projectDir = ""): DangerMatch {
 
     // 4. A function definition hides whatever it will later be asked to do.
     if (name === "function") {
-      return { level: "forbidden", reason: "define una función (evasión: esconde lo que ejecuta)", commands };
+      return { level: "forbidden", reason: "danger_function", commands };
     }
     // 5. Registry paths — anywhere in the arguments.
     if (cmd.args.some((a) => REGISTRY_PATH.test(a)) || REGISTRY_PATH.test(cmd.raw)) {
-      return { level: "forbidden", reason: "opera sobre el registro del sistema", commands };
+      return { level: "forbidden", reason: "danger_registry_path", commands };
     }
     // 6. `net` is only dangerous with its user/group subcommands.
     if (name === "net") {
       const sub = (cmd.args[0] ?? "").toLowerCase();
       if (sub === "user" || sub === "localgroup" || sub === "accounts") {
-        return { level: "forbidden", reason: "crea o destruye usuarios o grupos locales", commands };
+        return { level: "forbidden", reason: "danger_net_users", commands };
       }
       if (sub === "use" || sub === "share" || sub === "start") {
-        return { level: "confirm", reason: "sale a la red o monta recursos compartidos", commands };
+        return { level: "confirm", reason: "danger_net_share", commands };
       }
     }
 
@@ -420,22 +422,22 @@ export function dangerousCommand(text: string, projectDir = ""): DangerMatch {
     if (name === "remove-item") {
       const target = firstPathArg(cmd.args);
       if (target === undefined) {
-        return { level: "confirm", reason: "borra archivos sin decir cuál", commands };
+        return { level: "confirm", reason: "danger_rm_no_target", commands };
       }
       if (target === "." || /^\.git\b/i.test(target)) {
         return {
           level: "confirm",
           reason:
             target === "."
-              ? "borra la carpeta completa del proyecto (incluye .git)"
-              : "borra el historial de git del proyecto",
+              ? "danger_rm_project"
+              : "danger_rm_git",
           commands,
         };
       }
       if (!insideProject(target, projectDir)) {
         return {
           level: "forbidden",
-          reason: `borra fuera de la carpeta del proyecto: ${target}`,
+          reason: t("danger_rm_outside", { target }),
           commands,
         };
       }
@@ -455,7 +457,7 @@ export function dangerousCommand(text: string, projectDir = ""): DangerMatch {
     // 10. Everything else is unknown — confirm rather than guess.
     return {
       level: "confirm",
-      reason: `no reconozco el comando \`${cmd.asWritten ?? name}\` — lo reviso antes de ejecutar`,
+      reason: t("danger_unknown_cmd", { cmd: cmd.asWritten ?? name }),
       commands,
     };
   }
@@ -471,70 +473,70 @@ export function dangerousCommand(text: string, projectDir = ""): DangerMatch {
  */
 const EXPLAINS: Record<string, string> = {
   // The OpenCode service.
-  "opencode": "Administra el servicio de OpenCode. Si lo reinicia o lo detiene, este bot y todas las sesiones activas se caen hasta que el servicio vuelva a levantar.",
+  "opencode": "danger_explain_opencode",
   // Processes and services.
-  "stop-process": "Cierra uno o más procesos por la fuerza. Si el proceso es el servicio de OpenCode o el bot, la comunicación se corta.",
-  "taskkill": "Mata procesos desde la línea de comandos. Puede terminar el servicio de OpenCode o el bot.",
-  "debug-process": "Adjunta un depurador a un proceso en ejecución.",
-  "stop-service": "Detiene un servicio de Windows. Si es el servicio de OpenCode, el bot se cae.",
-  "set-service": "Cambia el arranque o el estado de un servicio de Windows.",
-  "new-service": "Registra un servicio nuevo en Windows.",
-  "remove-service": "Elimina un servicio registrado de Windows.",
-  "suspend-service": "Pausa un servicio en ejecución.",
+  "stop-process": "danger_explain_stop_process",
+  "taskkill": "danger_explain_taskkill",
+  "debug-process": "danger_explain_debug_process",
+  "stop-service": "danger_explain_stop_service",
+  "set-service": "danger_explain_set_service",
+  "new-service": "danger_explain_new_service",
+  "remove-service": "danger_explain_remove_service",
+  "suspend-service": "danger_explain_suspend_service",
   // Software.
-  "install-module": "Descarga e instala un módulo de PowerShell desde internet.",
-  "install-package": "Instala un paquete de software desde internet.",
-  "install-script": "Descarga e instala un script de PowerShell desde internet.",
-  "save-module": "Descarga un módulo de PowerShell al disco (sin instalarlo).",
-  "winget": "Instala o desinstala programas del catálogo de Windows Package Manager.",
-  "choco": "Instala o desinstala paquetes con Chocolatey.",
-  "scoop": "Instala o desinstala paquetes con Scoop.",
-  "msiexec": "Ejecuta un instalador MSI de Windows.",
-  "add-appxpackage": "Instala una aplicación empaquetada de Windows.",
-  "uninstall-package": "Desinstala un paquete de software del sistema.",
+  "install-module": "danger_explain_install_module",
+  "install-package": "danger_explain_install_package",
+  "install-script": "danger_explain_install_script",
+  "save-module": "danger_explain_save_module",
+  "winget": "danger_explain_winget",
+  "choco": "danger_explain_choco",
+  "scoop": "danger_explain_scoop",
+  "msiexec": "danger_explain_msiexec",
+  "add-appxpackage": "danger_explain_add_appxpackage",
+  "uninstall-package": "danger_explain_uninstall_package",
   // Network.
-  "invoke-webrequest": "Hace una petición HTTP a una URL: descarga o envía datos a internet.",
-  "invoke-restmethod": "Llama a una API remota y recibe su respuesta.",
-  "start-bitstransfer": "Transfiere archivos en segundo plano con el servicio BITS.",
-  "bitsadmin": "Administra transferencias BITS de archivos hacia o desde internet.",
-  "certutil": "Herramienta de certificados de Windows: también puede descargar y decodificar archivos.",
-  "curl.exe": "Descarga o sube datos por HTTP/FTP a una URL.",
-  "ftp": "Transfiere archivos por FTP a un servidor remoto.",
-  "tftp": "Transfiere archivos por TFTP a un servidor remoto.",
-  "scp": "Copia archivos hacia o desde otra máquina por SSH.",
-  "sftp": "Transfiere archivos hacia o desde otra máquina por SSH.",
-  "ssh": "Abre una sesión en otra máquina por SSH.",
-  "send-mailmessage": "Envía un correo electrónico con los datos que se le pasen.",
-  "net": "Comando de red de Windows (con subcomandos: usuarios, recursos compartidos, conexiones).",
-  "new-smbshare": "Comparte una carpeta de esta máquina en la red.",
-  "grant-smbshareaccess": "Da permiso a alguien sobre un recurso compartido.",
-  "enable-psremoting": "Activa PowerShell Remoting: permite ejecutar comandos en esta máquina desde afuera.",
-  "winrm": "Administra Windows Remote Management (acceso remoto a la máquina).",
-  "set-netipaddress": "Cambia la configuración IP de un adaptador de red.",
-  "disable-netadapter": "Desactiva un adaptador de red (corta la conexión).",
-  "set-dnsclientserveraddress": "Cambia los servidores DNS de la máquina.",
-  "route": "Modifica la tabla de rutas de red de la máquina.",
+  "invoke-webrequest": "danger_explain_invoke_webrequest",
+  "invoke-restmethod": "danger_explain_invoke_restmethod",
+  "start-bitstransfer": "danger_explain_start_bitstransfer",
+  "bitsadmin": "danger_explain_bitsadmin",
+  "certutil": "danger_explain_certutil",
+  "curl.exe": "danger_explain_curl_exe",
+  "ftp": "danger_explain_ftp",
+  "tftp": "danger_explain_tftp",
+  "scp": "danger_explain_scp",
+  "sftp": "danger_explain_sftp",
+  "ssh": "danger_explain_ssh",
+  "send-mailmessage": "danger_explain_send_mailmessage",
+  "net": "danger_explain_net",
+  "new-smbshare": "danger_explain_new_smbshare",
+  "grant-smbshareaccess": "danger_explain_grant_smbshareaccess",
+  "enable-psremoting": "danger_explain_enable_psremoting",
+  "winrm": "danger_explain_winrm",
+  "set-netipaddress": "danger_explain_set_netipaddress",
+  "disable-netadapter": "danger_explain_disable_netadapter",
+  "set-dnsclientserveraddress": "danger_explain_set_dnsclientserveraddress",
+  "route": "danger_explain_route",
   // Remote execution.
-  "enter-pssession": "Abre una sesión interactiva en otra máquina.",
-  "new-pssession": "Establece una conexión persistente con otra máquina.",
-  "invoke-wmimethod": "Llama a un método WMI en esta o en otra máquina.",
-  "invoke-cimmethod": "Llama a un método CIM en esta o en otra máquina.",
-  "wmic": "Ejecuta consultas o comandos WMI (incluido el apagado remoto).",
-  "psexec": "Ejecuta procesos en otra máquina de la red.",
-  "winrs": "Ejecuta un comando en otra máquina con WinRM.",
+  "enter-pssession": "danger_explain_enter_pssession",
+  "new-pssession": "danger_explain_new_pssession",
+  "invoke-wmimethod": "danger_explain_invoke_wmimethod",
+  "invoke-cimmethod": "danger_explain_invoke_cimmethod",
+  "wmic": "danger_explain_wmic",
+  "psexec": "danger_explain_psexec",
+  "winrs": "danger_explain_winrs",
   // Persistence.
-  "register-scheduledtask": "Crea una tarea programada que se ejecutará sola, ahora o más tarde.",
-  "set-scheduledtask": "Modifica una tarea programada existente.",
-  "unregister-scheduledtask": "Elimina una tarea programada.",
-  "register-scheduledjob": "Crea un trabajo programado de PowerShell que se repite solo.",
-  "schtasks": "Crea, modifica o elimina tareas programadas de Windows.",
-  "at": "Programa la ejecución de un comando a una hora (mecanismo viejo de tareas).",
-  "register-wmievent": "Registra un evento WMI que dispara código automáticamente.",
-  "set-wmiinstance": "Modifica una instancia WMI del sistema.",
-  "new-ciminstance": "Crea una instancia CIM nueva en el sistema.",
+  "register-scheduledtask": "danger_explain_register_scheduledtask",
+  "set-scheduledtask": "danger_explain_set_scheduledtask",
+  "unregister-scheduledtask": "danger_explain_unregister_scheduledtask",
+  "register-scheduledjob": "danger_explain_register_scheduledjob",
+  "schtasks": "danger_explain_schtasks",
+  "at": "danger_explain_at",
+  "register-wmievent": "danger_explain_register_wmievent",
+  "set-wmiinstance": "danger_explain_set_wmiinstance",
+  "new-ciminstance": "danger_explain_new_ciminstance",
   // Name resolution.
-  "get-command": "Lista o resuelve comandos: sirve para descubrir qué hay disponible antes de invocarlo de otra forma.",
-  "get-alias": "Lista los alias definidos: sirve para resolver nombres en tiempo de ejecución.",
+  "get-command": "danger_explain_get_command",
+  "get-alias": "danger_explain_get_alias",
 };
 
 /**
@@ -545,12 +547,13 @@ const EXPLAINS: Record<string, string> = {
 export function explainCommand(cmd: ParsedCommand): string {
   const name = cmd.resolved ?? cmd.asWritten ?? "";
   const known = EXPLAINS[name];
-  if (known) return known;
+  if (known) return t(known);
   if (cmd.dynamic) {
-    return `El nombre del comando no es un literal (es una variable o un tipo .NET), así que no se puede saber qué va a ejecutar hasta que corra. Hay que revisarlo a mano.`;
+    return t("danger_explain_dynamic");
   }
   if (!name) return cmd.raw;
-  return `Comando \`${cmd.asWritten ?? name}\`${cmd.args.length ? ` con argumentos ${cmd.args.join(" ")}` : ""}: no tengo una descripción específica, revisá qué hace antes de aprobarlo.`;
+  const args = cmd.args.length ? t("danger_explain_args", { args: cmd.args.join(" ") }) : "";
+  return t("danger_explain_unknown", { cmd: cmd.asWritten ?? name, args });
 }
 
 /** True only when the command may run after an explicit confirmation. */
