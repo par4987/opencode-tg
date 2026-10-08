@@ -25,6 +25,20 @@ const ES: Catalog = {
   session_not_found_restart:
     "🚫 Esa sesión no está activa en el server — se reinició o la cerraste en la PC, y no se recarga sola. Abrila en la PC y reintentá, o creá otra con /new.",
 
+  // /running — sessions with a turn in flight. The REST API cannot say
+  // "running" (measured 2026-10-08: in-flight messages are invisible in
+  // GET /session/{id}/message and `idle` does not move during a turn);
+  // the event stream is the signal, the API only adds model/agent.
+  running_none: "🧭 Ninguna sesión está corriendo ahora.",
+  running_header: "🧭 En ejecución ({n}):",
+  running_here: "este hilo",
+
+  // Relative time — used by /running, /sessions and the cards.
+  ago_now: "hace un momento",
+  ago_min: "hace {n} min",
+  ago_hour: "hace {n} h",
+  ago_day: "hace {n} d",
+
   // /sh — run a shell command in the session (the server's shell is
   // PowerShell on Windows: no `&&`, use `;`).
   sh_needs_cmd: "Decime el comando: <code>/sh <comando></code>",
@@ -109,6 +123,15 @@ const EN: Catalog = {
   session_not_found_restart:
     "🚫 That session is not active in the server — it restarted or you closed it on the PC, and it does not reload on its own. Open it on the PC and retry, or make a new one with /new.",
 
+  running_none: "🧭 No session is running right now.",
+  running_header: "🧭 Running now ({n}):",
+  running_here: "this thread",
+
+  ago_now: "just now",
+  ago_min: "{n} min ago",
+  ago_hour: "{n} h ago",
+  ago_day: "{n} d ago",
+
   sh_needs_cmd: "Give me the command: <code>/sh <command></code>",
   sh_sent: "⌨️ Running in the session…",
   sh_done: "⌨️ Done (exit {exit})",
@@ -182,4 +205,12 @@ export function locale(): string {
 export function t(key: string, values: Record<string, string | number> = {}): string {
   const raw = CATALOGS[locale()][key] ?? ES[key] ?? key;
   return raw.replace(/\{(\w+)\}/g, (_, name: string) => String(values[name] ?? `{${name}}`));
+}
+
+/**
+ * The key lists, for the locale suite: ES/EN parity and unknown `t()` keys
+ * must fail loudly there, not at a user's phone.
+ */
+export function catalogKeys(): { es: string[]; en: string[] } {
+  return { es: Object.keys(ES), en: Object.keys(EN) };
 }

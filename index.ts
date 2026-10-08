@@ -204,10 +204,10 @@ function fmtCost(value: number): string {
 /** Timestamp → "hace un momento" / "hace 3 min" / "hace 2 h" / "hace 5 d". */
 function fmtAgo(ts: number): string {
   const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (seconds < 60) return "hace un momento";
-  if (seconds < 3600) return `hace ${Math.floor(seconds / 60)} min`;
-  if (seconds < 86_400) return `hace ${Math.floor(seconds / 3600)} h`;
-  return `hace ${Math.floor(seconds / 86_400)} d`;
+  if (seconds < 60) return t("ago_now");
+  if (seconds < 3600) return t("ago_min", { n: Math.floor(seconds / 60) });
+  if (seconds < 86_400) return t("ago_hour", { n: Math.floor(seconds / 3600) });
+  return t("ago_day", { n: Math.floor(seconds / 86_400) });
 }
 
 /**
@@ -2149,20 +2149,42 @@ export default {
         }
 
         case "running": {
+          // "Is a turn in flight" does NOT exist in the REST API (measured
+          // 2026-10-08: an in-flight assistant message is invisible in
+          // GET /session/{id}/message until it completes, `time.idle` does
+          // not move during a turn — it is the last user interaction — and
+          // `time.updated` moves with the server's own housekeeping). The
+          // event stream is the only live signal, and the leader mirrors
+          // all of it, so the tracked map IS the truth here. What the API
+          // adds is identity: model and agent per running session, one
+          // list call, degrading to silence when it cannot answer.
           const now = Date.now();
           const active = [...sessions.values()]
-            .filter((s) => !s.idle && now - s.lastSeen < 5 * 60_000)
+            .filter((s) => !s.idle && !s.parentID && now - s.lastSeen < 5 * 60_000)
             .sort((a, b) => b.lastSeen - a.lastSeen)
             .slice(0, 12);
           if (active.length === 0) {
-            await reply("\u{1F9ED} Ninguna sesi\u00f3n est\u00e1 corriendo ahora.");
+            await reply(t("running_none"));
             return;
           }
-          const lines = active.map(
-            (s) =>
-              `\u2022 <b>${escapeHtml(s.title.slice(0, 64))}</b> \u2014 ${fmtAgo(s.lastSeen)} \u00b7 <code>${s.id.slice(0, 18)}\u2026</code>`,
-          );
-          await reply(`\u{1F9ED} En ejecuci\u00f3n (${active.length}):\n${lines.join("\n")}`);
+          const identity = new Map<string, { model?: string; agent?: string }>();
+          if (await forms.connect()) {
+            const list = await forms.request<Array<ApiSession>>("GET", "/session").catch(() => undefined);
+            for (const s of Array.isArray(list) ? list : []) {
+              if (!s?.id) continue;
+              const short = s.model?.id ? s.model.id.split("/").pop() : undefined;
+              const model = short ? `${short}${s.model?.variant ? ` (${s.model.variant})` : ""}` : undefined;
+              if (model || s.agent) identity.set(s.id, { model, agent: s.agent });
+            }
+          }
+          const lines = active.map((s) => {
+            const meta = identity.get(s.id);
+            const model = meta?.model ? ` · ${escapeHtml(meta.model)}` : "";
+            const agent = meta?.agent && meta.agent !== "build" ? ` · ${escapeHtml(meta.agent)}` : "";
+            const here = s.id === threadSession ? ` — <i>${t("running_here")}</i>` : "";
+            return `• <b>${escapeHtml(s.title.slice(0, 64))}</b>${here}${model}${agent} — ${fmtAgo(s.lastSeen)} · <code>${s.id.slice(0, 18)}…</code>`;
+          });
+          await reply(`${t("running_header", { n: active.length })}\n${lines.join("\n")}`);
           return;
         }
 

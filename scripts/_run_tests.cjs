@@ -23,6 +23,7 @@ const suites = [
   "_leadercheck",
   "_seatcheck",
   "_revivecheck",
+  "_localecheck",
   "_cardscheck",
   "_dangercheck",
   "_offsetcheck",
