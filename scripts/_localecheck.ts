@@ -46,12 +46,22 @@ function main(): void {
     unknown.join(", ") || "todas",
   );
 
-  // 3. The literal budget — one-line reply/ack literals still in the code.
+  // 3. The literal budget — the migration ratchets DOWN. Two shapes are
+  //    guarded: the original one-line `reply("literal")` form, and any
+  //    reply/ack whose call STARTS with a quote (concatenations, inline
+  //    ifs). Ternary arms inside a call are the one shape left to human
+  //    review.
   const literals = [...src.matchAll(/(?:^|\n)[ \t]*(?:const \w+ = )?(?:await )?(?:reply|ack)\("(?:[^"\\]|\\.)*"\)/g)];
   check(
     `presupuesto de literales: ${literals.length} <= ${LITERAL_BUDGET}`,
     literals.length <= LITERAL_BUDGET,
     literals.length <= LITERAL_BUDGET ? "en regimen" : "baja migrando o suma al catalogo",
+  );
+  const callStarts = [...src.matchAll(/(?:reply|ack)\(\s*"/g)];
+  check(
+    `ningun reply/ack arranca con literal: ${callStarts.length}`,
+    callStarts.length === 0,
+    callStarts.length === 0 ? "en regimen" : "migrado al catalogo",
   );
 
   // 4. Placeholders: a key with {name} must be called with it — spot check

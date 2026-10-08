@@ -752,7 +752,7 @@ export default {
         { text: "\u2716", callback_data: `ib:cancel:${i}` },
         { text: "\u270F\uFE0F", callback_data: `ib:edit:${i}` },
       ]);
-      keyboard.push([{ text: "\u25B6 Enviar en este orden", callback_data: "ib:order:all" }]);
+      keyboard.push([{ text: t("btn_send_order"), callback_data: "ib:order:all" }]);
       return {
         text:
           `\u{1F4E5} <b>${escapeHtml(label)}</b> \u2014 ${card.items.length} en el inbox.\n` +
@@ -1248,7 +1248,7 @@ export default {
       ];
       const cleanRel = rel.replace(/\\/g, "/");
       const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-      if (cleanRel) rows.push([{ text: "\u2B06 subir", callback_data: `lsg:${lsKeyOf(cleanRel.split("/").slice(0, -1).join("/"))}` }]);
+      if (cleanRel) rows.push([{ text: t("btn_up"), callback_data: `lsg:${lsKeyOf(cleanRel.split("/").slice(0, -1).join("/"))}` }]);
       for (const entry of shown) {
         const child = cleanRel ? `${cleanRel}/${entry.name}` : entry.name;
         if (entry.dir) {
@@ -1260,7 +1260,7 @@ export default {
           ]);
         }
       }
-      if (rows.length === 0) rows.push([{ text: "(carpeta vac\u00eda)", callback_data: `lsg:${lsKeyOf(cleanRel)}` }]);
+      if (rows.length === 0) rows.push([{ text: t("btn_empty_folder"), callback_data: `lsg:${lsKeyOf(cleanRel)}` }]);
       await telegram
         .sendMessage(chatId, lines.join("\n"), {
           parseMode: "HTML",
@@ -1382,7 +1382,7 @@ export default {
         lines.push(`\nToc\u00e1 una opci\u00f3n o mand\u00e1 el n\u00famero. Otra respuesta: <code>/txt tu texto</code>`);
         // The free-text door: one button, only for single-field questions —
         // with several fields a bare text would be a guess.
-        rows.push([{ text: "\u270F\uFE0F Otra respuesta", callback_data: `formfree:${entry.formID}` }]);
+        rows.push([{ text: t("btn_other_answer"), callback_data: `formfree:${entry.formID}` }]);
       } else {
         lines.push(`\nToc\u00e1 una opci\u00f3n por pregunta \u2014 podes corregir mientras no est\u00e9 completa.`);
       }
@@ -1776,9 +1776,9 @@ export default {
           writeDraft(w);
           buttons.push([{ text: ("Default de " + (w.directoryName ?? "el proyecto") + " \u2014 " + taskDirDefault.id).slice(0, 64), callback_data: "task:model:default" }]);
         } else {
-          buttons.push([{ text: "Default del server", callback_data: "task:model:default" }]);
+          buttons.push([{ text: t("btn_server_default"), callback_data: "task:model:default" }]);
         }
-        buttons.push([{ text: "\u{1F9F1} Elegir del selector\u2026", callback_data: "task:model:pick" }]);
+        buttons.push([{ text: t("btn_pick_selector"), callback_data: "task:model:pick" }]);
         await telegram.sendMessage(chatId, sofar + "(4/6) \u{1F9F1} \u00bfCon qu\u00e9 modelo corre la tarea?", {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
@@ -1792,8 +1792,8 @@ export default {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
           replyMarkup: { inline_keyboard: [
-            [{ text: "Una vez", callback_data: "task:stype:once" }, { text: "Diario", callback_data: "task:stype:daily" }],
-            [{ text: "Semanal", callback_data: "task:stype:weekly" }, { text: "Cada N min", callback_data: "task:stype:minutes" }],
+            [{ text: t("btn_once"), callback_data: "task:stype:once" }, { text: t("btn_daily"), callback_data: "task:stype:daily" }],
+            [{ text: t("btn_weekly"), callback_data: "task:stype:weekly" }, { text: t("btn_every_n"), callback_data: "task:stype:minutes" }],
           ] },
         });
         return;
@@ -1818,7 +1818,7 @@ export default {
         {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
-          replyMarkup: { inline_keyboard: [[{ text: "\u2705 Guardar", callback_data: "task:save" }, { text: "\u2716 Cancelar", callback_data: "task:cancel" }]] },
+          replyMarkup: { inline_keyboard: [[{ text: t("btn_save"), callback_data: "task:save" }, { text: t("btn_cancel"), callback_data: "task:cancel" }]] },
         },
       );
     };
@@ -1972,7 +1972,7 @@ export default {
           callback_data: `mpk:${idx}`,
         },
       ]);
-      const nav: Array<{ text: string; callback_data: string }> = [{ text: "\u2630 Proveedores", callback_data: "mpb:0" }];
+      const nav: Array<{ text: string; callback_data: string }> = [{ text: t("btn_providers"), callback_data: "mpb:0" }];
       if (safe > 0) nav.push({ text: "\u25C0", callback_data: `mp:${safe - 1}` });
       nav.push({ text: `${safe + 1}/${pages}`, callback_data: "mp:noop" });
       if (safe < pages - 1) nav.push({ text: "\u25B6", callback_data: `mp:${safe + 1}` });
@@ -2126,21 +2126,21 @@ export default {
                 inline_keyboard: [
                   [
                     { text: "\u{1F9ED} Running", callback_data: "cmd:running" },
-                    { text: "\u{1F5C2} Sesiones", callback_data: "cmd:sessions" },
+                    { text: t("btn_sessions"), callback_data: "cmd:sessions" },
                   ],
                   [
-                    { text: "\u{1F4CA} Uso", callback_data: "cmd:usage" },
+                    { text: t("btn_usage"), callback_data: "cmd:usage" },
                     { text: "\u{1F9EA} MCP", callback_data: "cmd:mcp" },
                   ],
                   [
-                    { text: "\u{1F916} Agente", callback_data: "cmd:agents" },
-                    { text: "\u{1F9F1} Modelos", callback_data: "cmd:models" },
+                    { text: t("btn_agent"), callback_data: "cmd:agents" },
+                    { text: t("btn_models"), callback_data: "cmd:models" },
                   ],
                   [
                     { text: "\u{1F6E0} Skills", callback_data: "cmd:skills" },
-                    { text: "\u{1F4CB} Estado", callback_data: "cmd:status" },
+                    { text: t("btn_status"), callback_data: "cmd:status" },
                   ],
-                  [{ text: "\u2716 Cerrar", callback_data: "menu:close" }],
+                  [{ text: t("btn_close"), callback_data: "menu:close" }],
                 ],
               },
             },
@@ -2293,7 +2293,7 @@ export default {
             } catch (error) {
               log("WARN", "mcp " + action, safe(error));
               await reply(
-                "No se pudo " + action + ": " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                t("mcp_action_fail", { action, detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
               );
             }
             return;
@@ -2404,9 +2404,7 @@ export default {
           const chosen = matchedProvider?.id ?? (arg ? undefined : home || undefined);
           const search = !matchedProvider && arg ? arg : "";
           if (items.length === 0) {
-            await reply(
-              "Nada habilitado que mostrar \u2014 ni el estado del desktop ni tu <code>opencode.jsonc</code> declaran modelos activos.",
-            );
+            await reply(t("models_nothing_enabled"));
             return;
           }
           const state: ModelPicker = { target, items, providers: provList, chosen, search };
@@ -2454,14 +2452,14 @@ export default {
           const mode: Mode = config.mode;
           await reply(
             [
-              `<b>opencode-tg</b> \u2014 modo <code>${mode}</code>`,
-              `espejo: <code>${watched.size === 0 ? (mirrorAll ? "all" : "none") : [...watched].join(", ")}</code>`,
+              t("status_title", { mode }),
+              t("status_mirror") + ` <code>${watched.size === 0 ? (mirrorAll ? "all" : "none") : [...watched].join(", ")}</code>`,
               foreground
-                ? `escribo a: <code>${foreground.slice(0, 18)}\u2026</code> ${escapeHtml(sessions.get(foreground)?.title ?? "")}`
+                ? t("status_write_active", { id: foreground.slice(0, 18), title: escapeHtml(sessions.get(foreground)?.title ?? "") })
                 : topicResolver && telegram.topicsEnabled()
-                  ? "escribo a: <i>el hilo donde escribas</i>"
-                  : "escribo a: <i>la m\u00e1s activa</i>",
-              `sesiones vistas: ${sessions.size}`,
+                  ? t("status_write_thread")
+                  : t("status_write_recent"),
+              t("status_seen", { n: sessions.size }),
               `log: <code>~/.opencode/tg/logs/plugin.log</code>`,
             ].join("\n"),
           );
@@ -2538,17 +2536,15 @@ export default {
               log("WARN", "config reload", safe(error));
             }
             await reply(
-              `\u2705 Default del proyecto: <code>${escapeHtml(full)}</code>.` +
-                (reloaded
-                  ? " \u{1F504} Recargado \u2014 las sesiones nuevas ya nacen con \u00e9l."
-                  : "\n\u{1F504} Aplica a las sesiones NUEVAS tras reiniciar el server."),
+              t("config_model_set", { model: escapeHtml(full) }) +
+                (reloaded ? t("config_model_reloaded") : t("config_model_restart")),
             );
             return;
           }
           // Read view: the key facts of the project config.
           const file = projectConfigFile(directory);
           if (!file) {
-            await reply(`Este proyecto no tiene <code>opencode.jsonc</code> \u2014 el default viene de la config global.`);
+            await reply(t("config_no_project_file"));
             return;
           }
           const { stripJsonc } = await import("./src/config-models.js");
@@ -2623,7 +2619,7 @@ export default {
               .sendMessage(chatId, lines.join("\n"), {
                 parseMode: "HTML",
                 messageThreadId: threadOf(threadSession),
-                replyMarkup: { inline_keyboard: [[{ text: "\u{1F4CA} Ver el diff", callback_data: `gitdiff:${target}` }]] },
+                replyMarkup: { inline_keyboard: [[{ text: t("btn_view_diff"), callback_data: `gitdiff:${target}` }]] },
               })
               .catch((error) => log("WARN", "git send", safe(error)));
           }
@@ -2652,8 +2648,8 @@ export default {
                   replyMarkup: {
                     inline_keyboard: [
                       [
-                        { text: "\u2705 Deshacer", callback_data: "revertok:" + target },
-                        { text: "\u2716 Cancelar", callback_data: "revertno:" + target },
+                        { text: t("btn_undo"), callback_data: "revertok:" + target },
+                        { text: t("btn_cancel"), callback_data: "revertno:" + target },
                       ],
                     ],
                   },
@@ -2718,7 +2714,7 @@ export default {
           try {
             info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target));
           } catch (error) {
-            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : "No encontr\u00e9 esa sesi\u00f3n.");
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : t("find_not_found"));
             return;
           }
           if (!info) {
@@ -2800,7 +2796,7 @@ export default {
             }
             try {
               await forms.request("POST", "/api/worktree", { projectID, name });
-              await reply(`\u{1F33F} Worktree <b>${escapeHtml(name)}</b> creado. Abr\u00ed una sesi\u00f3n en \u00e9l con <code>/projects</code>.`);
+              await reply(t("worktree_created", { name: escapeHtml(name) }));
             } catch (error) {
               log("WARN", "worktree create", safe(error));
               await reply(t("err_generic", { action: "pudo crear el worktree", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
@@ -2808,7 +2804,7 @@ export default {
             return;
           }
           if (rowsTrees.length === 0) {
-            await reply(`Sin worktrees en el proyecto. <code>/worktree new <nombre></code> crea uno.`);
+            await reply(t("worktrees_none"));
             return;
           }
           const rows: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -2820,7 +2816,7 @@ export default {
           }
           if (chatId !== undefined) {
             await telegram
-              .sendMessage(chatId, `\u{1F33F} <b>${rowsTrees.length}</b> worktree(s) \u2014 toc\u00e1 para abrir una sesi\u00f3n ah\u00ed:`, {
+              .sendMessage(chatId, t("worktree_header", { n: rowsTrees.length }), {
                 parseMode: "HTML",
                 messageThreadId: threadOf(threadSession),
                 replyMarkup: { inline_keyboard: rows },
@@ -2925,8 +2921,8 @@ export default {
             }
             await reply(
               isSessionNotFound(error)
-                ? "Esa sesi\u00f3n no est\u00e1 activa en el server y no hay transcript en disco \u2014 las sesiones nuevas viven solo en su memoria (y el server a veces falla al persistirlas: \u00abFailed to drain Session\u00bb en su log). Abrila en la PC y reintent\u00e1: activa, el export funciona."
-                : "No se pudo exportar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                ? t("export_unloaded")
+                : t("err_generic", { action: "exportar", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -2990,10 +2986,10 @@ export default {
           const all = [...sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen);
           const active = all.filter((session) => !session.idle).slice(0, 20).map(row);
           const dormant = all.filter((session) => session.idle).slice(0, 20).map(row);
-          const parts = ["<b>Sesiones</b>"];
+          const parts = [t("sessions_header")];
           if (active.length > 0) parts.push(active.join("\n"));
           if (dormant.length > 0) {
-            parts.push((active.length > 0 ? "\u2014 inactivas \u2014" : "<b>Inactivas</b>"), dormant.join("\n"));
+            parts.push((active.length > 0 ? t("sessions_dormant_mid") : t("sessions_dormant_head")), dormant.join("\n"));
           }
           await reply(parts.join("\n"));
           return;
@@ -3028,7 +3024,7 @@ export default {
             watched.clear();
             // In `all` mode an empty set means "everything", not "nothing" —
             // so say plainly that nothing is being mirrored.
-            await reply(mirrorAll ? "Espejo desactivado (modo config: all — /watch <id> para vigilar una)." : "Espejo desactivado.");
+            await reply(mirrorAll ? t("mirror_off_all") : t("mirror_off"));
             return;
           }
           const target = arg || [...sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen)[0]?.id || "";
@@ -3228,7 +3224,7 @@ export default {
               .catch(() => undefined);
             cancelled += 1;
           }
-          await reply(`\u{1F5D1} ${cancelled} mensaje(s) cancelado(s) del inbox.`);
+          await reply(t("inbox_cancelled", { n: cancelled }));
           return;
         }
         case "history": {
@@ -3254,9 +3250,7 @@ export default {
           }
           if (entries.length === 0) entries = readHistory(jsonlPath(target), 16);
           if (entries.length === 0) {
-            await reply(
-              `\u{1F4DC} <b>${escapeHtml(label)}</b> \u2014 sin historial accesible: la sesi\u00f3n no est\u00e1 activa en el server y no hay transcript en disco (las sesiones nuevas viven en su memoria). Abrila en la PC y reintent\u00e1.`,
-            );
+            await reply(t("history_no_access", { label: escapeHtml(label) }));
             return;
           }
           const ROLE_ICON: Record<HistoryEntry["role"], string> = {
@@ -3334,15 +3328,16 @@ export default {
             if (!created?.id) throw new Error("sin id de sesi\u00f3n");
             const short = (directory.split(/[\\/]/).filter(Boolean).pop() ?? directory) as string;
             await reply(
-              "\u2728 Nueva sesi\u00f3n <code>" + created.id.slice(0, 22) + "\u2026</code> en <b>" + escapeHtml(short) + "</b>." +
+              t("new_session_done", { id: created.id.slice(0, 22), project: escapeHtml(short) }) +
                 (title
-                  ? "\n\u{1F3F7}\uFE0F T\u00edtulo: <b>" + escapeHtml(title.slice(0, 60)) + "</b>"
-                  : "\n\u{1F4A1} Pod\u00e9s crearla con t\u00edtulo: <code>/new <t\u00edtulo></code>") +
-                "\nEscribile \u2014 su hilo se crea con el primer mensaje, o us\u00e1 <code>/use " + created.id + "</code>.",
+                  ? "\n" + t("new_session_titled", { title: escapeHtml(title.slice(0, 60)) })
+                  : "\n" + t("new_session_untitled_hint")) +
+                "\n" +
+                t("new_session_write_hint", { id: created.id }),
             );
           } catch (error) {
             log("WARN", "new session", safe(error));
-            await reply("\u274C No se pudo crear: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+            await reply(t("newtask_create_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
           }
           return;
         }
@@ -3350,7 +3345,7 @@ export default {
         case "tasks": {
           const list = readTasks();
           if (list.length === 0) {
-            await reply("\u23F0 No hay tareas. Cre\u00e1 una con <code>/newtask</code>." + (readDraft() ? "\n\u26A0\uFE0F Hay una tarea a medio crear \u2014 /newtask la retoma." : ""));
+            await reply(t("tasks_none") + (readDraft() ? "\n" + t("tasks_draft_pending") : ""));
             return;
           }
           if (chatId === undefined) return;
@@ -3374,7 +3369,7 @@ export default {
           const existing = readDraft();
           if (existing && existing.updatedAt > Date.now() - 24 * 3600_000) {
             taskWizard = existing;
-            await reply("\u23F0 Retomando la tarea a medio crear \u2014 faltaba: <b>" + existing.step + "</b>.");
+            await reply(t("newtask_resume", { step: existing.step }));
             await wizardAsk(threadSession);
             return;
           }
@@ -3412,8 +3407,8 @@ export default {
 
         case "compact": {
           const target = argument.trim() || threadSession || targetSession();
-          if (!target) { await reply("Decime la sesi\u00f3n: <code>/compact <ses_id></code>, o escribilo en su hilo."); return; }
-          if (!(await forms.connect())) { await reply("La API local no responde."); return; }
+          if (!target) { await reply(t("compact_needs_session")); return; }
+          if (!(await forms.connect())) { await reply(t("api_down")); return; }
           try {
             await forms.request("POST", "/session/" + encodeURIComponent(target) + "/compact", {});
             await reply(t("compact_done"));
@@ -3430,7 +3425,7 @@ export default {
 
         case "usagestats": {
           const days = Math.min(Math.max(Number(argument) || 7, 1), 90);
-          if (!(await forms.connect())) { await reply("La API local no responde."); return; }
+          if (!(await forms.connect())) { await reply(t("api_down")); return; }
           const to = Date.now();
           const from = to - days * 86_400_000;
           try {
@@ -3457,26 +3452,24 @@ export default {
               activeDays?: number;
               streak?: number;
             } | undefined;
-            const lines = ["\u{1F4CA} <b>Uso de los \u00faltimos " + days + " d\u00edas</b>"];
+            const lines = [t("stats_header", { n: days })];
             if (d) {
               lines.push(
-                "\u{1F4AC} Prompts: " + (d.prompts ?? 0) +
-                " \u00b7 \u{1F5C2}\uFE0F Sesiones: " + (d.sessions ?? 0) +
-                " \u00b7 \u{1F916} Subagentes: " + (d.subagents ?? 0),
+                t("stats_line", { prompts: d.prompts ?? 0, sessions: d.sessions ?? 0, subagents: d.subagents ?? 0 }),
               );
-              lines.push("\u{1F9E9} Steps: " + (d.steps ?? 0).toLocaleString("es-AR"));
-              if (d.tokens?.input !== undefined) lines.push("\u{1F4E5} Input: " + fmtTokens(d.tokens.input + (d.tokens.cache?.write ?? 0)));
+              lines.push(t("stats_steps", { n: (d.steps ?? 0).toLocaleString("es-AR") }));
+              if (d.tokens?.input !== undefined) lines.push(t("stats_input", { n: fmtTokens(d.tokens.input + (d.tokens.cache?.write ?? 0)) }));
               if (d.tokens?.output !== undefined) {
-                lines.push("\u{1F4E4} Output: " + fmtTokens(d.tokens.output + (d.tokens.reasoning ?? 0)) + " (incluye razonamiento)");
+                lines.push(t("stats_output", { n: fmtTokens(d.tokens.output + (d.tokens.reasoning ?? 0)) }));
               }
-              if (d.tokens?.cache?.read) lines.push("\u{1F4BE} Cache le\u00eddo: " + fmtTokens(d.tokens.cache.read));
-              if (d.cost !== undefined) lines.push("\u{1FA99} Costo: " + fmtCost(d.cost));
-              if (d.streak !== undefined) lines.push("\u{1F525} Racha: " + d.streak + " d\u00edas \u00b7 activos: " + (d.activeDays ?? 0) + "/" + days);
-            } else lines.push("(sin datos en el rango)");
+              if (d.tokens?.cache?.read) lines.push(t("stats_cache", { n: fmtTokens(d.tokens.cache.read) }));
+              if (d.cost !== undefined) lines.push(t("stats_cost", { n: fmtCost(d.cost) }));
+              if (d.streak !== undefined) lines.push(t("stats_streak", { streak: d.streak, active: d.activeDays ?? 0, days }));
+            } else lines.push(t("stats_no_data"));
             await reply(lines.join("\n"));
           } catch (error) {
             log("WARN", "usagestats", safe(error));
-            await reply("\u274C No pude leer las estad\u00edsticas: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+            await reply(t("stats_read_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
           }
           return;
         }
@@ -3499,7 +3492,7 @@ export default {
           } catch (error) {
             log("WARN", "archive", safe(error));
             if (!/not a supergroup/i.test(String((error as Error)?.message ?? ""))) {
-              await reply("\u274C No se pudo archivar: " + escapeHtml(String((error as Error).message).slice(0, 200)));
+              await reply(t("archive_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
               return;
             }
             // A private chat cannot close topics (verified live: "the chat
@@ -3559,7 +3552,7 @@ export default {
             if (fresh !== undefined) {
               topicStore.set(target, fresh);
               await telegram
-                .sendMessage(chatId, "\u{1F4C2} Despertado \u2014 hilo nuevo; el espejo de la sesi\u00f3n sigue ac\u00e1.", {
+                .sendMessage(chatId, t("unarchive_new_thread"), {
                   parseMode: "HTML",
                   messageThreadId: fresh,
                 })
@@ -3588,9 +3581,7 @@ export default {
           try {
             await telegram.deleteForumTopic(chatId, tid);
             topicStore.remove(target);
-            await reply(
-              "\u{1F5D1} Hilo eliminado del chat. Ojo: la sesi\u00f3n sigue existiendo \u2014 mientras est\u00e9 activa, su pr\u00f3ximo evento crea un hilo nuevo (as\u00ed funciona el espejo). Para silenciarla en serio: <code>/archive</code>.",
-            );
+            await reply(t("delthread_done"));
           } catch (error) {
             log("WARN", "delthread", safe(error));
             await reply(t("delthread_fail"));
@@ -3611,20 +3602,21 @@ export default {
             return;
           }
           const total = topicStore.entries().length;
+          const win = config.rebuildIdleHours === 0 ? t("win_hours") : `${config.rebuildIdleHours}h`;
           await telegram
             .sendMessage(
               chatId,
-              "\u{1F9F9} <b>Reconstruir el foro</b>\n" +
-                `Borra TODOS los hilos de sesiones (${total} mapeados) y recrea los de las sesiones que usaste en las \u00faltimas ${config.rebuildIdleHours === 0 ? "horas" : config.rebuildIdleHours + "h"} (hasta 12, la m\u00e1s reciente queda arriba).\n` +
-                "El resto vuelve solo: cada sesi\u00f3n crea su hilo nuevo con su pr\u00f3xima actividad. Los mensajes viejos no se re-importan \u2014 <code>/export</code> baja el transcript de cada una.",
+              t("rebuild_card_title") +
+                t("rebuild_card_body", { total, window: win }) +
+                t("rebuild_card_foot"),
               {
                 parseMode: "HTML",
                 messageThreadId: threadOf(threadSession),
                 replyMarkup: {
                   inline_keyboard: [
                     [
-                      { text: "\u{1F9F9} S\u00ed, reconstruir", callback_data: "rbld:ok" },
-                      { text: "\u274C Cancelar", callback_data: "rbld:no" },
+                      { text: t("btn_rebuild_yes"), callback_data: "rbld:ok" },
+                      { text: t("btn_cancel"), callback_data: "rbld:no" },
                     ],
                   ],
                 },
@@ -3741,7 +3733,7 @@ export default {
           // string of text.
           const explained =
             danger.commands.length > 0
-              ? "\n\n<b>Lo que hace:</b>\n" +
+              ? t("sh_explained_header") +
                 danger.commands
                   .map((c) => {
                     const shown = c.resolved ?? c.asWritten ?? c.raw;
@@ -3753,11 +3745,11 @@ export default {
           if (danger.level === "forbidden") {
             log("WARN", `sh bloqueado (prohibido): ${cmdText.slice(0, 80)}`);
             await reply(
-              `🚫 <b>Comando bloqueado</b>\n` +
-                `Esto ${escapeHtml(danger.reason)} y no tiene vuelta atrás, así que no puedo ejecutarlo ni aunque lo confirmes.` +
+              t("sh_blocked_title") +
+                t("sh_blocked_body", { reason: escapeHtml(danger.reason) }) +
                 explained +
                 `\n\n<code>${escapeHtml(cmdText.slice(0, 300))}</code>\n\n` +
-                `Si de verdad necesitás hacerlo, hacelo desde la consola de la PC.`,
+                t("sh_blocked_foot"),
             );
             return;
           }
@@ -3767,15 +3759,15 @@ export default {
             if (chatId !== undefined) {
               const keyboard = [
                 [
-                  { text: "⚠️ Confirmar y ejecutar", callback_data: `shok:${shId}` },
-                  { text: "Cancelar", callback_data: `shno:${shId}` },
+                  { text: t("btn_confirm_exec"), callback_data: `shok:${shId}` },
+                  { text: t("btn_cancel"), callback_data: `shno:${shId}` },
                 ],
               ];
               await telegram
                 .sendMessage(
                   chatId,
-                  `⚠️ <b>Comando que ${escapeHtml(danger.reason)}</b>\n` +
-                    `Antes de ejecutarlo, confirmá que querés hacerlo y que entendés que puede interrumpir el servicio (y este bot con él).` +
+                  t("sh_confirm_title", { reason: escapeHtml(danger.reason) }) +
+                    t("sh_confirm_body") +
                     explained +
                     `\n\n<code>${escapeHtml(cmdText.slice(0, 400))}</code>`,
                   {
@@ -4078,7 +4070,7 @@ export default {
             await forms.request("POST", "/session/" + encodeURIComponent(target) + "/move", { directory });
             const tracked = sessions.get(target);
             if (tracked) tracked.directory = directory;
-            await reply(`\u{1F4E6} Sesi\u00f3n movida a <b>${escapeHtml(directory)}</b>.`);
+            await reply(t("move_done", { directory: escapeHtml(directory) }));
           } catch (error) {
             log("WARN", "move", safe(error));
             await reply(
@@ -4432,13 +4424,13 @@ export default {
           if (chatId !== undefined && isWatched(sessionID)) {
             const keyboard = {
               inline_keyboard: [[
-                { text: "\u2705 Aprobar", callback_data: "perm2:ok:" + requestId },
-                { text: "\u{1F501} Siempre", callback_data: "perm2:always:" + requestId },
-                { text: "\u2716 Rechazar", callback_data: "perm2:no:" + requestId },
+                { text: t("btn_approve"), callback_data: "perm2:ok:" + requestId },
+                { text: t("btn_always"), callback_data: "perm2:always:" + requestId },
+                { text: t("btn_reject"), callback_data: "perm2:no:" + requestId },
               ]],
             };
             void telegram
-              .sendMessage(chatId, "\u{1F510} <b>" + escapeHtml(session.title) + "</b> pide permiso:\n<code>" + escapeHtml(action) + "</code> \u00b7 " + escapeHtml(resources.slice(0, 300)), {
+              .sendMessage(chatId, t("perm_card", { title: escapeHtml(session.title), action: escapeHtml(action), resources: escapeHtml(resources.slice(0, 300)) }), {
                 parseMode: "HTML", messageThreadId: threadOf(sessionID), replyMarkup: keyboard,
               })
               .catch((error) => log("WARN", "perm send", safe(error)));
@@ -4446,7 +4438,7 @@ export default {
             // sits in its thread, this line makes sure General says so.
             if (threadOf(sessionID) !== undefined) {
               void telegram
-                .sendMessage(chatId, `\u{1F510} <b>${escapeHtml(session.title)}</b> pide un permiso \u2014 su hilo espera tu respuesta.`, {
+                .sendMessage(chatId, t("perm_card_general", { title: escapeHtml(session.title) }), {
                   parseMode: "HTML",
                 })
                 .catch((error) => log("WARN", "perm heads-up", safe(error)));
@@ -4852,7 +4844,7 @@ export default {
                   await ack(t("rebuild_cancelled"));
                   if (cq.message) {
                     await telegram
-                      .editMessageText(cq.message.chat.id, cq.message.message_id, "\u274C Reconstrucci\u00f3n cancelada.", { parseMode: "HTML" })
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, t("rebuild_cancelled_card"), { parseMode: "HTML" })
                       .catch(() => undefined);
                   }
                   return;
@@ -4911,15 +4903,15 @@ export default {
                         .catch(() => undefined);
                     }
                   }
-                  const windowTxt = config.rebuildIdleHours === 0 ? "horas" : `${config.rebuildIdleHours}h`;
-                  let summary = `\u{1F9F9} ${deleted} hilo(s) borrado(s) confirmado(s)`;
+                  const windowTxt = config.rebuildIdleHours === 0 ? t("win_hours") : `${config.rebuildIdleHours}h`;
+                  let summary = t("rebuild_deleted_line", { n: deleted });
                   if (failed > 0) {
-                    summary += ` \u00b7 ${failed} no se pudo(eron) borrar (siguen mapeados \u2014 /rebuild reintenta)`;
+                    summary += t("rebuild_failed_line", { n: failed });
                   }
                   if (created > 0) {
-                    summary += `\n${created} hilo(s) recreado(s) para las sesiones que usaste en las \u00faltimas ${windowTxt}. El resto vuelve solo con su pr\u00f3xima actividad.`;
+                    summary += t("rebuild_recreated_line", { created, window: windowTxt });
                   } else if (failed === 0) {
-                    summary += `\nNinguna sesi\u00f3n tuvo actividad en las \u00faltimas ${windowTxt} \u2014 el foro queda vac\u00edo hasta que uses una sesi\u00f3n.`;
+                    summary += t("rebuild_empty_line", { window: windowTxt });
                   }
                   log(
                     "INFO",
@@ -4999,7 +4991,7 @@ export default {
                 await ack(t("cancelled"));
                 if (cq.message) {
                   await telegram
-                    .editMessageText(cq.message.chat.id, cq.message.message_id, "\u2716 Revert cancelado.", { parseMode: "HTML" })
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, t("revert_cancelled_card"), { parseMode: "HTML" })
                     .catch(() => undefined);
                 }
                 return;
@@ -5130,10 +5122,10 @@ export default {
                 // with an empty body IS the success, so only a throw counts.
                 const [, outcome, requestId] = payload.split(":");
                 const req = permissionRequests.get(requestId);
-                if (!req) { await ack("Ese permiso ya se resolvi\u00f3"); return; }
+                if (!req) { await ack(t("perm_already_resolved")); return; }
                 permissionRequests.delete(requestId);
                 const decision = outcome === "always" ? "always" : outcome === "ok" ? "once" : "reject";
-                await ack(decision === "reject" ? "Rechazado" : decision === "always" ? "Aprobado siempre" : "Aprobado");
+                await ack(decision === "reject" ? t("perm_rejected") : decision === "always" ? t("perm_always") : t("perm_once_ok"));
                 if (cq.message) {
                   const label = decision === "reject"
                     ? "\u2716 Permiso rechazado desde Telegram."
@@ -5324,7 +5316,7 @@ export default {
                   taskWizard.step = "type";
                   writeDraft(taskWizard);
                   modelCards.drop(cq.message?.message_id);
-                  await ack("Modelo elegido: " + (chosen.name ?? chosen.id));
+                  await ack(t("models_chosen", { name: chosen.name ?? chosen.id }));
                   if (cq.message) {
                     await telegram
                       .editMessageText(cq.message.chat.id, cq.message.message_id, "\u{1F9F1} Modelo: <code>" + escapeHtml(chosen.id) + "</code>", { parseMode: "HTML" })
@@ -5372,7 +5364,7 @@ export default {
                   return;
                 }
                 skillArmed = chosen;
-                await ack("Skill " + chosen.name + " \u2014 escrib\u00ed el prompt");
+                await ack(t("skill_chosen", { name: chosen.name }));
                 return;
               }
               if (payload.startsWith("task:")) {
@@ -5401,15 +5393,15 @@ export default {
                 }
                 if (action === "model") {
                   const tsession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
-                  if (!taskWizard) { await ack("El wizard expir\u00f3 \u2014 /newtask de nuevo"); return; }
+                  if (!taskWizard) { await ack(t("newtask_stale")); return; }
                   if (arg === "default") taskWizard.model = undefined;
                   // "inherit" already pre-loaded the session's model in the ask.
                   taskWizard.step = "type";
                   writeDraft(taskWizard);
-                  await ack(arg === "pick" ? "Eleg\u00ed proveedor y modelo" : "Modelo elegido");
+                  await ack(arg === "pick" ? t("models_pick_prompt") : t("models_picked_ack"));
                   if (arg === "pick") {
                     // Reuse the /models mirror: desktop-shown models only.
-                    if (!(await forms.connect())) { await ack("La API local no responde"); return; }
+                    if (!(await forms.connect())) { await ack(t("api_down_ack")); return; }
                     const [all, providers] = await Promise.all([
                       forms.request<Array<{ id: string; modelID?: string; providerID: string; name?: string; enabled?: boolean; status?: string }>>("GET", "/model").catch(() => undefined),
                       forms.request<Array<{ id?: string; name?: string; activation?: string }>>("GET", "/provider").catch(() => undefined),
@@ -5459,7 +5451,7 @@ export default {
                 if (action === "stype") {
                   const type = arg as TaskSchedule["type"];
                   const tsession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
-                  if (!taskWizard || !type) { await ack("El wizard expir\u00f3 \u2014 /newtask de nuevo"); return; }
+                  if (!taskWizard || !type) { await ack(t("newtask_stale")); return; }
                   taskWizard.scheduleType = type;
                   taskWizard.step = "detail";
                   writeDraft(taskWizard);
@@ -5468,7 +5460,7 @@ export default {
                   return;
                 }
                 if (action === "save") {
-                  if (!taskWizard || !taskWizard.schedule || !taskWizard.directory) { await ack("El wizard expir\u00f3 \u2014 /newtask de nuevo"); return; }
+                  if (!taskWizard || !taskWizard.schedule || !taskWizard.directory) { await ack(t("newtask_stale")); return; }
                   const task: Task = {
                     id: newTaskId(),
                     name: taskWizard.name,
@@ -5504,8 +5496,8 @@ export default {
                   }
                   return;
                 }
-                if (!task) { await ack("La tarea ya no existe \u2014 /tasks de nuevo"); return; }
-                if (!(await forms.connect())) { await ack("La API local no responde"); return; }
+                if (!task) { await ack(t("tasks_gone")); return; }
+                if (!(await forms.connect())) { await ack(t("api_down_ack")); return; }
                 if (action === "view") {
                   await ack();
                   if (cq.message) {
@@ -5521,9 +5513,9 @@ export default {
                           "\u{1F553} \u00faltima: " + (task.lastRun > 0 ? escapeHtml(task.lastStatus || "sin estado") : "nunca"),
                         { parseMode: "HTML",
                           replyMarkup: { inline_keyboard: [
-                            [{ text: "\u25B6 Ahora", callback_data: "task:run:" + task.id }, { text: task.enabled ? "\u23F8 Apagar" : "\u25B6 Encender", callback_data: "task:toggle:" + task.id }],
+                            [{ text: t("btn_run_now"), callback_data: "task:run:" + task.id }, { text: task.enabled ? "\u23F8 Apagar" : "\u25B6 Encender", callback_data: "task:toggle:" + task.id }],
                             [{ text: "\u270F\uFE0F Prompt", callback_data: "task:prompt:" + task.id }],
-                            [{ text: "\u{1F5D1} Eliminar", callback_data: "task:del:" + task.id }, { text: "\u2B05", callback_data: "task:back" }],
+                            [{ text: t("btn_delete"), callback_data: "task:del:" + task.id }, { text: "\u2B05", callback_data: "task:back" }],
                           ] } },
                       )
                       .catch(() => undefined);
@@ -5566,8 +5558,8 @@ export default {
                     x.enabled = !x.enabled;
                     if (x.enabled) x.nextRun = nextRunOf(x.schedule);
                     writeTasks(all);
-                    await ack(x.enabled ? "Encendida" : "Apagada");
-                  } else await ack("Ya no existe");
+                    await ack(x.enabled ? t("task_on") : t("task_off"));
+                  } else await ack(t("gone"));
                   return;
                 }
                 if (action === "del") {
@@ -5671,7 +5663,7 @@ export default {
                     await ack(t("queue_steered"));
                   } catch (error) {
                     log("WARN", "inbox steer", safe(error));
-                    await ack("No se pudo adelantar: " + String((error as Error).message).slice(0, 120));
+                    await ack(t("queue_steer_fail", { detail: String((error as Error).message).slice(0, 120) }));
                   }
                   return;
                 }
