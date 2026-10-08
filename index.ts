@@ -417,7 +417,7 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
    * heartbeat froze, and re-contests a leaderless seat the lock says is
    * contestable.
    */
-  timer = setInterval(() => {
+  timer = setInterval(async () => {
     const leader = reg.leader;
     if (leader === guarded) {
       // We lead: the file is the arbiter, not our own belief that we won,
@@ -437,7 +437,10 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
         log("WARN", "l\u00edder muerto: el stream o el poll se congel\u00f3; cediendo el asiento");
         reg.leader = undefined;
         reg.leaderMode = undefined;
-        void guarded.stop().catch((error) => log("ERROR", "stop del l\u00edder muerto", safe(error)));
+        // Await the stop: the old leader's getUpdates socket takes a beat to
+        // close after abort, and a replacement starting inside that window
+        // collides with it at Telegram (HTTP 409 forever, measured).
+        await guarded.stop().catch((error) => log("ERROR", "stop del l\u00edder muerto", safe(error)));
         // Hand the seat to a *different* live member: picking ourselves would
         // restart the same dead instance and loop forever. If there is none,
         // the seat stays open for any other process to contest below — and
@@ -448,7 +451,7 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
           reg.leader = wrapper;
           reg.leaderMode = reg.memberModes.get(next);
           log("INFO", "traspaso de liderazgo a otra instancia");
-          wrapper.start().catch((error) => {
+          await wrapper.start().catch((error) => {
             if (reg.leader === wrapper) {
               reg.leader = undefined;
               reg.leaderMode = undefined;
@@ -476,14 +479,18 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
         log("WARN", `lock en manos de #${holder ?? "?"} — el líder local cede el asiento`);
         reg.leader = undefined;
         reg.leaderMode = undefined;
-        void leader.stop().catch((error) => log("ERROR", "stop del líder con lock ajeno", safe(error)));
+        await leader.stop().catch((error) => log("ERROR", "stop del líder con lock ajeno", safe(error)));
       } else {
         const alive = leader.alive ? leader.alive() : true;
         if (alive) return;
         log("WARN", "líder local muerto — el asiento queda libre");
         reg.leader = undefined;
         reg.leaderMode = undefined;
-        void leader.stop().catch((error) => log("ERROR", "stop del líder muerto", safe(error)));
+        // Await the stop before the re-contest below: the old poll's socket
+        // outlives its abort by a beat, and starting a replacement in the
+        // same tick puts two getUpdates on one token — Telegram answers both
+        // with HTTP 409 and the hand-over never converges (measured live).
+        await leader.stop().catch((error) => log("ERROR", "stop del líder muerto", safe(error)));
       }
     }
     // The seat is empty and we are alive: contest it. Waiting instances

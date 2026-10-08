@@ -167,8 +167,25 @@ export class Telegram {
   private get signal(): AbortSignal {
     return this.controller.signal;
   }
+  /** Register a request so `stop()` can await the socket's real teardown. */
+  private trackInflight(p: Promise<unknown>): void {
+    const tracked: Promise<void> = p.then(() => undefined, () => undefined);
+    this.inflight.add(tracked);
+    void tracked.finally(() => {
+      this.inflight.delete(tracked);
+    });
+  }
   /** Backoff waits register here so `stop()` can cut them short. */
   private delays = new Set<() => void>();
+  /**
+   * The in-flight requests, so `stop()` can await their actual teardown.
+   * Aborting a fetch cancels it locally, but Telegram keeps the connection
+   * open for a beat — a replacement leader that starts polling in that window
+   * gets HTTP 409 "terminated by other getUpdates" and the two fight forever
+   * (measured live, 2026-10-08). The promise resolves only when the socket is
+   * gone, which is what makes a hand-over overlap-free.
+   */
+  private inflight = new Set<Promise<void>>();
   /**
    * Set once Telegram rejects a topic creation: the bot has no forum mode. The
    * rest of the run keeps using the single chat so nothing else has to fail.
@@ -258,26 +275,33 @@ export class Telegram {
   async call<T = unknown>(method: string, body: Record<string, unknown>, attempt = 0): Promise<T> {
     const longPoll = method === "getUpdates";
     await this.gate(longPoll);
+    // Tying the in-flight request to `aborted` means `stop()` cancels a
+    // 30-second getUpdates instead of leaving the loop parked in it.
+    // A request-specific timeout means a *dead* one can never park the
+    // loop forever either: Telegram answers a long poll within its
+    // `timeout` seconds by contract, so anything past that plus slack is
+    // a corpse (NAT dropped it, the socket died mid-answer) and aborting
+    // it is what keeps the poller turning.
+    const timeoutMs = (longPoll ? (this.pollTimeout + 15) * 1000 : 15_000) + attempt * 5_000;
+    const signal =
+      typeof AbortSignal.any === "function"
+        ? AbortSignal.any([this.signal, AbortSignal.timeout(timeoutMs)])
+        : this.signal;
+    // The socket promise: resolves with the Response, rejects on network
+    // error. Tracked in `inflight` so `stop()` awaits the socket actually
+    // closing — aborting cancels locally, but Telegram keeps the connection
+    // open a beat, and a replacement leader starting in that window gets
+    // HTTP 409 forever (measured, 2026-10-08).
+    const socket = fetch(`${this.base}/${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    this.trackInflight(socket.catch(() => undefined));
     let response: Response;
     try {
-      // Tying the in-flight request to `aborted` means `stop()` cancels a
-      // 30-second getUpdates instead of leaving the loop parked in it.
-      // A request-specific timeout means a *dead* one can never park the
-      // loop forever either: Telegram answers a long poll within its
-      // `timeout` seconds by contract, so anything past that plus slack is
-      // a corpse (NAT dropped it, the socket died mid-answer) and aborting
-      // it is what keeps the poller turning.
-      const timeoutMs = (longPoll ? (this.pollTimeout + 15) * 1000 : 15_000) + attempt * 5_000;
-      const signal =
-        typeof AbortSignal.any === "function"
-          ? AbortSignal.any([this.signal, AbortSignal.timeout(timeoutMs)])
-          : this.signal;
-      response = await fetch(`${this.base}/${method}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal,
-      });
+      response = await socket;
     } catch (error) {
       if (this.aborted) throw new TelegramError({ method, description: "aborted" });
       // Network hiccup — Telegram clients are expected to retry.
@@ -740,7 +764,7 @@ export class Telegram {
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.aborted = true;
     this.controller.abort();
     // A long-poll mid-backoff is parked in `delay`; resolving it here makes the
@@ -749,6 +773,17 @@ export class Telegram {
     // new leader with HTTP 409s for half a minute per round.
     for (const cancel of this.delays) cancel();
     this.delays.clear();
+    // Wait for the sockets to actually close. Abort is local and instant, but
+    // Telegram still sees the connection open until the socket drains — a
+    // replacement leader polling inside that window gets HTTP 409 "terminated
+    // by other getUpdates" and the two fight indefinitely (measured live).
+    // Bounded: a socket that refuses to close must not wedge the hand-over.
+    const pending = [...this.inflight];
+    this.inflight.clear();
+    await Promise.race([
+      Promise.allSettled(pending),
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ]);
   }
 }
 
