@@ -157,7 +157,7 @@ prompt, and the result lands in the task's topic.
 | `/archive` | Archives the session's topic (visible but closed) |
 | `/unarchive` | Reopens it |
 | `/delthread` | Deletes the forum topic (the session lives on in OpenCode) |
-| `/rebuild` | Wipes ALL threads and rebuilds the forum clean: fresh threads for the active sessions (most recent on top), the rest return on their next activity |
+| `/rebuild` | Wipes ALL threads and rebuilds the forum clean: fresh threads for the sessions you used recently (`rebuildIdleHours`, most recent on top), the rest return on their next activity |
 | `/rename` | Renames the topic's session (or `/rename <ses_id> <title>`) — the thread and the desktop follow |
 | `/sh <cmd>` | Runs a shell command INSIDE the session (background, agent undisturbed). Note: the shell is PowerShell — `;` not `&&`. The command is parsed (aliases resolved): read-only commands and the dev toolchain pass through; anything that can interrupt the service or leave the machine asks for confirmation on a card that explains what it does; the irreversible ones (formatting, registry, secrets, machine shutdown, evasion via `iex`/`.NET`/`-EncodedCommand`) are blocked with no exception. Deletion is allowed inside the project folder |
 | `/note <text>` | Leaves a note in the transcript — the agent reads it on its next turn |
@@ -193,6 +193,7 @@ allowed-chats list in `~/.opencode/tg/.env`.
 | `coalesceMs` | `2000` | Window (ms) to merge burst messages when the session is idle |
 | `coalesceBusyMs` | `8000` | Burst window (ms) while the agent works; then it enters the queue |
 | `archiveAfterDays` | `0` (off) | Idle days before topics auto-archive |
+| `rebuildIdleHours` | `24` | `/rebuild` only recreates topics for sessions used within this many hours; `0` removes the limit |
 | `stt.provider` | — | Voice transcription: `"local"` (whisper.cpp) or `"openai-compatible"` (see the README) |
 | `render.showReasoning` | `true` | Show the agent's reasoning in the topic |
 | `render.showDiffs` | `true` | Show diffs on file edits |

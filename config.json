@@ -17,6 +17,12 @@
   // watched -> solo las marcadas con /watch en el chat.
   "mirror": "all",
 
+  // /rebuild recrea los hilos de las sesiones que usaste dentro de estas
+  // horas. El server pisa el campo "updated" de TODAS las sesiones al
+  // reiniciar, asi que ordenar por ese campo resucitaba sesiones que nadie
+  // tocaba hace dias; "idle" es la ultima actividad real. 0 = sin limite.
+  "rebuildIdleHours": 24,
+
   // Vuelca la forma real de los eventos estructurales al log. Apagar tras
   // validar: crece el fichero.
   "debugEvents": false,

@@ -39,13 +39,22 @@ export interface Config {
    */
   archiveAfterDays: number;
   /**
+   * /rebuild recreates threads only for sessions a human actually used
+   * within this many hours. The server's `updated` field is also bumped by
+   * its own housekeeping — every session gets touched on startup — so
+   * sorting by it after a restart resurrected sessions nobody had opened
+   * for days. `idle` is the last real interaction, which is what the forum
+   * should show. 0 = no window: recreate the 12 most recent by idle,
+   * however stale.
+   */
+  rebuildIdleHours: number;
+  /**
    * Coalescing window: text messages that arrive within this many
    * milliseconds of each other merge into one prompt. Human Telegram
    * cadence runs at 1-2s between follow-ups, so 800ms only caught
    * copy-paste bursts — 2000ms catches real "ah, and also…" follow-ups.
    */
-  coalesceMs: number;
-  /**
+  coalesceMs: number;  /**
    * Burst window while a session is busy: rapid follow-ups merge into one
    * prompt, but the batch reaches the server's inbox in seconds — a longer
    * hold made the messages invisible to /queue and stole the steer control.
@@ -64,6 +73,7 @@ const DEFAULTS: Omit<Config, "token"> = {
   allowedUsers: [],
   mirror: "all",
   archiveAfterDays: 0,
+  rebuildIdleHours: 24,
   coalesceMs: 2000,
   coalesceBusyMs: 8_000,
   debugEvents: false,
@@ -195,6 +205,11 @@ export function loadConfig(): Config {
     archiveRaw !== undefined && Number.isFinite(Number(archiveRaw)) && Number(archiveRaw) >= 0
       ? Number(archiveRaw)
       : DEFAULTS.archiveAfterDays;
+  const rebuildRaw = env.TG_REBUILD_IDLE_HOURS ?? env.rebuildIdleHours;
+  const rebuildIdleHours =
+    rebuildRaw !== undefined && Number.isFinite(Number(rebuildRaw)) && Number(rebuildRaw) >= 0
+      ? Number(rebuildRaw)
+      : DEFAULTS.rebuildIdleHours;
   const coalesceRaw = env.TG_COALESCE_MS ?? env.coalesceMs;
   const coalesceMs =
     coalesceRaw !== undefined && Number.isFinite(Number(coalesceRaw))
@@ -223,6 +238,7 @@ export function loadConfig(): Config {
     render,
     mirror: asChoice(env.TG_MIRROR, ["watched", "all"] as const) ?? asChoice(env.mirror, ["watched", "all"] as const) ?? DEFAULTS.mirror,
     archiveAfterDays,
+    rebuildIdleHours,
     coalesceMs,
     coalesceBusyMs,
     debugEvents: asBool(env.TG_DEBUG_EVENTS) ?? asBool(env.debugEvents) ?? DEFAULTS.debugEvents,

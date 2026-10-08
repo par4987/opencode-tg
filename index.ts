@@ -27,7 +27,7 @@ import { acquireLock, ensureLockDir, heartbeat, lockHeldBy, releaseLock, LOCK_IN
 import { log, safe } from "./src/log.js";
 import { DryRunTelegram, Telegram, type Update } from "./src/telegram.js";
 import { TurnRenderer } from "./src/stream.js";
-import { TopicResolver, TopicStore } from "./src/topics.js";
+import { RebuildSession, TopicResolver, TopicStore, rebuildCandidates } from "./src/topics.js";
 import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
@@ -65,7 +65,7 @@ const HELP = [
   "/new \u2014 sesi\u00f3n nueva en el proyecto actual",
   "/skill <id> <texto> \u2014 corre un prompt con la skill cargada",
   "/archive \u00b7 /unarchive \u00b7 /delthread \u2014 archivar, reabrir o borrar el hilo de una sesi\u00f3n",
-  "/rebuild \u2014 borrar TODOS los hilos y reconstruir el foro limpio (los activos primero)",
+  "/rebuild \u2014 borrar TODOS los hilos y reconstruir el foro limpio (los que usaste \u00faltimamente primero)",
   "/rename \u2014 renombrar la sesi\u00f3n del hilo: /rename <nuevo t\u00edtulo> (sin t\u00edtulo, sugiere tres)",
   "/sh \u2014 correr un comando shell DENTRO de la sesi\u00f3n (ojo: PowerShell \u2014 us\u00e1 ; en vez de &&)",
   "/note \u2014 dejar una nota en el transcript sin despertar al agente",
@@ -3492,7 +3492,7 @@ export default {
             .sendMessage(
               chatId,
               "\u{1F9F9} <b>Reconstruir el foro</b>\n" +
-                `Borra TODOS los hilos de sesiones (${total} mapeados) y recrea los de las sesiones activas del server (hasta 12, la m\u00e1s reciente queda arriba).\n` +
+                `Borra TODOS los hilos de sesiones (${total} mapeados) y recrea los de las sesiones que usaste en las \u00faltimas ${config.rebuildIdleHours === 0 ? "horas" : config.rebuildIdleHours + "h"} (hasta 12, la m\u00e1s reciente queda arriba).\n` +
                 "El resto vuelve solo: cada sesi\u00f3n crea su hilo nuevo con su pr\u00f3xima actividad. Los mensajes viejos no se re-importan \u2014 <code>/export</code> baja el transcript de cada una.",
               {
                 parseMode: "HTML",
@@ -4754,10 +4754,17 @@ export default {
                   let created = 0;
                   if (await forms.connect()) {
                     const list = await forms.request<Array<ApiSession>>("GET", "/session").catch(() => undefined);
-                    const rows = (Array.isArray(list) ? list : [])
-                      .filter((s) => s?.id && (s.time?.updated ?? 0) > 0)
-                      .sort((a, b) => (a.time?.updated ?? 0) - (b.time?.updated ?? 0))
-                      .slice(-12);
+                    // `idle` is the last real interaction; `updated` is also
+                    // bumped by the server's own housekeeping — every session
+                    // gets touched at startup, so ordering by it resurrected
+                    // sessions nobody had opened for days (measured: eight
+                    // sessions sharing one `updated` minute, the service
+                    // restart, with idle times of 10h and 2d).
+                    const rows = rebuildCandidates(
+                      (Array.isArray(list) ? list : []) as RebuildSession[],
+                      Date.now(),
+                      config.rebuildIdleHours,
+                    );
                     for (const s of rows) {
                       const title = (s.title?.trim() || s.id.slice(0, 24)).slice(0, 128);
                       const tid = await telegram.createForumTopic(chat, title).catch(() => undefined);
@@ -4773,12 +4780,14 @@ export default {
                         .catch(() => undefined);
                     }
                   }
-                  log("INFO", `rebuild: ${all.length} hilos borrados, ${created} recreados`);
+                  log("INFO", `rebuild: ${all.length} hilos borrados, ${created} recreados (idle<=${config.rebuildIdleHours}h)`);
                   await telegram
                     .editMessageText(
                       chat,
                       cq.message.message_id,
-                      `\u{1F9F9} ${all.length} hilo(s) borrado(s) \u00b7 ${created} recreado(s) para las sesiones activas.\nEl resto vuelve solo con su pr\u00f3xima actividad.`,
+                      created > 0
+                        ? `\u{1F9F9} ${all.length} hilo(s) borrado(s) \u00b7 ${created} recreado(s) para las sesiones que usaste en las \u00faltimas ${config.rebuildIdleHours === 0 ? "horas" : config.rebuildIdleHours + "h"}.\nEl resto vuelve solo con su pr\u00f3xima actividad.`
+                        : `\u{1F9F9} ${all.length} hilo(s) borrado(s). Ninguna sesi\u00f3n tuvo actividad en las \u00faltimas ${config.rebuildIdleHours === 0 ? "horas" : config.rebuildIdleHours + "h"} \u2014 el foro queda vac\u00edo hasta que uses una sesi\u00f3n.`,
                       { parseMode: "HTML" },
                     )
                     .catch(() => undefined);

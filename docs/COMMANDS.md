@@ -108,7 +108,7 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 **Ejemplos**:
 - `/rebuild` → borra ~348 hilos y recrea los de las sesiones activas (hasta 12, la más reciente arriba)
 
-**Notas**: Los mensajes viejos no se re-importan — `/export` baja el transcript de cada sesión.
+**Notas**: Los mensajes viejos no se re-importan — `/export` baja el transcript de cada sesión. Solo recrea hilos para sesiones que usaste dentro de `rebuildIdleHours` (default 24h): el server pisa el campo `updated` de todas las sesiones al reiniciar, así que ordenar por él resucitaba sesiones que nadie tocaba hacía días; `idle` es la última actividad real.
 
 ## Archivos y código
 

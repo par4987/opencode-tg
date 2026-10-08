@@ -5,7 +5,7 @@
  * reusable once resolved, and a bot without topic mode degrades to the single
  * chat instead of throwing per event.
  */
-import { TopicResolver, TopicStore } from "../src/topics.js";
+import { RebuildSession, TopicResolver, TopicStore, rebuildCandidates } from "../src/topics.js";
 import { readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -109,6 +109,44 @@ async function main(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   check("titleOf async: el topico nace con el titulo resuelto", calls4[0]?.name === "Titulo vivo del server", calls4[0]?.name ?? "sin llamadas");
   check("y el mapeo quedo", store4.get("ses_w") === 888);
+
+  // 5. /rebuild selection: the forum should show sessions a HUMAN used
+  //    recently, not sessions the server's housekeeping touched. The bug
+  //    this guards: after a service restart every session shares one
+  //    `updated` minute, so ordering by it resurrected sessions idle for
+  //    days as if they were live.
+  const H = 3_600_000;
+  const NOW = 10_000_000_000_000;
+  const ghost = {
+    // usado hace 2 dias, pero el server le piso `updated` al reiniciar
+    id: "ses_ghost",
+    title: "Fantasma",
+    time: { idle: NOW - 48 * H },
+  } as const;
+  const live = { id: "ses_live", title: "Viva", time: { idle: NOW - 10 * 60_000 } } as const;
+  const used1h = { id: "ses_1h", title: "Hace una hora", time: { idle: NOW - H } } as const;
+  const noIdle = { id: "ses_noidle", title: "Sin idle", time: {} } as const;
+
+  const within24 = rebuildCandidates([ghost, live, used1h, noIdle], NOW, 24);
+  check("excluye la sesion idle hace 2d (ventana 24h)", !within24.some((s) => s.id === "ses_ghost"));
+  check("excluye la sesion sin timestamp de idle", !within24.some((s) => s.id === "ses_noidle"));
+  check("incluye la usada hace 1h", within24.some((s) => s.id === "ses_1h"));
+  check("incluye la usada hace 10min", within24.some((s) => s.id === "ses_live"));
+  check("ordena vieja->nueva (la mas reciente al final, arriba del foro)", within24.map((s) => s.id).join(",") === "ses_1h,ses_live");
+
+  // Ventana 0: sin limite, pero sigue sin inventar idle donde no lo hay.
+  const noWindow = rebuildCandidates([ghost, noIdle], NOW, 0);
+  check("ventana 0 mantiene la sesion stale", noWindow.some((s) => s.id === "ses_ghost"));
+  check("ventana 0 sigue excluyendo sin idle", !noWindow.some((s) => s.id === "ses_noidle"));
+
+  // tope de 12: las 12 mas recientes, no las 20 que llegaron.
+  const many = Array.from({ length: 20 }, (_, i) => ({
+    id: `ses_${i}`,
+    time: { idle: NOW - i * 60_000 },
+  }));
+  const capped = rebuildCandidates(many, NOW, 24);
+  check("tope en 12 sesiones", capped.length === 12, `${capped.length}`);
+  check("se queda con las 12 mas recientes", capped[0]?.id === "ses_11" && capped[11]?.id === "ses_0");
 }
 
 void main()

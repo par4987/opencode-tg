@@ -144,7 +144,7 @@ el prompt y el resultado llega al hilo de esa tarea.
 | `/archive` | Archiva el hilo de la sesión (queda visible pero cerrado) |
 | `/unarchive` | Lo reabre |
 | `/delthread` | Borra el hilo del foro (la sesión sigue en OpenCode) |
-| `/rebuild` | Borra TODOS los hilos y reconstruye el foro limpio: hilos nuevos para las sesiones activas (la más reciente arriba), el resto vuelve solo con su próxima actividad |
+| `/rebuild` | Borra TODOS los hilos y reconstruye el foro limpio: hilos nuevos para las sesiones que usaste últimamente (`rebuildIdleHours`, la más reciente arriba), el resto vuelve solo con su próxima actividad |
 | `/rename` | Renombra la sesión del hilo (o `/rename <ses_id> <título>`) — el hilo y el desktop siguen el cambio |
 | `/sh <cmd>` | Corre un comando shell DENTRO de la sesión (fondo, sin despertar al agente). Ojo: el shell es PowerShell — `;` en vez de `&&`. El comando se parsea (alias resueltos): la lectura y la toolchain pasan directo; lo que puede cortar el servicio o salir de la máquina pide confirmación con una tarjeta que explica qué hace; lo irreversible (formateo, registro, secretos, apagar la máquina, evasión con `iex`/`.NET`/`-EncodedCommand`) se bloquea sin excepción. El borrado se permite dentro de la carpeta del proyecto |
 | `/note <texto>` | Deja una nota en el transcript — el agente la lee en su próximo turno |
@@ -180,6 +180,7 @@ autorizados en `~/.opencode/tg/.env`.
 | `coalesceMs` | `2000` | Ventana (ms) para unir mensajes en ráfaga cuando la sesión está libre |
 | `coalesceBusyMs` | `8000` | Ventana de ráfaga (ms) mientras el agente trabaja; luego entra a la cola |
 | `archiveAfterDays` | `0` (off) | Días de inactividad para auto-archivar hilos |
+| `rebuildIdleHours` | `24` | `/rebuild` solo recrea hilos de sesiones usadas en estas horas; `0` quita el límite |
 | `render.showReasoning` | `true` | Mostrar el razonamiento del agente en el hilo |
 | `render.showDiffs` | `true` | Mostrar diffs al editar archivos |
 | `render.editIntervalMs` | `1400` | Cada cuánto actualiza el mensaje en vivo |

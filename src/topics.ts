@@ -186,3 +186,37 @@ export class TopicResolver {
     }
   }
 }
+
+/**
+ * A session as `/rebuild` reads it — the fields the forum cares about. Kept
+ * here so the selector can be tested without importing the plugin entry.
+ */
+export interface RebuildSession {
+  id: string;
+  title?: string;
+  time?: { idle?: number };
+}
+
+/**
+ * Which sessions `/rebuild` gets a fresh thread: those a human actually used
+ * within `idleHours`, oldest first so the most recent is created last and
+ * lands at the top of the topic list.
+ *
+ * Selecting by `updated` was the original bug: the server bumps it for every
+ * session during its own startup housekeeping, so right after a service
+ * restart the "most recent" list was whatever the *service* touched, not
+ * whatever the *user* touched — measured as eight sessions sharing one
+ * `updated` minute with idle times of 10h and 2d, resurrected as if live.
+ * `idle` is the last real interaction, which is what the forum should show.
+ *
+ * `idleHours: 0` drops the window and takes the 12 most recent by idle,
+ * however stale. Sessions without an `idle` timestamp never qualify: they
+ * are not running, and the resolver will give them a thread on first event.
+ */
+export function rebuildCandidates(sessions: RebuildSession[], now: number, idleHours: number): RebuildSession[] {
+  const cutoff = idleHours > 0 ? now - idleHours * 3_600_000 : 0;
+  return sessions
+    .filter((s) => s.id && (s.time?.idle ?? 0) > cutoff)
+    .sort((a, b) => (a.time?.idle ?? 0) - (b.time?.idle ?? 0))
+    .slice(-12);
+}
