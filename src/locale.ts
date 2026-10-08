@@ -25,13 +25,15 @@ const ES: Catalog = {
   session_not_found_restart:
     "🚫 Esa sesión no está activa en el server — se reinició o la cerraste en la PC, y no se recarga sola. Abrila en la PC y reintentá, o creá otra con /new.",
 
-  // /running — sessions with a turn in flight. The REST API cannot say
-  // "running" (measured 2026-10-08: in-flight messages are invisible in
-  // GET /session/{id}/message and `idle` does not move during a turn);
-  // the event stream is the signal, the API only adds model/agent.
+  // /running — sessions with a turn in flight. GET /session/active is the
+  // live REST signal (map of sessionID -> {type:"running"}, measured
+  // 2026-10-08: mid-turn sessions are in it, loaded-but-idle ones are not);
+  // the tracked map covers a fresh plugin before any API call answers.
   running_none: "🧭 Ninguna sesión está corriendo ahora.",
   running_header: "🧭 En ejecución ({n}):",
   running_here: "este hilo",
+  running_unknown: "(sin título aún)",
+  running_subagents: "· y {n} subagente(s) trabajando en sus propios hilos",
 
   // Relative time — used by /running, /sessions and the cards.
   ago_now: "hace un momento",
@@ -234,6 +236,8 @@ const EN: Catalog = {
   running_none: "🧭 No session is running right now.",
   running_header: "🧭 Running now ({n}):",
   running_here: "this thread",
+  running_unknown: "(no title yet)",
+  running_subagents: "· plus {n} subagent(s) working in their own threads",
 
   ago_now: "just now",
   ago_min: "{n} min ago",

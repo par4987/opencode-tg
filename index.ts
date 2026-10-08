@@ -2149,42 +2149,68 @@ export default {
         }
 
         case "running": {
-          // "Is a turn in flight" does NOT exist in the REST API (measured
-          // 2026-10-08: an in-flight assistant message is invisible in
-          // GET /session/{id}/message until it completes, `time.idle` does
-          // not move during a turn — it is the last user interaction — and
-          // `time.updated` moves with the server's own housekeeping). The
-          // event stream is the only live signal, and the leader mirrors
-          // all of it, so the tracked map IS the truth here. What the API
-          // adds is identity: model and agent per running session, one
-          // list call, degrading to silence when it cannot answer.
+          // The REST signal DOES exist — found in the docs after probing
+          // everything else first: GET /session/active is a map of sessionID
+          // -> {type:"running"} carrying exactly the in-flight turns
+          // (measured live: this session mid-turn is in the map, while a
+          // loaded-but-idle parent is NOT — only its two working subagents
+          // are). It survives restarts, which the event-driven map does
+          // not: right after a reload the tracked map is empty while turns
+          // keep running server-side. Merge both — the API map is the
+          // source of truth, the tracked map contributes when the API
+          // cannot answer and knows which sessions are subagents.
           const now = Date.now();
-          const active = [...sessions.values()]
-            .filter((s) => !s.idle && !s.parentID && now - s.lastSeen < 5 * 60_000)
+          const activeIds = new Set<string>();
+          const identity = new Map<string, { title?: string; model?: string; agent?: string }>();
+          if (await forms.connect()) {
+            const active = await forms
+              .request<Record<string, { type?: string }>>("GET", "/session/active")
+              .catch(() => undefined);
+            for (const id of Object.keys(active ?? {})) activeIds.add(id);
+            const list = await forms.request<Array<ApiSession>>("GET", "/session").catch(() => undefined);
+            for (const s of Array.isArray(list) ? list : []) {
+              if (!s?.id) continue;
+              const short = s.model?.id ? s.model.id.split("/").pop() : undefined;
+              const model = short ? `${short}${s.model?.variant ? ` (${s.model.variant})` : ""}` : undefined;
+              identity.set(s.id, { title: s.title, model, agent: s.agent });
+            }
+          }
+          const merged = new Map<string, TrackedSession>();
+          for (const s of sessions.values()) {
+            if (!s.idle && now - s.lastSeen < 5 * 60_000) merged.set(s.id, s);
+          }
+          for (const id of activeIds) {
+            if (!merged.has(id)) {
+              const info = identity.get(id);
+              merged.set(id, {
+                id,
+                title: info?.title ?? "",
+                directory: "",
+                lastSeen: now,
+                idle: false,
+              });
+            }
+          }
+          // Subagents mirror in their own threads; the parent line sums them.
+          const subs = [...merged.values()].filter((s) => s.parentID).length;
+          const active = [...merged.values()]
+            .filter((s) => !s.parentID)
             .sort((a, b) => b.lastSeen - a.lastSeen)
             .slice(0, 12);
           if (active.length === 0) {
             await reply(t("running_none"));
             return;
           }
-          const identity = new Map<string, { model?: string; agent?: string }>();
-          if (await forms.connect()) {
-            const list = await forms.request<Array<ApiSession>>("GET", "/session").catch(() => undefined);
-            for (const s of Array.isArray(list) ? list : []) {
-              if (!s?.id) continue;
-              const short = s.model?.id ? s.model.id.split("/").pop() : undefined;
-              const model = short ? `${short}${s.model?.variant ? ` (${s.model.variant})` : ""}` : undefined;
-              if (model || s.agent) identity.set(s.id, { model, agent: s.agent });
-            }
-          }
           const lines = active.map((s) => {
             const meta = identity.get(s.id);
+            const title = (s.title || meta?.title || "").trim() || t("running_unknown");
             const model = meta?.model ? ` · ${escapeHtml(meta.model)}` : "";
             const agent = meta?.agent && meta.agent !== "build" ? ` · ${escapeHtml(meta.agent)}` : "";
             const here = s.id === threadSession ? ` — <i>${t("running_here")}</i>` : "";
-            return `• <b>${escapeHtml(s.title.slice(0, 64))}</b>${here}${model}${agent} — ${fmtAgo(s.lastSeen)} · <code>${s.id.slice(0, 18)}…</code>`;
+            return `• <b>${escapeHtml(title.slice(0, 64))}</b>${here}${model}${agent} — ${fmtAgo(s.lastSeen)} · <code>${s.id.slice(0, 18)}…</code>`;
           });
-          await reply(`${t("running_header", { n: active.length })}\n${lines.join("\n")}`);
+          const suffix = subs > 0 ? `\n${t("running_subagents", { n: subs })}` : "";
+          await reply(`${t("running_header", { n: active.length })}\n${lines.join("\n")}${suffix}`);
           return;
         }
 
