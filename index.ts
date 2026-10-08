@@ -5676,7 +5676,11 @@ export default {
       subscription.abort();
       renderer.stop();
       stopTaskTimer();
-      telegram.stop();
+      // Await the transport first: its poll socket outlives the abort signal
+      // by a beat, and a replacement leader starting inside that window
+      // collides at Telegram with HTTP 409. Settling `poll` afterwards only
+      // knows the loop exited, not that the socket closed.
+      await telegram.stop();
       await Promise.allSettled([pump, poll, acp.stop()]);
       pump = undefined;
       poll = undefined;

@@ -735,6 +735,15 @@ export class Telegram {
             // lock and is polling. Stop — the watchdog hands the seat to
             // another instance, and the bridge keeps working there.
             log("WARN", "poll: 3 conflictos 409 seguidos — cediendo el poll al otro proceso");
+            // Mark the loop dead NOW: a clean exit leaves `aborted` false and
+            // `pollAlive()` answering true until the heartbeat ages out (90s),
+            // so the watchdog keeps this wedged leader in the seat and nothing
+            // re-contests. The bridge stayed leaderless-but-occupied for that
+            // whole window (measured live, 2026-10-08).
+            this.aborted = true;
+            this.controller.abort();
+            for (const cancel of this.delays) cancel();
+            this.delays.clear();
             return;
           }
           // Short backoff with jitter: the system converges faster than
