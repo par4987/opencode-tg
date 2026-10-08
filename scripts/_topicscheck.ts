@@ -5,7 +5,7 @@
  * reusable once resolved, and a bot without topic mode degrades to the single
  * chat instead of throwing per event.
  */
-import { RebuildSession, TopicResolver, TopicStore, rebuildCandidates } from "../src/topics.js";
+import { RebuildSession, TopicResolver, TopicStore, rebuildCandidates, sweepTopics } from "../src/topics.js";
 import { readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -147,6 +147,51 @@ async function main(): Promise<void> {
   const capped = rebuildCandidates(many, NOW, 24);
   check("tope en 12 sesiones", capped.length === 12, `${capped.length}`);
   check("se queda con las 12 mas recientes", capped[0]?.id === "ses_11" && capped[11]?.id === "ses_0");
+
+  // 6. The /rebuild wipe: a mapping is forgotten only when Telegram confirms
+  //    the topic is gone. The old fire-and-forget + clear() forgot everything
+  //    up front, so a failed delete (rate limit, restart mid-burst) orphaned
+  //    a live topic forever — the Bot API has no "list topics" to find it
+  //    again (measured: leftover threads after the 2026-10-08 rebuilds).
+  {
+    const store6 = new TopicStore(666, FILE);
+    store6.set("ses_ok", 101);
+    store6.set("ses_fail", 102);
+    store6.set("ses_gone", 103); // ya borrado a mano en Telegram
+    const calls: number[] = [];
+    const stub6 = {
+      async deleteForumTopic(_chat: number, tid: number): Promise<boolean> {
+        calls.push(tid);
+        if (tid === 102) throw new Error("429 Too Many Requests");
+        return true; // true tambien para el "TOPIC_ID_INVALID" (ya no existe)
+      },
+    };
+    const failures: number[] = [];
+    const result = await sweepTopics(store6, stub6, 12345, (tid) => failures.push(tid));
+    check("borrados confirmados: 2 de 3", result.deleted === 2, `${result.deleted}`);
+    check("fallidos: 1", result.failed === 1, `${result.failed}`);
+    check("el mapeo confirmado se olvida", store6.get("ses_ok") === undefined);
+    check("el ya-inexistente tambien se olvida", store6.get("ses_gone") === undefined);
+    check("el mapeo fallido SOBREVIVE para el proximo /rebuild", store6.get("ses_fail") === 102);
+    check("se reporta el hilo fallido", failures.length === 1 && failures[0] === 102);
+    check("los tres hilos se intentaron, en orden", calls.join(",") === "101,102,103");
+
+    // Persistencia del sobreviviente: un store nuevo sobre el mismo archivo
+    // todavia conoce el hilo que fallo — es lo que permite el reintento.
+    const reloaded6 = new TopicStore(666, FILE);
+    check("el mapeo fallido sobrevive a una recarga", reloaded6.get("ses_fail") === 102);
+    check("los confirmados no vuelven", reloaded6.get("ses_ok") === undefined);
+
+    // Un throw raro (no-Telegram) tambien cuenta como fallo, no como borrado.
+    const result2 = await sweepTopics(reloaded6, {
+      async deleteForumTopic(): Promise<boolean> {
+        throw new Error("network");
+      },
+    }, 12345);
+    check("un fallo transitorio deja 1 borrado / 1 fallido", result2.deleted === 0 && result2.failed === 1, `${result2.deleted}/${result2.failed}`);
+    check("y el mapeo sigue ahi", reloaded6.get("ses_fail") === 102);
+    reloaded6.remove("ses_fail");
+  }
 }
 
 void main()

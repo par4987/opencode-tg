@@ -106,9 +106,9 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 **Uso**: `/rebuild` (con confirmación inline)
 
 **Ejemplos**:
-- `/rebuild` → borra ~348 hilos y recrea los de las sesiones activas (hasta 12, la más reciente arriba)
+- `/rebuild` → borra los hilos mapeados (uno por uno, confirmado) y recrea los de las sesiones que usaste últimamente (hasta 12, la más reciente arriba)
 
-**Notas**: Los mensajes viejos no se re-importan — `/export` baja el transcript de cada sesión. Solo recrea hilos para sesiones que usaste dentro de `rebuildIdleHours` (default 24h): el server pisa el campo `updated` de todas las sesiones al reiniciar, así que ordenar por él resucitaba sesiones que nadie tocaba hacía días; `idle` es la última actividad real.
+**Notas**: Los mensajes viejos no se re-importan — `/export` baja el transcript de cada sesión. Solo recrea hilos para sesiones que usaste dentro de `rebuildIdleHours` (default 24h): el server pisa el campo `updated` de todas las sesiones al reiniciar, así que ordenar por él resucitaba sesiones que nadie tocaba hacía días; `idle` es la última actividad real. Cada borrado se confirma antes de olvidar el mapeo — si Telegram rechaza uno (rate limit, corte), el hilo queda mapeado y el próximo `/rebuild` reintenta; una sesión cuyo hilo sobrevivió no se duplica. Los hilos que quedaron **huérfanos** (sin mapeo) no se pueden limpiar solos: la Bot API no tiene "listar tópicos", así que hay que borrarlos a mano una sola vez.
 
 ## Archivos y código
 

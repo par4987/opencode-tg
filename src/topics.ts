@@ -220,3 +220,42 @@ export function rebuildCandidates(sessions: RebuildSession[], now: number, idleH
     .sort((a, b) => (a.time?.idle ?? 0) - (b.time?.idle ?? 0))
     .slice(-12);
 }
+
+/** What sweepTopics needs from the transport — a stub is all tests require. */
+export interface SweepTransport {
+  deleteForumTopic(chatId: number, threadId: number): Promise<boolean>;
+}
+
+/**
+ * The /rebuild wipe, one confirmed delete at a time.
+ *
+ * A mapping is forgotten ONLY when Telegram confirms the topic is gone (or
+ * already was — the transport answers `true` for both). The old sweep fired
+ * every delete and cleared the whole store up front, so any delete that
+ * failed — a rate limit, a restart mid-burst, a transport aborted by a
+ * hand-over (all three happened in one day, 2026-10-08) — left a live topic
+ * with no mapping. The Bot API has no "list topics", so an orphaned thread
+ * can never be named, retried or deleted by the bridge again: it just sits
+ * in the forum. Keeping failed mappings makes the next /rebuild retry them,
+ * and the recreation step skips sessions that still own a live topic.
+ */
+export async function sweepTopics(
+  store: { entries(): Array<[string, number]>; remove(sessionId: string): void },
+  telegram: SweepTransport,
+  chatId: number,
+  onFailed?: (threadId: number) => void,
+): Promise<{ deleted: number; failed: number }> {
+  let deleted = 0;
+  let failed = 0;
+  for (const [sessionId, tid] of store.entries()) {
+    const gone = await telegram.deleteForumTopic(chatId, tid).catch(() => false);
+    if (gone) {
+      store.remove(sessionId);
+      deleted += 1;
+    } else {
+      failed += 1;
+      onFailed?.(tid);
+    }
+  }
+  return { deleted, failed };
+}

@@ -27,7 +27,7 @@ import { acquireLock, ensureLockDir, heartbeat, lockHeldBy, releaseLock, LOCK_IN
 import { log, safe } from "./src/log.js";
 import { DryRunTelegram, Telegram, type Update } from "./src/telegram.js";
 import { TurnRenderer } from "./src/stream.js";
-import { RebuildSession, TopicResolver, TopicStore, rebuildCandidates } from "./src/topics.js";
+import { RebuildSession, TopicResolver, TopicStore, rebuildCandidates, sweepTopics } from "./src/topics.js";
 import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
@@ -4816,13 +4816,17 @@ export default {
                 await ack("Reconstruyendo\u2026");
                 const chat = cq.message.chat.id;
                 try {
-                  // 1) every mapped thread goes — long-dead topic ids simply
-                  //    answer an error the catch tolerates.
+                  // 1) The wipe, one confirmed delete at a time: a mapping is
+                  //    only forgotten when Telegram says the topic is gone.
+                  //    The old fire-and-forget + clear() forgot everything up
+                  //    front, so one failed delete (rate limit, restart
+                  //    mid-burst, transport aborted by a hand-over — all in
+                  //    one day) left a live topic nobody could name again,
+                  //    and the Bot API has no way to list topics.
                   const all = topicStore.entries();
-                  for (const [, tid] of all) {
-                    void telegram.deleteForumTopic(chat, tid).catch(() => undefined);
-                  }
-                  topicStore.clear();
+                  const { deleted, failed } = await sweepTopics(topicStore, telegram, chat, (tid) =>
+                    log("WARN", `rebuild: el hilo ${tid} no se pudo borrar \u2014 queda mapeado`),
+                  );
                   // 2) fresh threads for the sessions the server holds,
                   //    oldest first so the most recent lands at the top of
                   //    the topic list; the flood gate serializes the burst.
@@ -4841,6 +4845,10 @@ export default {
                       config.rebuildIdleHours,
                     );
                     for (const s of rows) {
+                      // A session whose topic survived the sweep (failed
+                      // delete) keeps it — recreating on top would orphan
+                      // the old one, which is the bug this path is about.
+                      if (topicStore.get(s.id) !== undefined) continue;
                       const title = (s.title?.trim() || s.id.slice(0, 24)).slice(0, 128);
                       const tid = await telegram.createForumTopic(chat, title).catch(() => undefined);
                       if (tid === undefined) continue;
@@ -4855,16 +4863,22 @@ export default {
                         .catch(() => undefined);
                     }
                   }
-                  log("INFO", `rebuild: ${all.length} hilos borrados, ${created} recreados (idle<=${config.rebuildIdleHours}h)`);
+                  const windowTxt = config.rebuildIdleHours === 0 ? "horas" : `${config.rebuildIdleHours}h`;
+                  let summary = `\u{1F9F9} ${deleted} hilo(s) borrado(s) confirmado(s)`;
+                  if (failed > 0) {
+                    summary += ` \u00b7 ${failed} no se pudo(eron) borrar (siguen mapeados \u2014 /rebuild reintenta)`;
+                  }
+                  if (created > 0) {
+                    summary += `\n${created} hilo(s) recreado(s) para las sesiones que usaste en las \u00faltimas ${windowTxt}. El resto vuelve solo con su pr\u00f3xima actividad.`;
+                  } else if (failed === 0) {
+                    summary += `\nNinguna sesi\u00f3n tuvo actividad en las \u00faltimas ${windowTxt} \u2014 el foro queda vac\u00edo hasta que uses una sesi\u00f3n.`;
+                  }
+                  log(
+                    "INFO",
+                    `rebuild: ${all.length} mapeados, ${deleted} borrados, ${failed} fallidos, ${created} recreados (idle<=${windowTxt})`,
+                  );
                   await telegram
-                    .editMessageText(
-                      chat,
-                      cq.message.message_id,
-                      created > 0
-                        ? `\u{1F9F9} ${all.length} hilo(s) borrado(s) \u00b7 ${created} recreado(s) para las sesiones que usaste en las \u00faltimas ${config.rebuildIdleHours === 0 ? "horas" : config.rebuildIdleHours + "h"}.\nEl resto vuelve solo con su pr\u00f3xima actividad.`
-                        : `\u{1F9F9} ${all.length} hilo(s) borrado(s). Ninguna sesi\u00f3n tuvo actividad en las \u00faltimas ${config.rebuildIdleHours === 0 ? "horas" : config.rebuildIdleHours + "h"} \u2014 el foro queda vac\u00edo hasta que uses una sesi\u00f3n.`,
-                      { parseMode: "HTML" },
-                    )
+                    .editMessageText(chat, cq.message.message_id, summary, { parseMode: "HTML" })
                     .catch(() => undefined);
                 } catch (error) {
                   log("WARN", "rebuild", safe(error));
