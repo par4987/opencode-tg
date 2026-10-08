@@ -283,6 +283,18 @@ El borrado está **acotado por ruta**: `Remove-Item` (y `rm`, `del`, `rmdir`...)
 
 ## Info y debug
 
+### /locale
+
+**Qué hace**: Cambia el idioma del bot — el menú de `/help`, las tarjetas y todos los mensajes siguen al instante.
+
+**Uso**: `/locale` (con botones) o `/locale <es|en>`
+
+**Ejemplos**:
+- `/locale` → tarjeta con un botón por idioma (el actual con ✓)
+- `/locale en` → cambia directo; la confirmación llega EN el idioma elegido
+
+**Notas**: La elección persiste en `~/.opencode/tg/locale.txt` — un reinicio no la pierde. `TG_LOCALE` en `.env` queda como valor inicial. Un idioma nuevo es un objeto nuevo en `CATALOGS` (src/locale.ts) más su `COMMANDS.<idioma>.md` — nada de código adicional.
+
 ### /context
 
 **Qué hace**: Tokens, costo, límite del modelo y compactaciones de una sesión.

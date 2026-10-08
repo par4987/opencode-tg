@@ -41,62 +41,6 @@ import type { Plugin } from "@opencode/plugin";
 
 type Context = Plugin.Context;
 
-const HELP = [
-  "\u{1F916} opencode-tg \u2014 OpenCode en Telegram",
-  "",
-  "/help \u2014 esta ayuda",
-  "/sessions \u2014 sesiones vistas desde el servidor (\u{1F3AF} destino, \u{1F4E1} vigilada, \u{1F7E2} activa)",
-  "/use <id> \u2014 a qu\u00e9 sesi\u00f3n van tus mensajes",
-  "/watch <id|all|off> \u2014 qu\u00e9 sesiones se espejan en el chat",
-  "/send <id?> <texto> \u2014 manda un prompt a una sesi\u00f3n",
-  "/txt <texto> \u2014 responde la pregunta abierta con texto libre",
-  "",
-  "Multimedia: mand\u00e1 una foto al hilo y llega al agente como imagen",
-  "(con su caption como texto). Los mensajes durante un turno en marcha van",
-  "al inbox del server y salen solos al terminar \u2014 /queue los lista.",
-  "/menu \u2014 panel de comandos con botones",
-  "/running \u2014 sesiones corriendo ahora",
-  "/usage <id?> \u2014 tokens y costo de una sesi\u00f3n",
-  "/mcp \u2014 estado de los servidores MCP",
-  "/models <texto?> \u2014 cambiar el modelo de la sesi\u00f3n (espejo de tu opencode.jsonc)",
-  "/agents \u2014 cambiar el agente de la sesi\u00f3n",
-  "/projects \u2014 sesi\u00f3n nueva en otro proyecto (picker con los m\u00e1s recientes)",
-  "/tasks \u2014 tareas programadas \u00b7 /newtask crea una paso a paso",
-  "/new \u2014 sesi\u00f3n nueva en el proyecto actual",
-  "/skill <id> <texto> \u2014 corre un prompt con la skill cargada",
-  "/archive \u00b7 /unarchive \u00b7 /delthread \u2014 archivar, reabrir o borrar el hilo de una sesi\u00f3n",
-  "/rebuild \u2014 borrar TODOS los hilos y reconstruir el foro limpio (los que usaste \u00faltimamente primero)",
-  "/rename \u2014 renombrar la sesi\u00f3n del hilo: /rename <nuevo t\u00edtulo> (sin t\u00edtulo, sugiere tres)",
-  "/sh \u2014 correr un comando shell DENTRO de la sesi\u00f3n (ojo: PowerShell \u2014 us\u00e1 ; en vez de &&)",
-  "/note \u2014 dejar una nota en el transcript sin despertar al agente",
-  "/instructions \u2014 ver/editar las instrucciones persistentes de la sesi\u00f3n",
-  "/perms \u2014 los permisos «siempre» guardados (y /perms del <id> para revocar)",
-  "/turns \u2014 qu\u00e9 cambiaron los turnos de la sesi\u00f3n",
-  "/log \u2014 una muestra del log de la sesi\u00f3n (server-side)",
-  "/terminal \u2014 la terminal de la sesi\u00f3n, solo lectura",
-  "/detach \u2014 desacoplar la ra\u00edz del chat de su sesi\u00f3n",
-  "/compact — compactar el contexto de la sesión",
-  "/locale — cambiar el idioma del bot (sin argumento, botones)",
-  "/usagestats <d\u00edas?> \u2014 tokens y costo de los \u00faltimos d\u00edas",
-  "/ls <carpeta?> \u2014 navegar los archivos del proyecto: toc\u00e1 para descargar, \u{1F4CE} adjunta al pr\u00f3ximo",
-  "/find <texto> \u2014 buscar archivos por nombre en el proyecto; toc\u00e1 un resultado para descargarlo",
-  "/git \u2014 qu\u00e9 toc\u00f3 el agente en el proyecto (status + diff descargable)",
-  "/revert \u2014 deshacer el \u00faltimo turno de una sesi\u00f3n (con confirmaci\u00f3n)",
-  "/context \u2014 tokens, costo, l\u00edmite del modelo y compactaciones de una sesi\u00f3n",
-  "/worktree \u2014 worktrees del proyecto: toc\u00e1 para abrir sesi\u00f3n ah\u00ed \u00b7 /worktree new <n>",
-  "/fork \u2014 bifurcar una sesi\u00f3n para probar ideas sin ensuciar la original",
-  "/export \u2014 descargar el transcript completo de una sesi\u00f3n como JSON",
-  "/config \u2014 config del proyecto \u00b7 /config model <p/m> cambia el default de sesiones nuevas",
-  "Respond\u00e9 a un mensaje con reply para citarlo en tu prompt",
-
-  "/skills \u2014 skills instaladas en OpenCode",
-  "/status \u2014 estado del puente",
-  "",
-  "Cada sesi\u00f3n tiene su propio hilo (topic) si tu bot tiene activado el modo",
-  "temas en @BotFather. Escrib\u00ed dentro del hilo de una sesi\u00f3n para hablarle",
-  "a ella, sin elegir nada. Si no est\u00e1 activado, todo llega al chat \u00fanico y",
-  "cada mensaje lleva un punto de color + el t\u00edtulo de su sesi\u00f3n.",
-].join("\n");
 
 interface TrackedSession {
   id: string;
@@ -1566,7 +1510,7 @@ export default {
       if (parentCheck?.parentID) {
         const parent = sessions.get(parentCheck.parentID);
         await send(
-          `\u{1F916} Este hilo es un subagente${parent ? ` de <b>${escapeHtml(parent.title)}</b>` : ""} \u2014 su tarea la maneja la sesi\u00f3n padre. Escribile al hilo del padre.`,
+          t("subagent_readonly") + (parent ? ` ${t("subagent_owner")} <b>${escapeHtml(parent.title)}</b>` : "") + " \u2014 " + t("subagent_advice"),
           replyThread,
         );
         return;
@@ -1575,13 +1519,13 @@ export default {
       if (sending.has(key)) return;
       sending.add(key);
       const tracked = sessions.get(target);
-      const label = tracked?.title ?? "(sin t\u00edtulo)";
+      const label = tracked?.title ?? t("no_title");
       const queued = tracked !== undefined && !tracked.idle;
       if (!quiet) {
         await send(
           queued
-            ? `\u{1F4E5} <b>${escapeHtml(label)}</b> est\u00e1 trabajando — encolado. Se env\u00eda solo al terminar el turno.`
-            : `\u{1F4E4} a <b>${escapeHtml(label)}</b> <code>${target.slice(0, 18)}\u2026</code>\n${escapeHtml(text.slice(0, 200))}`,
+            ? t("queued_notice", { label: escapeHtml(label) })
+            : t("sending_prompt", { label: escapeHtml(label), id: target.slice(0, 18), text: escapeHtml(text.slice(0, 200)) }),
           replyThread,
         );
       }
@@ -1643,11 +1587,9 @@ export default {
         const pending = openFormFor(target);
         const answerable = pending !== undefined && pending.choices.length > 0;
         await send(
-          `\u{1F4E5} <b>${escapeHtml(tracked?.title ?? target.slice(0, 18))}</b> tiene una <b>pregunta pendiente</b>.\n` +
-            (answerable
-              ? `Respondela con los botones de la pregunta (o mand\u00e1 su n\u00famero, no un texto). `
-              : `Se responde en la PC. `) +
-            `Tu mensaje qued\u00f3 encolado y se env\u00eda al terminar.`,
+          t("pending_question_header", { label: escapeHtml(tracked?.title ?? target.slice(0, 18)) }) +
+            (answerable ? t("pending_question_answerable") : t("pending_question_desktop")) +
+            t("pending_question_queued"),
           sessionId,
         );
         await deliver(text, target, files, sessionId, true, skills);
@@ -1675,7 +1617,7 @@ export default {
         if (!file.file_path) return undefined;
         const buffer = await telegram.downloadFile(file.file_path);
         if (buffer.length > 10 * 1024 * 1024) {
-          await send(`\u26A0\uFE0F ${message.document?.file_name ?? "La foto"} pesa ${(buffer.length / 1024 / 1024).toFixed(1)} MB \u2014 el l\u00edmite es 10.`);
+          await send(t("photo_too_big", { name: escapeHtml(message.document?.file_name ?? t("photo_fallback_name")), n: (buffer.length / 1024 / 1024).toFixed(1) }));
           return undefined;
         }
         const mime = best ? "image/jpeg" : (message.document?.mime_type ?? "image/jpeg");
@@ -2080,7 +2022,7 @@ export default {
             await reply(t("help_missing"));
             return;
           }
-          const brief = sections.map((s) => `? <code>/${s.name}</code> ? ${escapeHtml(s.brief.slice(0, 60))}`).join("\n");
+          const brief = sections.map((s) => `• <code>/${s.name}</code> — ${escapeHtml(s.brief.slice(0, 60))}`).join("\n");
           // One button per command, grouped under its category header.
           const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
           let lastCategory = "";
@@ -2092,7 +2034,7 @@ export default {
             keyboard.push([{ text: "/" + s.name, callback_data: "help:" + s.name }]);
           }
           if (chatId === undefined) return;
-          await telegram.sendMessage(chatId, `?? <b>Comandos</b> ? toc? uno para el detalle:\n\n${brief}`, {
+          await telegram.sendMessage(chatId, t("help_menu_header", { brief }), {
             parseMode: "HTML",
             messageThreadId: threadOf(threadSession),
             replyMarkup: { inline_keyboard: keyboard },
@@ -2639,8 +2581,8 @@ export default {
             await telegram
               .sendMessage(
                 chatId,
-                `\u21A9\uFE0F Deshacer el \u00faltimo turno de <b>${escapeHtml(tracked?.title ?? target.slice(0, 18))}</b>?` +
-                  `\nEsto borra el intercambio completo (tu mensaje y su respuesta) \u2014 no se puede volver atr\u00e1s.`,
+                t("revert_card_title", { label: escapeHtml(tracked?.title ?? target.slice(0, 18)) }) +
+                  t("revert_card_body"),
                 {
                   parseMode: "HTML",
                   messageThreadId: threadOf(threadSession),
@@ -2691,7 +2633,7 @@ export default {
           if (results.length > 25) rows.push([{ text: `(\u2026y ${results.length - 25} m\u00e1s)`, callback_data: "find:" + query }]);
           if (chatId !== undefined) {
             await telegram
-              .sendMessage(chatId, `\u{1F50D} <b>${results.length}</b> resultado(s) para \u00ab${escapeHtml(query)}\u00bb \u2014 toc\u00e1 para descargar:`, {
+              .sendMessage(chatId, t("find_results_header", { n: results.length, query: escapeHtml(query) }), {
                 parseMode: "HTML",
                 messageThreadId: threadOf(threadSession),
                 replyMarkup: { inline_keyboard: rows },
@@ -4182,7 +4124,7 @@ export default {
             ]);
             await telegram.sendMessage(
               chatId,
-              `<b>Skills (${rows.length})</b> \u2014 toc\u00e1 una y escrib\u00ed el prompt que la usa:\n${lines.join("\n")}`,
+              t("skills_header", { n: rows.length, lines: lines.join("\n") }),
               { parseMode: "HTML", messageThreadId: threadOf(threadSession), replyMarkup: { inline_keyboard: keyboard } },
             );
           } catch (error) {
@@ -4193,7 +4135,7 @@ export default {
         }
 
         default:
-          await reply(`Comando desconocido: <code>${escapeHtml(name)}</code>. Prueba /help`);
+          await reply(t("unknown_command", { name: escapeHtml(name) }));
       }
     };
 
@@ -4516,7 +4458,7 @@ export default {
                   await send(
                     updated
                       ? `\u2705 Prompt de <b>${escapeHtml(edit.name)}</b> actualizado:\n<code>${escapeHtml(updated.prompt.slice(0, 400))}</code>`
-                      : `\u274C Esa tarea ya no existe \u2014 /tasks de nuevo.`,
+                      : t("task_run_gone"),
                     byThread,
                   );
                   return;
@@ -4600,7 +4542,7 @@ export default {
                   }
                 } catch (error) {
                   log("WARN", "stt", safe(error));
-                  await send(`\u274C Transcripci\u00f3n fallida: ${escapeHtml(String((error as Error).message).slice(0, 200))}`, byThread);
+                  await send(t("voice_transcribe_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }), byThread);
                 } finally {
                   fs.rmSync(oggPath, { force: true });
                 }
@@ -5132,7 +5074,7 @@ export default {
                     await telegram
                       .sendMessage(
                         cq.message.chat.id,
-                        `\u2728 Sesi\u00f3n <code>${created.id.slice(0, 22)}\u2026</code> en <b>${escapeHtml(name)}</b>.\nEscribile \u2014 su hilo se crea con el primer mensaje.`,
+                        t("new_session_bare", { id: created.id.slice(0, 22), name: escapeHtml(name) }),
                         { parseMode: "HTML", messageThreadId: cq.message.message_thread_id },
                       )
                       .catch(() => undefined);
@@ -5765,7 +5707,7 @@ export default {
                       .editMessageText(
                         cq.message.chat.id,
                         cq.message.message_id,
-                        `\u2728 Nueva sesi\u00f3n <code>${id.slice(0, 22)}\u2026</code> en <b>${escapeHtml(chosen.name)}</b>.\nEscribile \u2014 su hilo se crea con el primer mensaje, o us\u00e1 <code>/use ${id}</code>.`,
+                        t("projects_session_created", { id: id.slice(0, 22), name: escapeHtml(chosen.name), full: id }),
                         { parseMode: "HTML" },
                       )
                       .catch(() => undefined);

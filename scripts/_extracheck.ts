@@ -7,8 +7,16 @@
  * defensively); and whatever the model produced becomes tappable
  * title options — deduplicated, unnumbered, length-capped.
  */
-import { parseSseData, generateTextOf, titleOptionsFrom } from "../src/extra.js";
-import { commandSections, mdToHtml } from "../src/help.js";
+// Pin ES for this suite: the operator's /locale choice must not leak into
+// the tests. Dynamic imports: static ones are hoisted above this
+// assignment and the env would arrive too late to the modules.
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-extra-")), "locale.txt");
+delete process.env.TG_LOCALE;
+const { parseSseData, generateTextOf, titleOptionsFrom } = await import("../src/extra.js");
+const { commandSections, mdToHtml } = await import("../src/help.js");
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {

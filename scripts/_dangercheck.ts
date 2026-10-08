@@ -14,7 +14,16 @@
  * a normal day, deleting outside it is a disaster. An empty projectDir means
  * "no scope known", so everything destructive falls back to forbidden.
  */
-import { dangerousCommand, explainCommand, isForbidden, needsConfirm } from "../src/dangerous.js";
+// Pin ES for this suite: the operator's /locale choice must not leak into
+// the tests (a nonexistent temp locale file + no env = deterministic ES).
+// Dynamic import: a static one is hoisted above this assignment and the
+// env would arrive too late to the module.
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-danger-")), "locale.txt");
+delete process.env.TG_LOCALE;
+const { dangerousCommand, explainCommand, isForbidden, needsConfirm } = await import("../src/dangerous.js");
 
 const PROJ = "E:/Projects/test";
 

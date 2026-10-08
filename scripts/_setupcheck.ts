@@ -5,9 +5,15 @@
  * Proves: the plain-object export is accepted, the event pump routes every
  * event kind, and the rendered transcript comes out in order.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import plugin from "../index.js";
+// Pin ES for this suite: the operator's /locale choice must not leak into
+// the tests. Dynamic import: a static one is hoisted above this assignment
+// and the env would arrive too late to the plugin.
+process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-setup-")), "locale.txt");
+delete process.env.TG_LOCALE;
+const plugin = (await import("../index.js")).default;
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {

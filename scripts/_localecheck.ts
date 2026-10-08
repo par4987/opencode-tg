@@ -21,6 +21,7 @@ const LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-locale-")), "locale.txt"
 process.env.TG_LOCALE_FILE = LOCALE_FILE;
 delete process.env.TG_LOCALE;
 const { catalogKeys, t, setLocale, locale, availableLocales } = await import("../src/locale.js");
+const { commandSections } = await import("../src/help.js");
 import { fileURLToPath } from "node:url";
 
 /** Drop one per migrated string; never raise without the user's say-so. */
@@ -99,7 +100,13 @@ function main(): void {
       openAt = depth;
     }
     if (insideGuarded || labelLine) {
+      // Double-quoted literals AND backtick templates — the /help header
+      // hid in a template the first guard could not see. Escapes decoded,
+      // ${...} interpolations ignored by the marker test (no Spanish there).
       for (const m of stripped.matchAll(/"((?:[^"\\]|\\.){2,})"/g)) {
+        if (ES_MARK.test(decode(m[1]))) cardOffenders.push(`L${i + 1}: ${decode(m[1]).slice(0, 60)}`);
+      }
+      for (const m of stripped.matchAll(/`((?:[^`\\]|\\.){6,})`/g)) {
         if (ES_MARK.test(decode(m[1]))) cardOffenders.push(`L${i + 1}: ${decode(m[1]).slice(0, 60)}`);
       }
     }
@@ -133,6 +140,16 @@ function main(): void {
   check("la eleccion persiste en el archivo", readFileSync(LOCALE_FILE, "utf8").trim() === "en");
   check("setLocale('ES') normaliza mayusculas", setLocale("ES") === true && locale() === "es");
   check("t() vuelve a espanol", t("api_down").includes("La API local"));
+
+  // 7. The /help sections follow the language: the parser picks
+  //    COMMANDS.<locale>.md and the brief marker is language-neutral.
+  const esBrief = commandSections().find((s) => s.name === "new")?.brief ?? "";
+  check("secciones en espanol", esBrief.startsWith("Crea"), esBrief.slice(0, 30));
+  setLocale("en");
+  const enBrief = commandSections().find((s) => s.name === "new")?.brief ?? "";
+  check("secciones en ingles tras el switch", enBrief.startsWith("Creates"), enBrief.slice(0, 30));
+  check("la categoria tambien", (commandSections().find((s) => s.name === "new")?.category ?? "") === "Sessions");
+  setLocale("es");
   rmSync(dirname(LOCALE_FILE), { recursive: true, force: true });
 }
 

@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { locale } from "./locale.js";
 
 export interface CommandSection {
   name: string;
@@ -20,15 +21,21 @@ export interface CommandSection {
 }
 
 function commandsFile(): string {
+  // The reference follows the bot's language: COMMANDS.<locale>.md when a
+  // translation exists, COMMANDS.md (Spanish, the original) as fallback.
+  // Resolved per call — /locale switches at runtime and the next /help
+  // reads the right file with no reload.
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    join(here, "..", "docs", "COMMANDS.md"), // src/help.ts -> repo/docs
-    join(process.cwd(), "docs", "COMMANDS.md"), // fallback: server cwd
+    join(here, "..", "docs", `COMMANDS.${locale()}.md`), // src/help.ts -> repo/docs
+    join(process.cwd(), "docs", `COMMANDS.${locale()}.md`), // fallback: server cwd
+    join(here, "..", "docs", "COMMANDS.md"),
+    join(process.cwd(), "docs", "COMMANDS.md"),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  return candidates[0];
+  return candidates[candidates.length - 1];
 }
 
 /**
@@ -108,8 +115,10 @@ export function commandSections(): CommandSection[] {
 
 function buildSection(section: { name: string; lines: string[] }, category: string): CommandSection {
   const body = mdToHtml(section.lines.join("\n"));
-  // The brief: the first **Qué hace** line, bold marker stripped.
-  const briefLine = section.lines.find((l) => l.trim().startsWith("**Qué hace**")) ?? "";
-  const brief = briefLine.replace(/\*\*/g, "").replace(/^Qué hace:\s*/, "").trim();
+  // The brief: the first `**Bold lead-in**: text` line — "Qué hace" in the
+  // Spanish original, "What it does" in a translation. The lead-in is
+  // structural, so any language's file parses the same way.
+  const briefLine = section.lines.find((l) => /^\*\*[^*]+\*\*:/.test(l.trim())) ?? "";
+  const brief = briefLine.replace(/\*\*/g, "").replace(/^[^:]+:\s*/, "").trim();
   return { name: section.name, category, brief, body };
 }
