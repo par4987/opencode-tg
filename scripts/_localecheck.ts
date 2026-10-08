@@ -64,7 +64,49 @@ function main(): void {
     callStarts.length === 0 ? "en regimen" : "migrado al catalogo",
   );
 
-  // 4. Placeholders: a key with {name} must be called with it — spot check
+  // 4. Cards and button labels: no Spanish literal outside t() may reach the
+  //    user. The budgets above are blind to multi-line sendMessage(...)
+  //    bodies and inline_keyboard labels; this guard walks the message-call
+  //    windows with a paren-depth counter and flags every Spanish literal
+  //    in them (escapes decoded first — "\u00e1" is á). A false positive
+  //    means the string goes through t() or the word leaves the list.
+  const ES_MARK =
+    /[áéíóúñÁÉÍÓÚÑ¿¡]|Cancelar|Guardar|Deshacer|Aprobar|Rechazar|Siempre|Eliminar|Cerrar|Sesiones|Confirmá|Confirmar|Decime|Escribilo|próxima|tarea|Tarea|Ningun|hilo /i;
+  const decode = (s: string): string =>
+    s
+      .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
+  const srcLines = src.split("\n");
+  let depth = 0;
+  let insideGuarded = false;
+  let openAt = 0;
+  const cardOffenders: Array<string> = [];
+  srcLines.forEach((raw, i) => {
+    const stripped = raw.replace(/\bt\("(\w+)"(?:\s*,\s*\{[^}]*\})?\)/g, "T()");
+    const opens = (stripped.match(/\(/g) ?? []).length;
+    const closes = (stripped.match(/\)/g) ?? []).length;
+    const opensGuarded = /(?:sendMessage|editMessageText|sendPhoto|sendDocument)\(/.test(stripped) || /\bawait send\(/.test(stripped);
+    const labelLine = /\btext:\s*\(?\s*"/.test(stripped);
+    if (opensGuarded && !insideGuarded && !labelLine) {
+      insideGuarded = true;
+      openAt = depth;
+    }
+    if (insideGuarded || labelLine) {
+      for (const m of stripped.matchAll(/"((?:[^"\\]|\\.){2,})"/g)) {
+        if (ES_MARK.test(decode(m[1]))) cardOffenders.push(`L${i + 1}: ${decode(m[1]).slice(0, 60)}`);
+      }
+    }
+    depth += opens - closes;
+    if (depth < 0) depth = 0;
+    if (insideGuarded && depth <= openAt) insideGuarded = false;
+  });
+  check(
+    `sin literales hispanos en tarjetas y botones: ${cardOffenders.length}`,
+    cardOffenders.length === 0,
+    cardOffenders.slice(0, 6).join(" | ") || "en regimen",
+  );
+
+  // 5. Placeholders: a key with {name} must be called with it — spot check
   //    the mechanism itself through the public t().
   check("t() rellena placeholders", t("sh_done", { exit: 0 }).includes("0"));
   check("t() deja el placeholder visible si falta el valor", t("ago_min").includes("{n}"));

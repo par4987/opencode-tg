@@ -1225,7 +1225,7 @@ export default {
       if (chatId === undefined) return;
       const full = safeResolve(directory, rel);
       if (!full) {
-        await send("Ruta inv\u00e1lida.", sessionID);
+        await send(t("bad_path"), sessionID);
         return;
       }
       const fs = await import("node:fs");
@@ -1607,12 +1607,9 @@ export default {
         // id-addressed call 404s until it is opened again. Saying so plainly
         // beats a cryptic 404 the user cannot act on.
         if (raw.includes("SessionNotFound")) {
-          await send(
-            "\u{1F6AB} Esa sesi\u00f3n no est\u00e1 activa en el server \u2014 se reinici\u00f3 o la cerraste en la PC, y no se recarga sola.\nAbrila en la PC y reintent\u00e1, o cre\u00e1 otra con <code>/new</code>.",
-            replyThread,
-          );
+          await send(t("session_not_found_restart"), replyThread);
         } else {
-          await send(`\u274C no se pudo enviar: ${escapeHtml(raw.slice(0, 300))}`, replyThread);
+          await send(t("err_send_fail", { detail: escapeHtml(raw.slice(0, 300)) }), replyThread);
         }
       } finally {
         sending.delete(key);
@@ -1634,7 +1631,7 @@ export default {
       }
       const target = sessionId ?? targetSession();
       if (!target) {
-        await send("No hay ninguna sesi\u00f3n a la que mandar el prompt. Usa <code>/send <id> <texto></code>");
+        await send(t("send_no_target"));
         return;
       }
       const tracked = sessions.get(target);
@@ -1701,25 +1698,25 @@ export default {
       if (!w) return;
       const sofar = w.name ? "\u2705 <b>" + escapeHtml(w.name) + "</b>\n" : "";
       if (w.step === "name") {
-        await send("(1/6) \u23F0 \u00bfC\u00f3mo se llama la tarea? (un texto corto \u00b7 <code>/taskcancel</code> aborta)", thread);
+        await send(t("wizard_step_name"), thread);
         return;
       }
       if (w.step === "prompt") {
-        await send(sofar + "(2/6) \u{1F5D3} \u00bfQu\u00e9 tiene que hacer el agente cada vez? (el prompt)", thread);
+        await send(sofar + t("wizard_step_prompt"), thread);
         return;
       }
       if (w.step === "detail") {
         const hint =
-          w.scheduleType === "once" ? "\u00bfFecha y hora? <code>AAAA-MM-DD HH:MM</code> (o <code>DD/MM HH:MM</code>)"
-          : w.scheduleType === "daily" ? "\u00bfA qu\u00e9 hora? <code>HH:MM</code>"
-          : w.scheduleType === "weekly" ? "\u00bfD\u00eda y hora? <code>lun HH:MM</code> (lun a dom)"
-          : "\u00bfCada cu\u00e1ntos minutos?";
+          w.scheduleType === "once" ? t("wizard_hint_once")
+          : w.scheduleType === "daily" ? t("wizard_hint_daily")
+          : w.scheduleType === "weekly" ? t("wizard_hint_weekly")
+          : t("wizard_hint_every");
         await send(sofar + "(6/6) \u23F1 " + hint, thread);
         return;
       }
       if (w.step === "schedule") {
         if (!(await forms.connect())) {
-          await send("La API local no responde \u2014 /newtask de nuevo en un rato.", thread);
+          await send(t("wizard_api_down"), thread);
           return;
         }
         const projects = await forms.request<Array<{ canonical?: string; time?: { updated?: number } }>>("GET", "/project").catch(() => undefined);
@@ -1732,11 +1729,11 @@ export default {
             name: ((p.canonical as string).split(/[\\/]/).filter(Boolean).pop() ?? p.canonical) as string,
           }));
         if (chatId === undefined || projectList.length === 0) {
-          await send("No pude listar proyectos \u2014 prob\u00e1 /newtask m\u00e1s tarde.", thread);
+          await send(t("wizard_projects_fail"), thread);
           return;
         }
         const keyboard = projectList.map((p, i) => [{ text: p.name.slice(0, 64), callback_data: "task:proj:" + i }]);
-        const sent = await telegram.sendMessage(chatId, sofar + "(3/6) \u{1F4C1} \u00bfEn qu\u00e9 proyecto corre? Toc\u00e1 uno:", {
+        const sent = await telegram.sendMessage(chatId, sofar + t("wizard_ask_project"), {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
           replyMarkup: { inline_keyboard: keyboard },
@@ -1749,7 +1746,7 @@ export default {
         // whatever the server defaults to (which may have no balance at all).
         if (chatId === undefined) return;
         if (!(await forms.connect())) {
-          await send("La API local no responde \u2014 /newtask de nuevo.", thread);
+          await send(t("wizard_api_down"), thread);
           return;
         }
         const current = thread
@@ -1761,7 +1758,7 @@ export default {
           // Pre-load so "inherit" is one tap.
           w.model = { id: cm.id, providerID: cm.providerID };
           writeDraft(w);
-          buttons.push([{ text: ("Igual que esta sesi\u00f3n \u2014 " + cm.id).slice(0, 64), callback_data: "task:model:inherit" }]);
+          buttons.push([{ text: t("btn_inherit_model", { model: cm.id }).slice(0, 64), callback_data: "task:model:inherit" }]);
         }
         // Resolve the actual default for the TASK's directory — not the
         // server-wide fallback — so the label never lies about what runs.
@@ -1774,12 +1771,12 @@ export default {
         if (taskDirDefault?.id && taskDirDefault.providerID) {
           w.model = { id: taskDirDefault.id, providerID: taskDirDefault.providerID };
           writeDraft(w);
-          buttons.push([{ text: ("Default de " + (w.directoryName ?? "el proyecto") + " \u2014 " + taskDirDefault.id).slice(0, 64), callback_data: "task:model:default" }]);
+          buttons.push([{ text: t("btn_dir_default", { dir: w.directoryName ?? t("fallback_project"), model: taskDirDefault.id }).slice(0, 64), callback_data: "task:model:default" }]);
         } else {
           buttons.push([{ text: t("btn_server_default"), callback_data: "task:model:default" }]);
         }
         buttons.push([{ text: t("btn_pick_selector"), callback_data: "task:model:pick" }]);
-        await telegram.sendMessage(chatId, sofar + "(4/6) \u{1F9F1} \u00bfCon qu\u00e9 modelo corre la tarea?", {
+        await telegram.sendMessage(chatId, sofar + t("wizard_ask_model"), {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
           replyMarkup: { inline_keyboard: buttons },
@@ -1788,7 +1785,7 @@ export default {
       }
       if (w.step === "type") {
         if (chatId === undefined) return;
-        await telegram.sendMessage(chatId, sofar + "(5/6) \u23F1 \u00bfcu\u00e1ndo corre? Toc\u00e1 uno:", {
+        await telegram.sendMessage(chatId, sofar + t("wizard_ask_schedule"), {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
           replyMarkup: { inline_keyboard: [
@@ -1809,12 +1806,12 @@ export default {
       const when = fmtDateTime(nextRunOf(w.schedule));
       await telegram.sendMessage(
         chatId,
-        "(Confirm\u00e1) \u23F0 <b>Confirm\u00e1 la tarea</b>\n" +
+        t("wizard_confirm_title") +
           "\u{1F5D3} <b>" + escapeHtml(w.name) + "</b>\n" +
           "\u{1F4CB} " + escapeHtml(w.prompt.slice(0, 300)) + "\n" +
           "\u{1F4C1} " + escapeHtml(w.directoryName ?? w.directory) + "\n" +
-          "\u{1F9F1} " + escapeHtml(w.model ? w.model.id : "default del server") + "\n" +
-          "\u23F1 " + escapeHtml(formatSchedule(w.schedule)) + " \u2014 pr\u00f3xima: <b>" + escapeHtml(when) + "</b>",
+          "\u{1F9F1} " + escapeHtml(w.model ? w.model.id : t("wizard_model_fallback")) + "\n" +
+          t("wizard_next_at", { schedule: escapeHtml(formatSchedule(w.schedule)), when: escapeHtml(when) }),
         {
           parseMode: "HTML",
           messageThreadId: threadOf(thread),
@@ -1853,7 +1850,7 @@ export default {
         await wizardAsk(thread);
         return;
       }
-      await send("\u23F0 La tarea espera sus botones o el texto del paso \u2014 /taskcancel aborta.", thread);
+      await send(t("wizard_waiting"), thread);
     };
 
     /** Fire a task now: open its session, prompt, and let the mirror stream. */
@@ -2960,7 +2957,7 @@ export default {
           ]);
           const sent = await telegram.sendMessage(
             chatId,
-            "\u{1F4C1} Eleg\u00ed un proyecto para abrir una sesi\u00f3n nueva en \u00e9l.",
+            t("projects_pick_header"),
             { parseMode: "HTML", messageThreadId: threadOf(threadSession), replyMarkup: { inline_keyboard: keyboard } },
           );
           if (sent !== null) projectCards.set(sent, projectList);
@@ -3355,7 +3352,7 @@ export default {
           const keyboard = list.slice(0, 10).map((t) => [
             { text: (t.name.slice(0, 24)) + (t.enabled ? "" : " (off)"), callback_data: "task:view:" + t.id },
           ]);
-          await telegram.sendMessage(chatId, "\u23F0 Tareas (" + list.length + ") \u2014 toc\u00e1 una para verla.\n" + lines.join("\n"), {
+          await telegram.sendMessage(chatId, t("tasks_list_header", { n: list.length }) + lines.join("\n"), {
             parseMode: "HTML",
             messageThreadId: threadOf(threadSession),
             replyMarkup: { inline_keyboard: keyboard },
@@ -3503,9 +3500,7 @@ export default {
             await telegram.deleteForumTopic(chatId, tid).catch((delError) => log("WARN", "archive delete", safe(delError)));
             // The confirmation cannot ride the thread that just died — it
             // goes to the chat root.
-            await send(
-              "\u{1F4E6} Archivado \u2014 hilo eliminado del chat y sesi\u00f3n silenciada. <code>/unarchive</code> lo trae de vuelta cuando quieras.",
-            );
+            await send(t("archived_privately"));
           }
           return;
         }
@@ -3682,7 +3677,7 @@ export default {
               const options = titleOptionsFrom(generateTextOf(raw));
               if (options.length === 0) throw new Error("sin sugerencias");
               const keyboard = options.map((o, i) => [{ text: o.slice(0, 60), callback_data: `rnme:${i}` }]);
-              const sent = await telegram.sendMessage(chatId ?? 0, "\u{1F3F7}\uFE0F Eleg\u00ed el nuevo t\u00edtulo:", {
+              const sent = await telegram.sendMessage(chatId ?? 0, t("rename_pick_header"), {
                 parseMode: "HTML",
                 messageThreadId: threadOf(threadSession),
                 replyMarkup: { inline_keyboard: keyboard },
@@ -4511,9 +4506,9 @@ export default {
                   await forms
                     .request("POST", `/session/${encodeURIComponent(item.session)}/prompt`, { text, delivery: "queue" })
                     .catch((error) => log("WARN", "inbox edit send", safe(error)));
-                  await send("\u270F\uFE0F Reemplazado \u2014 el texto nuevo qued\u00f3 esperando en el inbox.", byThread);
+                  await send(t("inbox_replaced"), byThread);
                 } else {
-                  await send("\u274C La API local no responde \u2014 el \u00edtem original sigue en el inbox.", byThread);
+                  await send(t("inbox_edit_fail"), byThread);
                 }
                 return;
               }
@@ -4533,13 +4528,13 @@ export default {
                 // the prompt as if typed. An open question takes it as the answer.
                 const voiceId = message.voice.file_id;
                 if (!voiceId) {
-                  await send("\u26A0\uFE0F La nota de voz lleg\u00f3 sin id de archivo.", byThread);
+                  await send(t("voice_no_file"), byThread);
                   return;
                 }
                 const file = await telegram.getFile(voiceId);
                 const filePath = file.file_path;
                 if (!filePath) {
-                  await send("\u26A0\uFE0F Telegram no me dio el archivo de audio.", byThread);
+                  await send(t("voice_no_audio_file"), byThread);
                   return;
                 }
                 const buffer = await telegram.downloadFile(filePath);
@@ -4550,13 +4545,13 @@ export default {
                 fs.writeFileSync(oggPath, buffer);
                 try {
                   if (!sttAvailable(config.stt)) {
-                    await send("\u26A0\uFE0F Transcripci\u00f3n de voz no configurada \u2014 eleg\u00ed un proveedor en la secci\u00f3n Voz del README (local o cloud), o escribime mientras tanto.", byThread);
+                    await send(t("voice_not_configured"), byThread);
                     return;
                   }
-                  await send(`\u{1F3A4} Transcribiendo ${message.voice.duration ?? "?"}s de audio\u2026`, byThread);
+                  await send(t("voice_transcribing_secs", { secs: message.voice.duration ?? "?" }), byThread);
                   const text = await transcribeFile(oggPath, config.stt);
                   if (text.length === 0) {
-                    await send("\u{1F3A4} No entend\u00ed nada en el audio \u2014 \u00bfera voz?", byThread);
+                    await send(t("voice_nothing"), byThread);
                     return;
                   }
                   await send(`\u{1F3A4} \u00ab${escapeHtml(text.slice(0, 400))}\u00bb`, byThread);
@@ -4568,7 +4563,7 @@ export default {
                       await sendPrompt(`\u{1F3A4} (nota de voz, transcrita)\n${text}`, target);
                     }
                   } else {
-                    await send("No s\u00e9 a qu\u00e9 sesi\u00f3n \u2014 escribilo en el hilo de una sesi\u00f3n, o /use primero.", byThread);
+                    await send(t("msg_no_target"), byThread);
                   }
                 } catch (error) {
                   log("WARN", "stt", safe(error));
@@ -4610,7 +4605,7 @@ export default {
                   }
                 } catch (error) {
                   log("WARN", "document ingest", safe(error));
-                  await send("\u26A0\uFE0F No pude descargar el documento \u2014 prob\u00e1 mandarlo como texto o imagen.", byThread);
+                  await send(t("doc_download_fail"), byThread);
                 }
                 return;
               }
@@ -4621,16 +4616,16 @@ export default {
                   if (!file.file_path) throw new Error("sin file_path");
                   const buffer = await telegram.downloadFile(file.file_path);
                   if (buffer.length > 20 * 1024 * 1024) {
-                    await send("\u26A0\uFE0F El video supera los 20 MB que Telegram entrega a un bot.", byThread);
+                    await send(t("video_too_big"), byThread);
                     return;
                   }
                   const saved = saveBinary(message.video.file_name ?? "video.mp4", buffer);
                   const size = (buffer.length / 1024 / 1024).toFixed(2);
-                  const body = "El usuario envi\u00f3 un video (" + size + " MB), guardado en: " + saved + " \u2014 abrilo con tus file tools si lo necesit\u00e1s.";
+                  const body = t("video_ingest_prompt", { size: escapeHtml(size), path: escapeHtml(saved) });
                   await sendPrompt(body, byThread);
                 } catch (error) {
                   log("WARN", "video ingest", safe(error));
-                  await send("\u26A0\uFE0F No pude descargar el video \u2014 prob\u00e1 subirlo a un lugar accesible.", byThread);
+                  await send(t("video_download_fail"), byThread);
                 }
                 return;
               }
@@ -4655,7 +4650,7 @@ export default {
                 const prompt = withReplyContext(text, quote);
                 const target = byThread ?? targetSession();
                 if (!target) {
-                  await send("No s\u00e9 a qu\u00e9 sesi\u00f3n \u2014 escrib\u00ed en el hilo de una sesi\u00f3n, o /use primero.", byThread);
+                  await send(t("msg_no_target"), byThread);
                   return;
                 }
                 // An armed /ls attachment rides along with this text.
@@ -4897,7 +4892,7 @@ export default {
                       await telegram
                         .sendMessage(
                           chat,
-                          "\u{1F9F1} Hilo reconstruido \u2014 <code>/history</code> ve el final de la conversaci\u00f3n; <code>/export</code> baja el transcript completo.",
+                          t("rebuild_thread_done"),
                           { parseMode: "HTML", messageThreadId: tid },
                         )
                         .catch(() => undefined);
@@ -5483,7 +5478,7 @@ export default {
                   if (cq.message) {
                     const when = fmtDateTime(task.nextRun);
                     await telegram
-                      .editMessageText(cq.message.chat.id, cq.message.message_id, "\u2705 Tarea <b>" + escapeHtml(task.name) + "</b> creada \u2014 pr\u00f3xima: " + escapeHtml(when), { parseMode: "HTML" })
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, t("task_created_card", { name: escapeHtml(task.name), when: escapeHtml(when) }), { parseMode: "HTML" })
                       .catch(() => undefined);
                   }
                   return;
@@ -5509,11 +5504,11 @@ export default {
                         "\u23F0 <b>" + escapeHtml(task.name) + "</b> " + (task.enabled ? "\u{1F7E2}" : "\u26AA") + "\n" +
                           "\u{1F4CB} " + escapeHtml(task.prompt.slice(0, 300)) + "\n" +
                           "\u{1F4C1} " + escapeHtml(task.directory) + "\n" +
-                          "\u23F1 " + escapeHtml(formatSchedule(task.schedule)) + " \u2014 pr\u00f3xima: " + escapeHtml(when) + "\n" +
-                          "\u{1F553} \u00faltima: " + (task.lastRun > 0 ? escapeHtml(task.lastStatus || "sin estado") : "nunca"),
+                          t("task_next_at", { schedule: escapeHtml(formatSchedule(task.schedule)), when: escapeHtml(when) }) + "\n" +
+                          t("task_last_at", { status: task.lastRun > 0 ? escapeHtml(task.lastStatus || t("task_no_status")) : t("task_never") }),
                         { parseMode: "HTML",
                           replyMarkup: { inline_keyboard: [
-                            [{ text: t("btn_run_now"), callback_data: "task:run:" + task.id }, { text: task.enabled ? "\u23F8 Apagar" : "\u25B6 Encender", callback_data: "task:toggle:" + task.id }],
+                            [{ text: t("btn_run_now"), callback_data: "task:run:" + task.id }, { text: task.enabled ? t("btn_task_disable") : t("btn_task_enable"), callback_data: "task:toggle:" + task.id }],
                             [{ text: "\u270F\uFE0F Prompt", callback_data: "task:prompt:" + task.id }],
                             [{ text: t("btn_delete"), callback_data: "task:del:" + task.id }, { text: "\u2B05", callback_data: "task:back" }],
                           ] } },
@@ -5531,7 +5526,7 @@ export default {
                     await telegram
                       .sendMessage(
                         cq.message.chat.id,
-                        "\u270F\uFE0F Nuevo prompt para <b>" + escapeHtml(task.name) + "</b> \u2014 mandalo como pr\u00f3ximo mensaje en este hilo (10 min para hacerlo).\n\nActual:\n<code>" + escapeHtml(task.prompt.slice(0, 500)) + "</code>",
+                        "\u270F\uFE0F " + t("task_prompt_card", { name: escapeHtml(task.name), current: escapeHtml(task.prompt.slice(0, 500)) }),
                         { parseMode: "HTML", messageThreadId: cq.message.message_thread_id },
                       )
                       .catch((error) => log("WARN", "task prompt arm", safe(error)));
@@ -5576,7 +5571,7 @@ export default {
                     const list = readTasks();
                     const keyboard = list.map((t) => [{ text: t.name.slice(0, 24) + (t.enabled ? "" : " (off)"), callback_data: "task:view:" + t.id }]);
                     await telegram
-                      .editMessageText(cq.message.chat.id, cq.message.message_id, "\u23F0 Tareas (" + list.length + ")", { parseMode: "HTML", replyMarkup: { inline_keyboard: keyboard } })
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, t("tasks_list_back", { n: list.length }), { parseMode: "HTML", replyMarkup: { inline_keyboard: keyboard } })
                       .catch(() => undefined);
                   }
                   return;
@@ -5676,7 +5671,7 @@ export default {
                     inboxCards.drop(cq.message?.message_id);
                     if (cq.message) {
                       await telegram
-                        .editMessageText(cq.message.chat.id, cq.message.message_id, "\u{1F5D1} Inbox vac\u00edo.", { parseMode: "HTML" })
+                        .editMessageText(cq.message.chat.id, cq.message.message_id, t("inbox_emptied"), { parseMode: "HTML" })
                         .catch(() => undefined);
                     }
                     await ack(t("cancelled"));
