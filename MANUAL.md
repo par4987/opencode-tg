@@ -110,6 +110,7 @@ los oculta por completo.
 | `/skills` | Skills instaladas, con botones para invocar |
 | `/skill <id> <texto>` | Invoca una skill con tu texto como prompt |
 | `/compact` | Compacta el contexto de la sesión (la sesión resume con menos memoria) |
+| `/locale` | Cambia el idioma del bot desde el teléfono: `/locale` (toca uno) o `/locale <es\|en>`. La elección persiste en `~/.opencode/tg/locale.txt`; `TG_LOCALE` en `.env` queda como valor inicial |
 
 ### Cola de mensajes (inbox)
 

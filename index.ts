@@ -31,7 +31,7 @@ import { RebuildSession, TopicResolver, TopicStore, rebuildCandidates, sweepTopi
 import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
-import { t } from "./src/locale.js";
+import { NATIVE_NAMES, availableLocales, locale, setLocale, t } from "./src/locale.js";
 import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { commandSections } from "./src/help.js";
@@ -75,7 +75,8 @@ const HELP = [
   "/log \u2014 una muestra del log de la sesi\u00f3n (server-side)",
   "/terminal \u2014 la terminal de la sesi\u00f3n, solo lectura",
   "/detach \u2014 desacoplar la ra\u00edz del chat de su sesi\u00f3n",
-  "/compact \u2014 compactar el contexto de la sesi\u00f3n",
+  "/compact — compactar el contexto de la sesión",
+  "/locale — cambiar el idioma del bot (sin argumento, botones)",
   "/usagestats <d\u00edas?> \u2014 tokens y costo de los \u00faltimos d\u00edas",
   "/ls <carpeta?> \u2014 navegar los archivos del proyecto: toc\u00e1 para descargar, \u{1F4CE} adjunta al pr\u00f3ximo",
   "/find <texto> \u2014 buscar archivos por nombre en el proyecto; toc\u00e1 un resultado para descargarlo",
@@ -2046,6 +2047,7 @@ export default {
       { command: "move", description: "Move a session to another project" },
       { command: "commands", description: "List custom commands, or /commands run <text>" },
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
+      { command: "locale", description: "Switch the bot's language: /locale <es|en>" },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
 
       { command: "queue", description: "Show queued messages" },
@@ -3414,9 +3416,40 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : "\u274C No se pudo compactar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                : t("err_generic", { action: "compactar", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
+          return;
+        }
+
+        case "locale": {
+          // /locale — the bot's language, switched from the phone. The
+          // catalog is the only source of strings; this only changes which
+          // one t() reads, so every message after this moment comes in the
+          // new language — no reload, and the receipt is IN that language:
+          // the proof rides with the confirmation. The choice persists in
+          // ~/.opencode/tg/locale.txt so a restart keeps it; TG_LOCALE in
+          // .env is only the initial value now.
+          const wanted = argument.trim().toLowerCase();
+          const available = availableLocales();
+          if (wanted) {
+            if (!setLocale(wanted)) {
+              await reply(t("locale_unknown", { wanted: escapeHtml(wanted), available: available.join(", ") }));
+              return;
+            }
+            await reply(t("locale_switched", { locale: wanted }));
+            return;
+          }
+          const current = locale();
+          const keyboard = available.map((code) => [
+            { text: `${NATIVE_NAMES[code] ?? code}${code === current ? " ✓" : ""}`, callback_data: "loc:" + code },
+          ]);
+          await telegram
+            .sendMessage(chatId ?? 0, t("locale_current", { locale: current }), {
+              parseMode: "HTML",
+              replyMarkup: { inline_keyboard: keyboard },
+            })
+            .catch((error) => log("WARN", "locale card", safe(error)));
           return;
         }
 
@@ -5225,6 +5258,24 @@ export default {
                 await ack();
                 if (payload === "menu:close" && cq.message) {
                   await telegram.deleteMessage(cq.message.chat.id, cq.message.message_id).catch(() => undefined);
+                }
+                return;
+              }
+              if (payload.startsWith("loc:")) {
+                // loc:<code> — the picker's tap. Switch and answer in the
+                // language just chosen: the ack IS the proof it took.
+                const code = payload.slice(4);
+                if (!setLocale(code)) {
+                  await ack(t("locale_unknown", { wanted: escapeHtml(code), available: availableLocales().join(", ") }));
+                  return;
+                }
+                await ack(t("locale_switched", { locale: code }));
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, t("locale_switched", { locale: code }), {
+                      parseMode: "HTML",
+                    })
+                    .catch(() => undefined);
                 }
                 return;
               }

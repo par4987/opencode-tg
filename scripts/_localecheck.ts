@@ -12,8 +12,15 @@
  *    strings must go through the catalog, so adding one without migrating
  *    another fails here.
  */
-import { catalogKeys, t } from "../src/locale.js";
-import { readFileSync } from "node:fs";
+// The runtime-locale machinery reads TG_LOCALE_FILE at module load — set
+// it BEFORE importing so the suite never touches the real persisted choice.
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+const LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-locale-")), "locale.txt");
+process.env.TG_LOCALE_FILE = LOCALE_FILE;
+delete process.env.TG_LOCALE;
+const { catalogKeys, t, setLocale, locale, availableLocales } = await import("../src/locale.js");
 import { fileURLToPath } from "node:url";
 
 /** Drop one per migrated string; never raise without the user's say-so. */
@@ -110,6 +117,27 @@ function main(): void {
   //    the mechanism itself through the public t().
   check("t() rellena placeholders", t("sh_done", { exit: 0 }).includes("0"));
   check("t() deja el placeholder visible si falta el valor", t("ago_min").includes("{n}"));
+
+  // 6. The runtime switch — what /locale does from the phone.
+  check(
+    `los idiomas disponibles son los del catalogo: ${availableLocales().join(",")}`,
+    availableLocales().join(",") === "es,en",
+  );
+  check("sin archivo ni env arranca en ES", locale() === "es");
+  check("t() en ES por defecto", t("api_down").includes("La API local"));
+  check("setLocale('en') acepta", setLocale("en") === true);
+  check("locale() ahora es en", locale() === "en");
+  check("t() cambia de catalogo sin recargar", t("api_down").includes("The local API"));
+  check("setLocale rechaza lo que no existe", setLocale("klingon") === false);
+  check("y no cambia el locale vigente", locale() === "en");
+  check("la eleccion persiste en el archivo", readFileSync(LOCALE_FILE, "utf8").trim() === "en");
+  check("setLocale('ES') normaliza mayusculas", setLocale("ES") === true && locale() === "es");
+  check("t() vuelve a espanol", t("api_down").includes("La API local"));
+  rmSync(dirname(LOCALE_FILE), { recursive: true, force: true });
+}
+
+function dirname(p: string): string {
+  return p.slice(0, p.lastIndexOf("/") + 1).replace(/\\$/, "");
 }
 
 main();

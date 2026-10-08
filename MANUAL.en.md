@@ -123,6 +123,7 @@ answered — with **all the answers together**.
 | `/skills` | Installed skills, with invocation buttons |
 | `/skill <id> <text>` | Invoke a skill with your text as the prompt |
 | `/compact` | Compact the session's context |
+| `/locale` | Switch the bot's language from the phone: `/locale` (tap one) or `/locale <es\|en>`. The choice persists in `~/.opencode/tg/locale.txt`; `TG_LOCALE` in `.env` becomes the initial value |
 
 ### Message queue (inbox)
 

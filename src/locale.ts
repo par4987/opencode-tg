@@ -11,6 +11,10 @@
  * nothing else.
  */
 
+import { readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 type Catalog = Record<string, string>;
 
 const ES: Catalog = {
@@ -329,6 +333,9 @@ const ES: Catalog = {
   btn_delete: "🗑 Eliminar",
 
   // ── Batch 3: the card/button guard's catch — wizard, pickers, media ──
+  locale_current: "🧭 Idioma actual: <code>{locale}</code>. Tocá uno para cambiar:",
+  locale_switched: "🧭 Idioma cambiado a <code>{locale}</code>.",
+  locale_unknown: "No tengo <code>{wanted}</code> — disponibles: {available}.",
   bad_path: "Ruta inválida.",
   err_send_fail: "❌ no se pudo enviar: {detail}",
   send_no_target: "No hay ninguna sesión a la que mandar el prompt. Usa <code>/send <id> <texto></code>",
@@ -779,6 +786,9 @@ const EN: Catalog = {
   btn_delete: "🗑 Delete",
 
   // ── Batch 3: the card/button guard's catch — wizard, pickers, media ──
+  locale_current: "🧭 Current language: <code>{locale}</code>. Tap one to switch:",
+  locale_switched: "🧭 Language switched to <code>{locale}</code>.",
+  locale_unknown: "I have no <code>{wanted}</code> — available: {available}.",
   bad_path: "Invalid path.",
   err_send_fail: "❌ could not send: {detail}",
   send_no_target: "There is no session to send the prompt to. Use <code>/send <id> <text></code>",
@@ -932,9 +942,60 @@ const EN: Catalog = {
 
 const CATALOGS: Record<string, Catalog> = { es: ES, en: EN };
 
+/** What each language calls itself — shown in the picker, never translated. */
+export const NATIVE_NAMES: Record<string, string> = { es: "Español", en: "English" };
+
+/**
+ * The persisted choice lives next to the offset: a restart must not forget
+ * the language the person picked from the phone. Tests point this at a
+ * temp file through TG_LOCALE_FILE so they never touch the real choice.
+ */
+const LOCALE_FILE =
+  process.env.TG_LOCALE_FILE ?? join(homedir(), ".opencode", "tg", "locale.txt");
+
+/** One slot for the whole process — the runtime choice every t() reads.
+ *  globalThis (Symbol.for, like the bridge registry) because OpenCode may
+ *  evaluate this module once per instance; the choice must be unanimous. */
+const RUNTIME_KEY = Symbol.for("opencode-tg.locale");
+
+function readPersistedLocale(): string {
+  try {
+    const raw = readFileSync(LOCALE_FILE, "utf8").trim();
+    if (CATALOGS[raw]) return raw;
+  } catch {
+    /* no choice yet — the env var or ES decides */
+  }
+  const env = (process.env.TG_LOCALE ?? "").toLowerCase();
+  return CATALOGS[env] ? env : "es";
+}
+
+/** The current locale. Reads the file once; after that it is the slot. */
 export function locale(): string {
-  const value = (process.env.TG_LOCALE ?? "").toLowerCase();
-  return CATALOGS[value] ? value : "es";
+  const holder = globalThis as unknown as Record<PropertyKey, unknown>;
+  if (holder[RUNTIME_KEY] === undefined) holder[RUNTIME_KEY] = readPersistedLocale();
+  return holder[RUNTIME_KEY] as string;
+}
+
+/** The languages that actually exist — a new one is a new CATALOGS entry. */
+export function availableLocales(): string[] {
+  return Object.keys(CATALOGS);
+}
+
+/**
+ * Switch the language at runtime and persist it. Returns false for a
+ * locale with no catalog — the command answers with what does exist.
+ * Every t() after this moment reads the new catalog; no reload needed.
+ */
+export function setLocale(value: string): boolean {
+  const wanted = value.trim().toLowerCase();
+  if (!CATALOGS[wanted]) return false;
+  (globalThis as unknown as Record<PropertyKey, unknown>)[RUNTIME_KEY] = wanted;
+  try {
+    writeFileSync(LOCALE_FILE, wanted, "utf8");
+  } catch {
+    /* best effort: the runtime slot still switched */
+  }
+  return true;
 }
 
 /** Translate a key; `{placeholders}` fill from the second argument. */
