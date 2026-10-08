@@ -2078,7 +2078,7 @@ export default {
           // docs/COMMANDS.md, the single source of truth.
           const sections = commandSections();
           if (sections.length === 0) {
-            await reply("No pude cargar la ayuda ? <code>docs/COMMANDS.md</code> no est?.");
+            await reply(t("help_missing"));
             return;
           }
           const brief = sections.map((s) => `? <code>/${s.name}</code> ? ${escapeHtml(s.brief.slice(0, 60))}`).join("\n");
@@ -2103,11 +2103,11 @@ export default {
 
         case "txt": {
           if (!argument) {
-            await reply("Usalo as\u00ed: <code>/txt tu respuesta</code> \u2014 responde la pregunta abierta con texto libre.");
+            await reply(t("txt_usage"));
             return;
           }
           if (!(await answerFreeForm(threadSession, argument))) {
-            await reply("No hay una pregunta abierta en este hilo (o es de varios campos \u2014 respondela con los botones).");
+            await reply(t("txt_no_open"));
           }
           return;
         }
@@ -2191,11 +2191,11 @@ export default {
         case "usage": {
           const target = argument || threadSession || targetSession();
           if (!target) {
-            await reply("No s\u00e9 qu\u00e9 sesi\u00f3n mirar \u2014 /usage <id>, o escrib\u00ed el comando en el hilo de una sesi\u00f3n.");
+            await reply(t("usage_needs_session"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde \u2014 no puedo leer los n\u00fameros.");
+            await reply(t("err_api_numbers"));
             return;
           }
           let info: ApiSession | undefined;
@@ -2210,7 +2210,7 @@ export default {
             return;
           }
           if (!info) {
-            await reply("Esa sesi\u00f3n no existe (o la API no la encuentra).");
+            await reply(t("usage_not_found"));
             return;
           }
           const providers = await forms
@@ -2245,7 +2245,7 @@ export default {
 
         case "mcp": {
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           // /mcp connect|disconnect <server> — the ops pair of the list
@@ -2274,7 +2274,7 @@ export default {
           }
           const servers = await forms.request<ApiMcpServer[]>("GET", "/mcp");
           if (!Array.isArray(servers) || servers.length === 0) {
-            await reply("\u{1F9EA} Sin servidores MCP configurados.");
+            await reply(t("mcp_none"));
             return;
           }
           const connected = servers.filter((s) => s.status?.status === "connected").length;
@@ -2291,11 +2291,11 @@ export default {
         case "model": {
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("No s\u00e9 a qu\u00e9 sesi\u00f3n cambiarle el modelo \u2014 escribilo en el hilo de una sesi\u00f3n, o /use <id> primero.");
+            await reply(t("model_needs_session"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const [all, providers] = await Promise.all([
@@ -2303,7 +2303,7 @@ export default {
             forms.request<Array<{ id?: string; activation?: string; name?: string }>>("GET", "/provider"),
           ]);
           if (!Array.isArray(all) || all.length === 0) {
-            await reply("No encontr\u00e9 modelos.");
+            await reply(t("model_none"));
             return;
           }
           // The picker mirrors the DESKTOP's own "Modelos" screen: the models
@@ -2400,16 +2400,16 @@ export default {
         case "agent": {
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("No s\u00e9 a qu\u00e9 sesi\u00f3n cambiarle el agente \u2014 escribilo en el hilo de una sesi\u00f3n, o /use <id> primero.");
+            await reply(t("agent_needs_session"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const all = await forms.request<ApiAgent[]>("GET", "/agent");
           if (!Array.isArray(all) || all.length === 0) {
-            await reply("No encontr\u00e9 agentes.");
+            await reply(t("agent_none"));
             return;
           }
           const card = { target, items: all.slice(0, 20) };
@@ -2453,14 +2453,14 @@ export default {
           }
           const directory = await directoryOf(target);
           if (!directory) {
-            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            await reply(t("project_unseen"));
             return;
           }
           const sub = (argument.split(/\s+/)[0] ?? "").toLowerCase();
           const rest = argument.slice(sub.length).trim();
           if (sub === "model") {
             if (!rest) {
-              await reply("Decime el modelo: <code>/config model proveedor/modelo</code> \u2014 <code>/models</code> los lista.");
+              await reply(t("config_needs_model"));
               return;
             }
             // Validate against the live catalogue: a typo would silently
@@ -2484,12 +2484,12 @@ export default {
               raw = "{}";
             }
             if (!file || raw === undefined) {
-              await reply("No pude ubicar el config del proyecto.");
+              await reply(t("config_locate_fail"));
               return;
             }
             const edited = withDefaultModel(raw, full);
             if (!edited) {
-              await reply("El config del proyecto no parece JSON/JSONC v\u00e1lido \u2014 no toqu\u00e9 nada.");
+              await reply(t("config_invalid"));
               return;
             }
             // Prove the edit still parses before it touches disk.
@@ -2497,7 +2497,7 @@ export default {
             try {
               JSON.parse(stripJsonc(edited));
             } catch {
-              await reply("La edici\u00f3n no compuso un JSON v\u00e1lido \u2014 no toqu\u00e9 nada.");
+              await reply(t("config_edit_invalid"));
               return;
             }
             const fs = await import("node:fs");
@@ -2539,7 +2539,7 @@ export default {
             lines.push(`\nCambiar default: <code>/config model proveedor/modelo</code>`);
             await reply(lines.join("\n"));
           } catch {
-            await reply("El config del proyecto no parsea \u2014 revisalo en la PC.");
+            await reply(t("config_parse_fail"));
           }
           return;
         }
@@ -2554,7 +2554,7 @@ export default {
           }
           const directory = await directoryOf(target);
           if (!directory) {
-            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            await reply(t("project_unseen"));
             return;
           }
           await browseDirectory(target, directory, argument.trim());
@@ -2571,7 +2571,7 @@ export default {
           }
           const directory = await directoryOf(target);
           if (!directory) {
-            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            await reply(t("project_unseen"));
             return;
           }
           const status = await forms.request<Array<Record<string, unknown>>>(
@@ -2580,7 +2580,7 @@ export default {
           ).catch(() => undefined);
           const rows = Array.isArray(status) ? status : [];
           if (rows.length === 0) {
-            await reply("\u{1F4C2} Sin cambios pendientes (o el proyecto no es un repo git).");
+            await reply(t("vcs_clean"));
             return;
           }
           const lines = [`\u{1F5C3} <b>Git \u00b7 cambios en el proyecto</b> \u2014 ${rows.length} archivo(s)`];
@@ -2610,7 +2610,7 @@ export default {
           // work must never happen by accident.
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/revert <ses_id></code>.");
+            await reply(t("err_in_thread_revert"));
             return;
           }
           const tracked = sessions.get(target);
@@ -2644,12 +2644,12 @@ export default {
           const query = argument.trim();
           const target = threadSession || targetSession();
           if (!query || !target) {
-            await reply("Decime qu\u00e9 buscar: <code>/find parte-del-nombre</code> \u2014 en el hilo de una sesi\u00f3n.");
+            await reply(t("find_needs"));
             return;
           }
           const directory = await directoryOf(target);
           if (!directory) {
-            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            await reply(t("project_unseen"));
             return;
           }
           const found = await forms.request<Array<Record<string, unknown>>>(
@@ -2685,7 +2685,7 @@ export default {
           // compaction history, so the phone can answer "is it time to /compact?".
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/context <ses_id></code>.");
+            await reply(t("err_in_thread_context"));
             return;
           }
           let info: ApiSession | undefined;
@@ -2696,7 +2696,7 @@ export default {
             return;
           }
           if (!info) {
-            await reply("No encontr\u00e9 esa sesi\u00f3n.");
+            await reply(t("find_not_found"));
             return;
           }
           const catalogue = await ctx.model.list().then((res) => res.data ?? []).catch(() => []);
@@ -2715,11 +2715,11 @@ export default {
             `\u{1F4CA} <b>Contexto de la sesi\u00f3n</b>`,
             `Modelo: <code>${escapeHtml(modelRef?.providerID ?? "?")}/${escapeHtml(modelRef?.id ?? "?")}</code> (l\u00edmite: ${limit !== undefined ? fmtTokens(limit) : "?"})`,
           ];
-          const t = info.tokens;
-          if (t) {
+          const toks = info.tokens;
+          if (toks) {
             lines.push(
-              `\u{1F4E5} Input acumulado: ${fmtTokens((t.input ?? 0) + (t.reasoning ?? 0) + (t.cache?.read ?? 0))}` +
-                ` \u00b7 \u{1F4E4} Output: ${fmtTokens(t.output ?? 0)}`,
+              `\u{1F4E5} Input acumulado: ${fmtTokens((toks.input ?? 0) + (toks.reasoning ?? 0) + (toks.cache?.read ?? 0))}` +
+                ` \u00b7 \u{1F4E4} Output: ${fmtTokens(toks.output ?? 0)}`,
             );
           }
           if (info.cost !== undefined) lines.push(`\u{1FA99} Costo: ${fmtCost(info.cost)}`);
@@ -2732,7 +2732,7 @@ export default {
             const summary = String(comps[comps.length - 1]?.summary ?? "").slice(0, 200);
             if (summary) lines.push(`\n<i>${escapeHtml(summary)}\u2026</i>`);
           }
-          lines.push(`\n${limit !== undefined && t !== undefined && (t.input ?? 0) + (t.cache?.read ?? 0) > limit * 0.5 ? "\u26A0\uFE0F Va denso \u2014 consider\u00e1 <code>/compact</code>." : ""}`);
+          lines.push(`\n${limit !== undefined && toks !== undefined && (toks.input ?? 0) + (toks.cache?.read ?? 0) > limit * 0.5 ? "\u26A0\uFE0F Va denso \u2014 consider\u00e1 <code>/compact</code>." : ""}`);
           await reply(lines.filter((l) => l.length > 1).join("\n"));
           return;
         }
@@ -2748,7 +2748,7 @@ export default {
           }
           const directory = await directoryOf(target);
           if (!directory) {
-            await reply("No pude ver el proyecto de la sesi\u00f3n.");
+            await reply(t("project_unseen"));
             return;
           }
           const projects = await forms.request<Array<Record<string, unknown>>>("GET", "/api/project").catch(() => undefined);
@@ -2758,7 +2758,7 @@ export default {
           // the 39-char one inside the session 404s the endpoint.
           const projectID = proj ? String(proj.id) : "";
           if (!projectID) {
-            await reply("No encontr\u00e9 el proyecto en el server.");
+            await reply(t("project_not_on_server"));
             return;
           }
           const trees = await forms.request<Array<Record<string, unknown>>>(
@@ -2769,7 +2769,7 @@ export default {
           if (sub === "new") {
             const name = argument.slice(3).trim();
             if (!name) {
-              await reply("Decime el nombre: <code>/worktree new <nombre></code>");
+              await reply(t("worktree_needs_name"));
               return;
             }
             try {
@@ -2809,7 +2809,7 @@ export default {
           // dirtying the original.
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/fork <ses_id></code>.");
+            await reply(t("err_in_thread_fork"));
             return;
           }
           const tracked = sessions.get(target);
@@ -2835,12 +2835,12 @@ export default {
           // phone. The server wraps {info, messages}; we ship it verbatim.
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/export <ses_id></code>.");
+            await reply(t("err_in_thread_export"));
             return;
           }
           const tracked = sessions.get(target);
           if (chatId === undefined) return;
-          await reply("\u{1F4E4} Exportando\u2026");
+          await reply(t("export_working"));
           try {
             const exported = await forms.request<Record<string, unknown>>(
               "GET",
@@ -2849,7 +2849,7 @@ export default {
             if (!exported) throw new Error("respuesta vac\u00eda del export");
             const text = JSON.stringify(exported, null, 2);
             if (text.length > 40 * 1024 * 1024) {
-              await reply("El export supera los 40 MB \u2014 export\u00e1 esa sesi\u00f3n desde la PC.");
+              await reply(t("export_too_big"));
               return;
             }
             const fs = await import("node:fs");
@@ -2881,7 +2881,7 @@ export default {
               if (existsSync(legacy)) {
                 const size = fs.statSync(legacy).size;
                 if (size > 40 * 1024 * 1024) {
-                  await reply("El transcript legacy supera los 40 MB \u2014 export\u00e1 esa sesi\u00f3n desde la PC.");
+                  await reply(t("export_legacy_too_big"));
                   return;
                 }
                 if (chatId !== undefined) {
@@ -2908,14 +2908,14 @@ export default {
 
         case "projects": {
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const projects = await forms.request<
             Array<{ id?: string; canonical?: string; time?: { updated?: number; created?: number } }>
           >("GET", "/project");
           if (!Array.isArray(projects) || projects.length === 0) {
-            await reply("No hay proyectos conocidos por el server.");
+            await reply(t("projects_none"));
             return;
           }
           // Most recently touched first — that is the order the desktop
@@ -2946,7 +2946,7 @@ export default {
         }
         case "sessions": {
           if (sessions.size === 0) {
-            await reply("A\u00fan no he visto ninguna sesi\u00f3n.");
+            await reply(t("sessions_none_seen"));
             return;
           }
           const row = (session: TrackedSession): string => {
@@ -2980,7 +2980,7 @@ export default {
           const arg = argument.trim().toLowerCase();
           const target = arg || threadSession || [...sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen)[0]?.id || "";
           if (!target) {
-            await reply("Dime una sesi\u00f3n: <code>/use &lt;id&gt;</code> (o <code>/use</code> para la \u00faltima activa)");
+            await reply(t("use_needs"));
             return;
           }
           foreground = target;
@@ -2995,7 +2995,7 @@ export default {
           const arg = argument.trim().toLowerCase();
           if (arg === "all") {
             watched.clear();
-            await reply("Espejando todas las sesiones.");
+            await reply(t("mirror_all_on"));
             return;
           }
           if (arg === "off" || arg === "none") {
@@ -3007,7 +3007,7 @@ export default {
           }
           const target = arg || [...sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen)[0]?.id || "";
           if (!target) {
-            await reply("Dime una sesi\u00f3n: <code>/watch &lt;id&gt;</code> o <code>/watch all</code>");
+            await reply(t("watch_needs"));
             return;
           }
           watched.add(target);
@@ -3032,7 +3032,7 @@ export default {
           const target = looksLikeId ? first : threadSession;
           const text = (looksLikeId ? parts.slice(1) : parts).join(" ").trim();
           if (!text) {
-            await reply("Dime qu\u00e9 enviar: <code>/send &lt;texto&gt;</code> (o <code>/send &lt;ses_id&gt; &lt;texto&gt;</code>)");
+            await reply(t("send_needs"));
             return;
           }
           await sendPrompt(text, target);
@@ -3042,11 +3042,11 @@ export default {
         case "queue": {
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Decime la sesi\u00f3n: <code>/queue <ses_id></code>, o escribilo en su hilo.");
+            await reply(t("queue_needs_session"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           let inbox: Array<Record<string, unknown>> | undefined;
@@ -3080,7 +3080,7 @@ export default {
             }),
           };
           if (card.items.length === 0) {
-            await reply("\u{1F4E5} Inbox vac\u00edo. Los mensajes que mand\u00e9s mientras la sesi\u00f3n trabaja quedan ac\u00e1 y salen solos al terminar el turno.");
+            await reply(t("inbox_empty"));
             return;
           }
           if (chatId === undefined) return;
@@ -3099,11 +3099,11 @@ export default {
           const body = argument.trim();
           const session = threadSession || targetSession();
           if (!session) {
-            await reply("No s\u00e9 a qu\u00e9 sesi\u00f3n \u2014 escribilo en su hilo o <code>/flush <ses_id> <texto></code>.");
+            await reply(t("flush_needs_session"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           // First drain anything the busy coalescing buffer is still holding:
@@ -3175,11 +3175,11 @@ export default {
         case "clearqueue": {
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Decime la sesi\u00f3n: <code>/clearqueue <ses_id></code>, o escribilo en su hilo.");
+            await reply(t("clearqueue_needs_session"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           let inbox: Array<Record<string, unknown>> | undefined;
@@ -3208,7 +3208,7 @@ export default {
         case "history": {
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("No hay sesi\u00f3n. Us\u00e1 <code>/history &lt;ses_id&gt;</code> o escribilo en su hilo.");
+            await reply(t("history_needs_session"));
             return;
           }
           const label = sessions.get(target)?.title ?? target.slice(0, 18);
@@ -3252,12 +3252,12 @@ export default {
                 case "kill": {
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("No hay sesi\u00f3n. Us\u00e1 <code>/kill <ses_id></code> o escribilo en su hilo.");
+            await reply(t("kill_needs_session"));
             return;
           }
           const label = sessions.get(target)?.title ?? target.slice(0, 18);
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           // Interrupting through the server is the safe stop: it cancels the
@@ -3289,12 +3289,12 @@ export default {
           // for jumping elsewhere; this is the one-tap everyday case.
           const target = threadSession || targetSession();
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const directory = await directoryOf(target);
           if (!directory) {
-            await reply("No s\u00e9 en qu\u00e9 proyecto \u2014 us\u00e1 <code>/projects</code> y eleg\u00ed uno.");
+            await reply(t("newtask_needs_project"));
             return;
           }
           try {
@@ -3361,7 +3361,7 @@ export default {
         case "taskcancel": {
           taskWizard = undefined;
           clearDraft();
-          await reply("Wizard de tarea cancelado.");
+          await reply(t("newtask_cancelled"));
           return;
         }
 
@@ -3373,11 +3373,11 @@ export default {
           const text = parts.slice(1).join(" ");
           const target = threadSession || targetSession();
           if (!target) {
-            await reply("No s\u00e9 a qu\u00e9 sesi\u00f3n \u2014 escribilo en su hilo, o /use primero.");
+            await reply(t("skill_needs_session"));
             return;
           }
           if (!skillId || !text) {
-            await reply("Us\u00e1 <code>/skill <id> <texto></code> \u2014 o <code>/skills</code> para verlas con botones.");
+            await reply(t("skill_usage"));
             return;
           }
           await sendPrompt(text, target, undefined, [{ id: skillId }]);
@@ -3390,7 +3390,7 @@ export default {
           if (!(await forms.connect())) { await reply("La API local no responde."); return; }
           try {
             await forms.request("POST", "/session/" + encodeURIComponent(target) + "/compact", {});
-            await reply("\u{1F4DC} Compactaci\u00f3n solicitada.");
+            await reply(t("compact_done"));
           } catch (error) {
             log("WARN", "compact", safe(error));
             await reply(
@@ -3458,18 +3458,18 @@ export default {
         case "archive": {
           const target = argument.trim() || threadSession;
           if (!target || !topicStore || chatId === undefined) {
-            await reply("Escribilo en el hilo de la sesi\u00f3n, o <code>/archive <id></code>.");
+            await reply(t("archive_needs_thread"));
             return;
           }
           const tid = topicStore.get(target);
           if (tid === undefined) {
-            await reply("Esa sesi\u00f3n no tiene hilo propio.");
+            await reply(t("no_thread"));
             return;
           }
           try {
             await telegram.closeForumTopic(chatId, tid);
             topicStore.setArchived(target, true);
-            await reply("\u{1F4E6} Hilo archivado (cerrado, no se puede escribir) \u2014 <code>/unarchive</code> lo reabre. Si la sesi\u00f3n revive, se reabre sola.");
+            await reply(t("archived_done"));
           } catch (error) {
             log("WARN", "archive", safe(error));
             if (!/not a supergroup/i.test(String((error as Error)?.message ?? ""))) {
@@ -3494,18 +3494,18 @@ export default {
         case "unarchive": {
           const target = argument.trim() || threadSession;
           if (!target || !topicStore || chatId === undefined) {
-            await reply("Escribilo en el hilo de la sesi\u00f3n, o <code>/unarchive <id></code>.");
+            await reply(t("unarchive_needs_thread"));
             return;
           }
           const tid = topicStore.get(target);
           if (tid === undefined) {
-            await reply("Esa sesi\u00f3n no tiene hilo propio.");
+            await reply(t("no_thread"));
             return;
           }
           try {
             await telegram.reopenForumTopic(chatId, tid);
             topicStore.setArchived(target, false);
-            await reply("\u{1F4C2} Hilo reabierto.");
+            await reply(t("unarchive_done"));
           } catch (error) {
             log("WARN", "unarchive", safe(error));
             topicStore.setArchived(target, false);
@@ -3523,7 +3523,7 @@ export default {
             // lands proves the thread exists.
             const renamed = await telegram.editForumTopic(chatId, tid, raw.slice(0, 128)).then(() => true).catch(() => false);
             if (renamed) {
-              await reply("\u{1F4C2} Despertado \u2014 el espejo de la sesi\u00f3n vuelve a este hilo.");
+              await reply(t("unarchive_revived"));
               return;
             }
             // The topic is gone (deleted on the phone, or our private-chat
@@ -3539,7 +3539,7 @@ export default {
                 })
                 .catch(() => undefined);
             } else {
-              await reply("\u{1F4C2} Despertado \u2014 no pude recrear el hilo; el pr\u00f3ximo evento de la sesi\u00f3n lo crea solo.");
+              await reply(t("unarchive_revived_no_thread"));
             }
           }
           return;
@@ -3551,12 +3551,12 @@ export default {
           // into the chat goes away.
           const target = argument.trim() || threadSession;
           if (!target || !topicStore || chatId === undefined) {
-            await reply("Escribilo en el hilo de la sesi\u00f3n, o <code>/delthread <id></code>.");
+            await reply(t("delthread_needs_thread"));
             return;
           }
           const tid = topicStore.get(target);
           if (tid === undefined) {
-            await reply("Esa sesi\u00f3n no tiene hilo propio.");
+            await reply(t("no_thread"));
             return;
           }
           try {
@@ -3567,7 +3567,7 @@ export default {
             );
           } catch (error) {
             log("WARN", "delthread", safe(error));
-            await reply("\u274C No se pudo eliminar el hilo.");
+            await reply(t("delthread_fail"));
           }
           return;
         }
@@ -3581,7 +3581,7 @@ export default {
           // recent ends at the top — and everything else rebuilds on its
           // next event (the resolver's whole job).
           if (!topicStore || chatId === undefined) {
-            await reply("Solo tiene sentido en modo foro.");
+            await reply(t("forum_only"));
             return;
           }
           const total = topicStore.entries().length;
@@ -3622,11 +3622,11 @@ export default {
           const target = looksLikeId ? first : threadSession || targetSession();
           const title = (looksLikeId ? argument.slice(first.length) : argument).trim();
           if (!target) {
-            await reply("No s\u00e9 qu\u00e9 sesi\u00f3n \u2014 escribilo en su hilo, o <code>/rename <ses_id> <t\u00edtulo></code>.");
+            await reply(t("err_no_target"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           // 128 is Telegram's topic-name ceiling; the server takes more,
@@ -3763,7 +3763,7 @@ export default {
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           try {
@@ -3815,7 +3815,7 @@ export default {
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           try {
@@ -3842,7 +3842,7 @@ export default {
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const parts = argument.trim().split(/\s+/);
@@ -3907,7 +3907,7 @@ export default {
           // take one back.
           const parts = argument.trim().split(/\s+/);
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           try {
@@ -3946,11 +3946,11 @@ export default {
           // session's turns changed.
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/turns <ses_id></code>.");
+            await reply(t("err_in_thread_turns"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const diff = await forms
@@ -3972,11 +3972,11 @@ export default {
           // cuts; the tail is what the phone sees.
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/log <ses_id></code>.");
+            await reply(t("err_in_thread_log"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const raw = await forms
@@ -3998,11 +3998,11 @@ export default {
           // control stays on the PC on purpose — this is the viewport.
           const target = argument.trim() || threadSession || targetSession();
           if (!target) {
-            await reply("Escribilo en el hilo de una sesi\u00f3n, o <code>/terminal <ses_id></code>.");
+            await reply(t("err_in_thread_terminal"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           const read = await forms
@@ -4041,11 +4041,11 @@ export default {
             return;
           }
           if (!directory) {
-            await reply("Decime el proyecto: <code>/move &lt;directorio&gt;</code> \u2014 <code>/projects</code> los lista.");
+            await reply(t("err_no_project"));
             return;
           }
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           try {
@@ -4071,14 +4071,14 @@ export default {
           const parts = argument.trim().split(/\s+/);
           const sub = (parts[0] ?? "").toLowerCase();
           if (!(await forms.connect())) {
-            await reply("La API local no responde.");
+            await reply(t("api_down"));
             return;
           }
           if (sub === "run") {
             const target = threadSession || targetSession();
             const text = argument.slice(3).trim();
             if (!target || !text) {
-              await reply("Formato: <code>/commands run &lt;texto&gt;</code> \u2014 en el hilo de una sesi\u00f3n.");
+              await reply(t("err_no_command_text"));
               return;
             }
             try {
@@ -4095,7 +4095,7 @@ export default {
             .catch(() => undefined);
           const rows = Array.isArray(list) ? list : [];
           if (rows.length === 0) {
-            await reply("Sin comandos custom configurados.");
+            await reply(t("commands_none"));
             return;
           }
           const lines = rows
@@ -4110,14 +4110,14 @@ export default {
           // releases, so call it defensively and normalise the rows.
           const list = (ctx.skill as unknown as { list?: (...args: unknown[]) => Promise<unknown> }).list;
           if (!list) {
-            await reply("Este OpenCode no expone <code>skill.list()</code>.");
+            await reply(t("skills_not_exposed"));
             return;
           }
           try {
             const result = (await list.call(ctx.skill)) as unknown;
             const rows = Array.isArray(result) ? result : ((result as { data?: unknown[] })?.data ?? []);
             if (rows.length === 0) {
-              await reply("No hay skills instaladas.");
+              await reply(t("skills_none"));
               return;
             }
             const lines = rows.slice(0, 60).map((row) => {
@@ -4698,7 +4698,7 @@ export default {
                     .editMessageReplyMarkup(deadChat, deadMsg)
                     .catch((error) => log("WARN", "form strip", safe(error)));
                 }
-                await ack("Esta pregunta ya no está activa");
+                await ack(t("form_inactive"));
               };
               if (payload.startsWith("shok:") || payload.startsWith("shno:")) {
                 // Confirm/cancel of a guarded /sh. The command only runs
@@ -4712,7 +4712,7 @@ export default {
                 }
                 if (payload.startsWith("shno:")) {
                   pendingSh.delete(shId);
-                  await ack("Comando cancelado");
+                  await ack(t("perm_cancelled"));
                   log("INFO", `sh cancelado por el usuario: ${pending.command.slice(0, 60)}`);
                   await telegram
                     .editMessageReplyMarkup(cq.message?.chat?.id ?? chatId ?? 0, cq.message?.message_id ?? 0)
@@ -4720,7 +4720,7 @@ export default {
                   return;
                 }
                 pendingSh.delete(shId);
-                await ack("Ejecutando…");
+                await ack(t("ack_running"));
                 log("INFO", `sh confirmado por el usuario: ${pending.command.slice(0, 60)}`);
                 if (!(await forms.connect())) {
                   await telegram
@@ -4778,7 +4778,7 @@ export default {
                 }
                 const section = commandSections().find((s) => s.name === name);
                 if (!section) {
-                  await ack("Ese comando ya no existe — /help de nuevo");
+                  await ack(t("help_gone"));
                   return;
                 }
                 await ack();
@@ -4804,10 +4804,10 @@ export default {
                 const card = suggestCards.get(cq.message?.message_id);
                 const option = card?.options[Number(payload.slice(5))];
                 if (!card || !option) {
-                  await ack("Las sugerencias expiraron \u2014 /rename de nuevo");
+                  await ack(t("rename_suggest_expired"));
                   return;
                 }
-                await ack("Renombrando\u2026");
+                await ack(t("rename_working"));
                 const failure = await applyRename(card.session, option.slice(0, 128));
                 if (failure) {
                   await ack(failure.replace(/<[^>]+>/g, "").slice(0, 160));
@@ -4823,7 +4823,7 @@ export default {
               }
               if (payload === "rbld:ok" || payload === "rbld:no") {
                 if (payload === "rbld:no") {
-                  await ack("Cancelado \u2014 no se toc\u00f3 nada");
+                  await ack(t("rebuild_cancelled"));
                   if (cq.message) {
                     await telegram
                       .editMessageText(cq.message.chat.id, cq.message.message_id, "\u274C Reconstrucci\u00f3n cancelada.", { parseMode: "HTML" })
@@ -4832,10 +4832,10 @@ export default {
                   return;
                 }
                 if (!topicStore || !cq.message) {
-                  await ack("No pude reconstruir \u2014 prob\u00e1 /rebuild de nuevo.");
+                  await ack(t("rebuild_no_store"));
                   return;
                 }
-                await ack("Reconstruyendo\u2026");
+                await ack(t("rebuild_working"));
                 const chat = cq.message.chat.id;
                 try {
                   // 1) The wipe, one confirmed delete at a time: a mapping is
@@ -4904,7 +4904,7 @@ export default {
                     .catch(() => undefined);
                 } catch (error) {
                   log("WARN", "rebuild", safe(error));
-                  await ack("No se pudo completar la reconstrucci\u00f3n \u2014 /rebuild de nuevo.");
+                  await ack(t("rebuild_failed"));
                 }
                 return;
               }
@@ -4912,10 +4912,10 @@ export default {
                 // gitdiff:<sessionID> — the working diff of the session's
                 // project, as a preview plus the full patch downloadable.
                 const sessionID = payload.slice(8);
-                await ack("Cargando el diff\u2026");
+                await ack(t("gitdiff_loading"));
                 const directory = await directoryOf(sessionID);
                 if (!directory || chatId === undefined || !cq.message) {
-                  await ack("No pude ver el proyecto.");
+                  await ack(t("project_unseen_ack"));
                   return;
                 }
                 const diff = await forms.request<Array<Record<string, unknown>>>(
@@ -4924,7 +4924,7 @@ export default {
                 ).catch(() => undefined);
                 const files = Array.isArray(diff) ? diff : [];
                 if (files.length === 0) {
-                  await ack("Sin cambios que mostrar.");
+                  await ack(t("gitdiff_clean"));
                   return;
                 }
                 // Full patch as a downloadable .diff; short preview inline.
@@ -4949,7 +4949,7 @@ export default {
               if (payload.startsWith("revertok:")) {
                 // revertok:<sessionID> — the confirmed undo.
                 const sessionID = payload.slice(9);
-                await ack("Deshaciendo\u2026");
+                await ack(t("gitundo_working"));
                 try {
                   await forms.request("POST", "/session/" + encodeURIComponent(sessionID) + "/revert/commit");
                   log("INFO", "revert confirmado desde TG: " + sessionID.slice(0, 18));
@@ -4970,7 +4970,7 @@ export default {
               }
               if (payload.startsWith("revertno:")) {
                 const sessionID = payload.slice(9);
-                await ack("Cancelado");
+                await ack(t("cancelled"));
                 if (cq.message) {
                   await telegram
                     .editMessageText(cq.message.chat.id, cq.message.message_id, "\u2716 Revert cancelado.", { parseMode: "HTML" })
@@ -4983,18 +4983,18 @@ export default {
                 const key = payload.slice(4);
                 const rel = lsKeys.get(key);
                 if (rel === undefined) {
-                  await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
+                  await ack(t("ls_stale"));
                   return;
                 }
                 const menuSession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                 const sessionID = menuSession ?? targetSession();
                 if (!sessionID) {
-                  await ack("No s\u00e9 a qu\u00e9 proyecto \u2014 abrilo en el hilo de una sesi\u00f3n.");
+                  await ack(t("ls_needs_thread"));
                   return;
                 }
                 const directory = await directoryOf(sessionID);
                 if (!directory) {
-                  await ack("No pude ver el proyecto.");
+                  await ack(t("project_unseen_ack"));
                   return;
                 }
                 await ack();
@@ -5009,24 +5009,24 @@ export default {
                 const sessionID = menuSession ?? targetSession();
                 const directory = await directoryOf(sessionID);
                 if (rel === undefined) {
-                  await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
+                  await ack(t("ls_stale"));
                   return;
                 }
                 if (!sessionID || !directory || chatId === undefined || !cq.message) {
-                  await ack("No pude ubicar el archivo.");
+                  await ack(t("ls_file_missing"));
                   return;
                 }
                 const full = safeResolve(directory, rel);
                 if (!full || !existsSync(full)) {
-                  await ack("El archivo ya no est\u00e1.");
+                  await ack(t("ls_file_gone"));
                   return;
                 }
                 const size = (await import("node:fs")).statSync(full).size;
                 if (size > 45 * 1024 * 1024) {
-                  await ack("Supera los 45 MB de Telegram.");
+                  await ack(t("ls_file_too_big"));
                   return;
                 }
-                await ack("Enviando\u2026");
+                await ack(t("ls_sending"));
                 await telegram
                   .sendDocument(chatId, full, { messageThreadId: cq.message.message_thread_id })
                   .catch((error) => {
@@ -5042,42 +5042,42 @@ export default {
                 const sessionID = menuSession ?? targetSession();
                 const directory = await directoryOf(sessionID);
                 if (rel === undefined) {
-                  await ack("Listing viejo \u2014 abr\u00ed /ls de nuevo");
+                  await ack(t("ls_stale"));
                   return;
                 }
                 if (!sessionID || !directory) {
-                  await ack("No pude ubicar el archivo.");
+                  await ack(t("ls_file_missing"));
                   return;
                 }
                 const full = safeResolve(directory, rel);
                 if (!full || !existsSync(full)) {
-                  await ack("El archivo ya no est\u00e1.");
+                  await ack(t("ls_file_gone"));
                   return;
                 }
                 const fs = await import("node:fs");
                 const size = fs.statSync(full).size;
                 const name = full.split(/[\\/]/).pop() ?? "archivo";
                 if (!isTextLike(name, "", Buffer.alloc(0))) {
-                  await ack("Solo archivos de texto se adjuntan \u2014 el binario descargalo.");
+                  await ack(t("ls_binary"));
                   return;
                 }
                 if (size > 200 * 1024) {
-                  await ack("Muy grande para adjuntar (l\u00edmite 200 KB) \u2014 descargalo.");
+                  await ack(t("ls_too_big_attach"));
                   return;
                 }
                 const content = decodeText(fs.readFileSync(full));
                 pendingAttach.set(sessionID, { uri: `data:text/plain;filename="${encodeURIComponent(name)}";base64,${Buffer.from(content, "utf8").toString("base64")}`, name });
-                await ack("Adjuntado \u2014 tu pr\u00f3ximo mensaje lo lleva al agente");
+                await ack(t("ls_attached"));
                 return;
               }
               if (payload.startsWith("wtnew:")) {
                 // wtnew:<key> — open a new session in that worktree.
                 const dir = lsKeys.get(payload.slice(6));
                 if (dir === undefined) {
-                  await ack("Listing viejo \u2014 reabr\u00ed /worktree");
+                  await ack(t("worktree_stale"));
                   return;
                 }
-                await ack("Abriendo\u2026");
+                await ack(t("worktree_opening"));
                 try {
                   const created = await forms.request<{ id?: string }>("POST", "/session", { location: { directory: dir } });
                   if (!created?.id) throw new Error("sin id");
@@ -5093,7 +5093,7 @@ export default {
                   }
                 } catch (error) {
                   log("WARN", "worktree session", safe(error));
-                  await ack("No se pudo abrir la sesi\u00f3n.");
+                  await ack(t("worktree_open_fail"));
                 }
                 return;
               }
@@ -5142,7 +5142,7 @@ export default {
                   return;
                 }
                 if (entry.settled) {
-                  await ack("Ya respondida");
+                  await ack(t("form_already_answered"));
                   return;
                 }
                 const choice = entry.choices.find((c) => c.fieldIndex === fieldIndex);
@@ -5183,7 +5183,7 @@ export default {
                   }
                 } else {
                   log("WARN", `callback form sin opción: field=${parts[1]} option=${parts[2]} en ${formID}`);
-                  await ack("Opción no válida");
+                  await ack(t("form_invalid_option"));
                 }
                 return;
               }
@@ -5197,7 +5197,7 @@ export default {
                   return;
                 }
                 if (entry.settled) {
-                  await ack("Ya respondida");
+                  await ack(t("form_already_answered"));
                   return;
                 }
                 entry.freeText = !entry.freeText;
@@ -5231,7 +5231,7 @@ export default {
                 const state = modelCards.get(cq.message?.message_id);
                 const prov = state?.providers[Number(payload.slice(4))];
                 if (!state || !prov) {
-                  await ack("El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo");
+                  await ack(t("models_stale"));
                   return;
                 }
                 state.chosen = prov.id;
@@ -5251,7 +5251,7 @@ export default {
               if (payload.startsWith("mpb:")) {
                 const state = modelCards.get(cq.message?.message_id);
                 if (!state) {
-                  await ack("El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo");
+                  await ack(t("models_stale"));
                   return;
                 }
                 state.chosen = undefined;
@@ -5271,7 +5271,7 @@ export default {
               if (payload.startsWith("mp:")) {
                 const state = modelCards.get(cq.message?.message_id);
                 if (!state) {
-                  await ack("El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo");
+                  await ack(t("models_stale"));
                   return;
                 }
                 if (payload !== "mp:noop" && cq.message) {
@@ -5293,7 +5293,7 @@ export default {
                 const target = state?.target;
                 // Wizard mode: the pick becomes the task's model, not a switch.
                 if (state?.taskMode && taskWizard && chosen) {
-                  const t = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
+                  const tsession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                   taskWizard.model = { id: chosen.id, providerID: chosen.providerID };
                   taskWizard.step = "type";
                   writeDraft(taskWizard);
@@ -5304,15 +5304,15 @@ export default {
                       .editMessageText(cq.message.chat.id, cq.message.message_id, "\u{1F9F1} Modelo: <code>" + escapeHtml(chosen.id) + "</code>", { parseMode: "HTML" })
                       .catch(() => undefined);
                   }
-                  await wizardAsk(t);
+                  await wizardAsk(tsession);
                   return;
                 }
                 if (!chosen || !target) {
-                  await ack("El picker expir\u00f3 \u2014 mand\u00e1 /models de nuevo");
+                  await ack(t("models_stale"));
                   return;
                 }
                 if (!(await forms.connect())) {
-                  await ack("La API local no responde");
+                  await ack(t("api_down_ack"));
                   return;
                 }
                 try {
@@ -5329,20 +5329,20 @@ export default {
                       )
                       .catch(() => undefined);
                   }
-                  await ack("Modelo cambiado");
+                  await ack(t("models_changed"));
                   // A settled pick must not be re-applied by a second tap on
                   // the same card.
                   modelCards.drop(cq.message?.message_id);
                 } catch (error) {
                   log("WARN", "model set", safe(error));
-                  await ack("No se pudo cambiar el modelo");
+                  await ack(t("models_change_fail"));
                 }
                 return;
               }
               if (payload.startsWith("skl:")) {
                 const chosen = skillItems[Number(payload.slice(4))];
                 if (!chosen) {
-                  await ack("La lista expir\u00f3 \u2014 /skills de nuevo");
+                  await ack(t("skills_stale"));
                   return;
                 }
                 skillArmed = chosen;
@@ -5354,7 +5354,7 @@ export default {
                 const task = arg !== undefined && arg !== "save" && arg !== "cancel" ? readTasks().find((t) => t.id === arg) : undefined;
                 if (action === "proj") {
                   const chosen = projectCards.get(cq.message?.message_id)?.[Number(arg)];
-                  const t = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
+                  const tsession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                   if (taskWizard && chosen) {
                     projectCards.drop(cq.message?.message_id);
                     taskWizard.directory = chosen.directory;
@@ -5367,14 +5367,14 @@ export default {
                         .editMessageText(cq.message.chat.id, cq.message.message_id, "(3/6) \u{1F4C1} " + escapeHtml(chosen.name), { parseMode: "HTML" })
                         .catch(() => undefined);
                     }
-                    await wizardAsk(t);
+                    await wizardAsk(tsession);
                   } else {
-                    await ack("El wizard expir\u00f3 \u2014 /newtask de nuevo");
+                    await ack(t("newtask_stale"));
                   }
                   return;
                 }
                 if (action === "model") {
-                  const t = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
+                  const tsession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                   if (!taskWizard) { await ack("El wizard expir\u00f3 \u2014 /newtask de nuevo"); return; }
                   if (arg === "default") taskWizard.model = undefined;
                   // "inherit" already pre-loaded the session's model in the ask.
@@ -5412,7 +5412,7 @@ export default {
                     }
                     items.sort((a, b) => a.id.localeCompare(b.id));
                     const wizardPicker: ModelPicker = {
-                      target: t ?? "",
+                      target: tsession ?? "",
                       items,
                       providers: [...new Set(items.map((m) => m.providerID))].map((pid) => ({ id: pid, name: provNames.get(pid) ?? pid })).sort((a, b) => a.name.localeCompare(b.name)),
                       search: "",
@@ -5426,19 +5426,19 @@ export default {
                         .catch(() => undefined);
                     }
                   } else {
-                    await wizardAsk(t);
+                    await wizardAsk(tsession);
                   }
                   return;
                 }
                 if (action === "stype") {
                   const type = arg as TaskSchedule["type"];
-                  const t = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
+                  const tsession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
                   if (!taskWizard || !type) { await ack("El wizard expir\u00f3 \u2014 /newtask de nuevo"); return; }
                   taskWizard.scheduleType = type;
                   taskWizard.step = "detail";
                   writeDraft(taskWizard);
                   await ack();
-                  await wizardAsk(t);
+                  await wizardAsk(tsession);
                   return;
                 }
                 if (action === "save") {
@@ -5461,7 +5461,7 @@ export default {
                   writeTasks(all);
                   taskWizard = undefined;
                   clearDraft();
-                  await ack("Tarea creada");
+                  await ack(t("newtask_created"));
                   if (cq.message) {
                     const when = fmtDateTime(task.nextRun);
                     await telegram
@@ -5472,7 +5472,7 @@ export default {
                 }
                 if (action === "cancel") {
                   taskWizard = undefined;
-                  await ack("Cancelado");
+                  await ack(t("cancelled"));
                   if (cq.message) {
                     await telegram.deleteMessage(cq.message.chat.id, cq.message.message_id).catch(() => undefined);
                   }
@@ -5507,7 +5507,7 @@ export default {
                 if (action === "prompt") {
                   // Arm the edit: the next text in this thread becomes the
                   // task's new prompt (checked with a 10-minute window).
-                  await ack("Mand\u00e1 el nuevo prompt");
+                  await ack(t("newtask_prompting"));
                   taskPromptEdit = { id: task.id, name: task.name, threadId: cq.message?.message_thread_id, armedAt: Date.now() };
                   if (cq.message) {
                     await telegram
@@ -5521,7 +5521,7 @@ export default {
                   return;
                 }
                 if (action === "run") {
-                  await ack("Ejecutando");
+                  await ack(t("ack_running_plain"));
                   try {
                     await runTaskNow(task);
                     const all = readTasks();
@@ -5529,7 +5529,7 @@ export default {
                     if (x) { x.lastRun = Date.now(); x.lastStatus = "ok (manual)"; writeTasks(all); }
                   } catch (error) {
                     log("WARN", "task run", safe(error));
-                    await ack("No se pudo ejecutar");
+                    await ack(t("newtask_run_fail"));
                   }
                   return;
                 }
@@ -5546,7 +5546,7 @@ export default {
                 }
                 if (action === "del") {
                   writeTasks(readTasks().filter((t) => t.id !== task.id));
-                  await ack("Eliminada");
+                  await ack(t("newtask_deleted"));
                   if (cq.message) {
                     await telegram.deleteMessage(cq.message.chat.id, cq.message.message_id).catch(() => undefined);
                   }
@@ -5563,7 +5563,7 @@ export default {
                   }
                   return;
                 }
-                await ack("Acci\u00f3n desconocida");
+                await ack(t("action_unknown"));
                 return;
               }
               if (payload.startsWith("ib:")) {
@@ -5576,11 +5576,11 @@ export default {
                 const card = inboxCards.get(cq.message?.message_id);
                 const session = card?.session;
                 if (!card || !session) {
-                  await ack("La lista expir\u00f3 \u2014 mand\u00e1 /queue de nuevo");
+                  await ack(t("queue_stale"));
                   return;
                 }
                 if (!(await forms.connect())) {
-                  await ack("La API local no responde");
+                  await ack(t("api_down_ack"));
                   return;
                 }
                 const rerender = async (): Promise<void> => {
@@ -5619,7 +5619,7 @@ export default {
                 }
                 const item = card.items[index];
                 if (!item) {
-                  await ack("La lista expir\u00f3 \u2014 mand\u00e1 /queue de nuevo");
+                  await ack(t("queue_stale"));
                   return;
                 }
                 if (action === "up" || action === "down") {
@@ -5629,7 +5629,7 @@ export default {
                     card.items.splice(to, 0, moved);
                     await rerender();
                   }
-                  await ack("Reordenado");
+                  await ack(t("queue_reordered"));
                   return;
                 }
                 if (action === "steer") {
@@ -5642,7 +5642,7 @@ export default {
                       `/session/${encodeURIComponent(session)}/inbox/${encodeURIComponent(item.id)}`,
                       { delivery: "steer" },
                     );
-                    await ack("Adelantado al turno en curso");
+                    await ack(t("queue_steered"));
                   } catch (error) {
                     log("WARN", "inbox steer", safe(error));
                     await ack("No se pudo adelantar: " + String((error as Error).message).slice(0, 120));
@@ -5661,10 +5661,10 @@ export default {
                         .editMessageText(cq.message.chat.id, cq.message.message_id, "\u{1F5D1} Inbox vac\u00edo.", { parseMode: "HTML" })
                         .catch(() => undefined);
                     }
-                    await ack("Cancelado");
+                    await ack(t("cancelled"));
                   } else {
                     await rerender();
-                    await ack("Cancelado");
+                    await ack(t("cancelled"));
                   }
                   return;
                 }
@@ -5673,17 +5673,17 @@ export default {
                   await ack(`Reemplazo armado \u2014 mand\u00e1 el texto nuevo para: "${item.text.slice(0, 60)}"`);
                   return;
                 }
-                await ack("Acci\u00f3n desconocida");
+                await ack(t("action_unknown"));
                 return;
               }
               if (payload.startsWith("proj:")) {
                 const chosen = projectCards.get(cq.message?.message_id)?.[Number(payload.slice(5))];
                 if (!chosen) {
-                  await ack("El picker expir\u00f3 \u2014 mand\u00e1 /projects de nuevo");
+                  await ack(t("projects_stale"));
                   return;
                 }
                 if (!(await forms.connect())) {
-                  await ack("La API local no responde");
+                  await ack(t("api_down_ack"));
                   return;
                 }
                 try {
@@ -5691,7 +5691,7 @@ export default {
                     location: { directory: chosen.directory },
                   });
                   if (!created?.id) {
-                    await ack("No se pudo crear la sesi\u00f3n");
+                    await ack(t("session_create_fail"));
                     return;
                   }
                   const id = created.id;
@@ -5706,10 +5706,10 @@ export default {
                       )
                       .catch(() => undefined);
                   }
-                  await ack("Sesi\u00f3n creada");
+                  await ack(t("session_created"));
                 } catch (error) {
                   log("WARN", "project session", safe(error));
-                  await ack("No se pudo crear la sesi\u00f3n");
+                  await ack(t("session_create_fail"));
                 }
                 return;
               }              if (payload.startsWith("ag:")) {
@@ -5717,11 +5717,11 @@ export default {
                 const chosen = card?.items[Number(payload.slice(3))];
                 const target = card?.target;
                 if (!chosen || !target) {
-                  await ack("El picker expiró — mandá /agents de nuevo");
+                  await ack(t("agents_stale"));
                   return;
                 }
                 if (!(await forms.connect())) {
-                  await ack("La API local no responde");
+                  await ack(t("api_down_ack"));
                   return;
                 }
                 try {
@@ -5736,10 +5736,10 @@ export default {
                       )
                       .catch(() => undefined);
                   }
-                  await ack("Agente cambiado");
+                  await ack(t("agents_changed"));
                 } catch (error) {
                   log("WARN", "agent set", safe(error));
-                  await ack("No se pudo cambiar el agente");
+                  await ack(t("agents_change_fail"));
                 }
                 return;
               }

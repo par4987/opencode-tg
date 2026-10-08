@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** Drop one per migrated string; never raise without the user's say-so. */
-const LITERAL_BUDGET = 158;
+const LITERAL_BUDGET = 0;
 
 let failures = 0;
 function check(label: string, ok: boolean, extra?: string): void {
