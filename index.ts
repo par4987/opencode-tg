@@ -32,7 +32,7 @@ import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
 import { t } from "./src/locale.js";
-import { dangerousCommand } from "./src/dangerous.js";
+import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
@@ -3601,13 +3601,32 @@ export default {
           // a tap. Measured: `/sh opencode service restart` killed the host
           // mid-command, the unconfirmed update re-delivered on every
           // restart, and the bridge looped until it was disabled by hand.
-          const danger = dangerousCommand(cmdText);
+          //
+          // The project folder is the one place destruction is allowed
+          // (`rm temp.txt` is a normal day), so it is passed in as scope.
+          const projectDir = (await directoryOf(target)) ?? "";
+          const danger = dangerousCommand(cmdText, projectDir);
+          // One line per command it would run, alias-resolved and explained,
+          // so the approval is about what the command does, not about a
+          // string of text.
+          const explained =
+            danger.commands.length > 0
+              ? "\n\n<b>Lo que hace:</b>\n" +
+                danger.commands
+                  .map((c) => {
+                    const shown = c.resolved ?? c.asWritten ?? c.raw;
+                    const args = c.args.length ? " " + c.args.slice(0, 8).join(" ") : "";
+                    return `<code>${escapeHtml((shown + args).slice(0, 200))}</code>\n${escapeHtml(explainCommand(c))}`;
+                  })
+                  .join("\n\n")
+              : "";
           if (danger.level === "forbidden") {
             log("WARN", `sh bloqueado (prohibido): ${cmdText.slice(0, 80)}`);
             await reply(
               `🚫 <b>Comando bloqueado</b>\n` +
-                `Esto ${escapeHtml(danger.reason)} y no tiene vuelta atrás, así que no puedo ejecutarlo ni aunque lo confirmes.\n\n` +
-                `<code>${escapeHtml(cmdText.slice(0, 300))}</code>\n\n` +
+                `Esto ${escapeHtml(danger.reason)} y no tiene vuelta atrás, así que no puedo ejecutarlo ni aunque lo confirmes.` +
+                explained +
+                `\n\n<code>${escapeHtml(cmdText.slice(0, 300))}</code>\n\n` +
                 `Si de verdad necesitás hacerlo, hacelo desde la consola de la PC.`,
             );
             return;
@@ -3626,8 +3645,9 @@ export default {
                 .sendMessage(
                   chatId,
                   `⚠️ <b>Comando que ${escapeHtml(danger.reason)}</b>\n` +
-                    `Antes de ejecutarlo, confirmá que querés hacerlo y que entendés que puede interrumpir el servicio (y este bot con él).\n\n` +
-                    `<code>${escapeHtml(cmdText.slice(0, 400))}</code>`,
+                    `Antes de ejecutarlo, confirmá que querés hacerlo y que entendés que puede interrumpir el servicio (y este bot con él).` +
+                    explained +
+                    `\n\n<code>${escapeHtml(cmdText.slice(0, 400))}</code>`,
                   {
                     parseMode: "HTML",
                     messageThreadId: threadOf(threadSession),

@@ -146,7 +146,7 @@ el prompt y el resultado llega al hilo de esa tarea.
 | `/delthread` | Borra el hilo del foro (la sesión sigue en OpenCode) |
 | `/rebuild` | Borra TODOS los hilos y reconstruye el foro limpio: hilos nuevos para las sesiones activas (la más reciente arriba), el resto vuelve solo con su próxima actividad |
 | `/rename` | Renombra la sesión del hilo (o `/rename <ses_id> <título>`) — el hilo y el desktop siguen el cambio |
-| `/sh <cmd>` | Corre un comando shell DENTRO de la sesión (fondo, sin despertar al agente). Ojo: el shell es PowerShell — `;` en vez de `&&`. Los comandos que pueden interrumpir el servicio piden confirmación; los destructivos (formateo, borrado masivo, apagar la máquina) se bloquean |
+| `/sh <cmd>` | Corre un comando shell DENTRO de la sesión (fondo, sin despertar al agente). Ojo: el shell es PowerShell — `;` en vez de `&&`. El comando se parsea (alias resueltos): la lectura y la toolchain pasan directo; lo que puede cortar el servicio o salir de la máquina pide confirmación con una tarjeta que explica qué hace; lo irreversible (formateo, registro, secretos, apagar la máquina, evasión con `iex`/`.NET`/`-EncodedCommand`) se bloquea sin excepción. El borrado se permite dentro de la carpeta del proyecto |
 | `/note <texto>` | Deja una nota en el transcript — el agente la lee en su próximo turno |
 | `/instructions` | Instrucciones persistentes de la sesión: lista, `<clave> <texto>` agrega, `del <clave>` borra |
 | `/perms` | Los permisos «siempre» guardados; `del <id>` revoca uno |

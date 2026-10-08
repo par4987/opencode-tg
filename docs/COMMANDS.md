@@ -187,7 +187,15 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 
 **Notas**: El shell de la sesión es PowerShell — `&&` no funciona, usá `;`. El output llega al hilo.
 
-**Comandos protegidos**: los que pueden interrumpir el servicio (reiniciar/parar el server, matar procesos) piden confirmación por botón antes de ejecutarse. Los que no tienen vuelta atrás (formatear, borrado masivo recursivo, apagar/reiniciar la máquina) se bloquean de una — ni con confirmación se ejecutan, porque el offset persistente del poll es lo único que evita que un reinicio se reenvíe indefinidamente.
+**Comandos protegidos**: el comando se **parsea** (no se busca por regex: los nombres reales, con los alias resueltos) y cae en uno de tres niveles:
+
+- **Pasa derecho**: lectura pura (`Get-*`, `Test-*`, `ls`, `cat`) y la toolchain de desarrollo (`git`, `node`, `npm`, `cargo`, `python`...). Un falso positivo acá haría que el bot pidiera confirmación antes de cada `git status`.
+- **Pide confirmación**: lo recuperable pero que puede cortar el servicio o salir de la máquina — reiniciar el server, matar procesos, instalar software, llamadas a la red, ejecución remota, tareas programadas. La tarjeta **explica qué hace cada comando** (qué va a pasar, no solo el texto) y hay que tocar "Confirmar y ejecutar". El pendiente se borra **antes** de ejecutar, así que un crash no lo redispara.
+- **Bloqueado, sin excepción**: lo que no tiene vuelta atrás — formateo y borrado de discos, arranque y recuperación del sistema, registro, usuarios y credenciales, secretos (`.env`, `.ssh`, perfiles de navegador, el drive `Env:`), defensas (antivirus, firewall, BitLocker), borrado de logs, y todos los vectores de evasión (`iex`, `Invoke-Command`, `powershell`/`cmd` anidados, `-EncodedCommand`, `Add-Type`, acceso directo a .NET/COM, definición de funciones y alias). Ni confirmándolo se ejecuta: para eso está la consola de la PC.
+
+El borrado está **acotado por ruta**: `Remove-Item` (y `rm`, `del`, `rmdir`...) se permite dentro de la carpeta del proyecto — un agente de código tiene que poder borrar `node_modules` — y se bloquea afuera. Borrar el proyecto entero (`.`) o el `.git` pide confirmación.
+
+**Por qué** (incidente 2026-10-07): `/sh opencode service restart` mató al proceso que hostea el plugin; como el offset del poll estaba solo en memoria, Telegram reenviaba la update en cada reinicio y el servidor entró en un bucle de ~10s hasta desactivar el plugin a mano. El offset persistente es la cura; este guard es la prevención.
 
 ### /note
 
