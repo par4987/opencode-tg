@@ -167,14 +167,6 @@ export class Telegram {
   private get signal(): AbortSignal {
     return this.controller.signal;
   }
-  /** Register a request so `stop()` can await the socket's real teardown. */
-  private trackInflight(p: Promise<unknown>): void {
-    const tracked: Promise<void> = p.then(() => undefined, () => undefined);
-    this.inflight.add(tracked);
-    void tracked.finally(() => {
-      this.inflight.delete(tracked);
-    });
-  }
   /** Backoff waits register here so `stop()` can cut them short. */
   private delays = new Set<() => void>();
   /**
@@ -298,7 +290,21 @@ export class Telegram {
       body: JSON.stringify(body),
       signal,
     });
-    this.trackInflight(socket.catch(() => undefined));
+    // Tracked inline so `stop()` can await the socket actually closing —
+    // aborting cancels locally, but Telegram keeps the connection open a
+    // beat, and a replacement leader starting in that window gets HTTP 409
+    // forever (measured, 2026-10-08). Inlined deliberately: a helper method
+    // left the file reloadable into a state where the call site existed and
+    // the helper did not, and the poll died on a TypeError instead of
+    // degrading.
+    const tracked: Promise<void> = socket.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.inflight.add(tracked);
+    void tracked.finally(() => {
+      this.inflight.delete(tracked);
+    });
     let response: Response;
     try {
       response = await socket;
