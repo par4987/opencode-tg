@@ -5755,6 +5755,12 @@ export default {
     async function start(): Promise<void> {
       if (started) return;
       started = true;
+      // A re-promoted instance may be reusing a transport stopped earlier —
+      // the hand-over picks any live member, and its Telegram could be the
+      // corpse that deposal left behind. Revive it before anything talks
+      // through it, or setMyCommands fails with "aborted" and the mirror
+      // stays silent while the seat is held (measured 2026-10-08).
+      telegram.revive();
       if (!dry && chatId !== undefined) {
         await telegram
           .setCommandsEverywhere(commands, config.allowedUsers)

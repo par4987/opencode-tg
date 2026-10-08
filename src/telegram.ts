@@ -702,7 +702,26 @@ export class Telegram {
    * the chat. Telegram keeps undelivered updates for ~24h, so on a first live
    * start this can be hours of backlog.
    */
+  /**
+   * Bring a stopped transport back to life. `stop()` aborts the controller
+   * for good, so a re-promoted instance would lead with a corpse: every
+   * call answered "aborted", the mirror went silent while the seat was
+   * held, and the poll died on its first tick past the startup grace
+   * (measured 2026-10-08). The bridge calls this before a (re)start, and
+   * the poll re-revives defensively. In-flight requests keep the old
+   * aborted signal — only calls made after the revive use the fresh one.
+   */
+  revive(): void {
+    this.aborted = false;
+    this.lastPollAt = Date.now();
+    this.controller = new AbortController();
+  }
+
   async longPoll(onUpdate: (update: Update) => void | Promise<void>, onError?: (error: unknown) => void): Promise<void> {
+    // One instance can lead, be deposed, and lead again — the poll's
+    // first act is making sure the transport is not the corpse the last
+    // stop left behind.
+    this.revive();
     // NOT drop_pending_updates: every poll restart wiped whatever the user
     // sent while no poller was listening (today that ate real messages).
     // The webhook only exists once in a bot's life — deleting it without
