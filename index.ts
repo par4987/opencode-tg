@@ -11,6 +11,7 @@
  * is erased at compile time and this folder needs no node_modules.
  */
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { configProviders } from "./src/config-models.js";
 import { projectConfigFile, withDefaultModel } from "./src/config-edit.js";
@@ -31,6 +32,7 @@ import { escapeHtml } from "./src/render.js";
 import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
 import { t } from "./src/locale.js";
+import { dangerousCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
@@ -555,13 +557,27 @@ export default {
     const dry = config.mode === "dry";
     const telegram: Telegram = dry
       ? new DryRunTelegram((kind, text) => log("INFO", `${kind.toUpperCase()} ${text}`))
-      : new Telegram({ token: config.token });
+      : new Telegram({
+          token: config.token,
+          // The last acknowledged update id lives next to the log so a
+          // restart cannot replay anything. Without it, a `/sh` that kills
+          // this process re-delivered forever (measured, 2026-10-07).
+          offsetPath: join(homedir(), ".opencode", "tg", "offset.txt"),
+        });
 
     // ── write side: prompts and permission answers ───────────────────────────
     // Mirroring is read-only by design; the ACP client is what lets the chat
     // push a prompt back into a session and approve/deny a tool call.
     const acp = new AcpClient();
     const pendingPermissions = new Map<string, { messageId?: number; options: RequestPermissionParams["options"] }>();
+    /**
+     * Armed confirmations for shell commands the guard flagged. `/sh` never
+     * runs one directly: it stores the text here and sends a confirm card,
+     * so a restart/stop only happens when the person taps the button — and
+     * the persisted offset means even that tap cannot be re-delivered into a
+     * loop if the command takes the server down.
+     */
+    const pendingSh = new Map<string, { command: string; target: string }>();
 
     acp.permissionHandler = async (params: RequestPermissionParams): Promise<PermissionOutcome> => {
       if (chatId === undefined) return { outcome: { outcome: "cancelled" } };
@@ -3579,6 +3595,49 @@ export default {
             await reply(t("err_no_sub_arg"));
             return;
           }
+          // The guard: a command that can stop the OpenCode server or the
+          // machine never runs on first sight. Forbidden ones never run at
+          // all — no recovery from a formatted disk — and the rest wait for
+          // a tap. Measured: `/sh opencode service restart` killed the host
+          // mid-command, the unconfirmed update re-delivered on every
+          // restart, and the bridge looped until it was disabled by hand.
+          const danger = dangerousCommand(cmdText);
+          if (danger.level === "forbidden") {
+            log("WARN", `sh bloqueado (prohibido): ${cmdText.slice(0, 80)}`);
+            await reply(
+              `🚫 <b>Comando bloqueado</b>\n` +
+                `Esto ${escapeHtml(danger.reason)} y no tiene vuelta atrás, así que no puedo ejecutarlo ni aunque lo confirmes.\n\n` +
+                `<code>${escapeHtml(cmdText.slice(0, 300))}</code>\n\n` +
+                `Si de verdad necesitás hacerlo, hacelo desde la consola de la PC.`,
+            );
+            return;
+          }
+          if (danger.level === "confirm") {
+            const shId = "sh" + Date.now() + ":" + Math.random().toString(36).slice(2, 6);
+            pendingSh.set(shId, { command: cmdText, target });
+            if (chatId !== undefined) {
+              const keyboard = [
+                [
+                  { text: "⚠️ Confirmar y ejecutar", callback_data: `shok:${shId}` },
+                  { text: "Cancelar", callback_data: `shno:${shId}` },
+                ],
+              ];
+              await telegram
+                .sendMessage(
+                  chatId,
+                  `⚠️ <b>Comando que ${escapeHtml(danger.reason)}</b>\n` +
+                    `Antes de ejecutarlo, confirmá que querés hacerlo y que entendés que puede interrumpir el servicio (y este bot con él).\n\n` +
+                    `<code>${escapeHtml(cmdText.slice(0, 400))}</code>`,
+                  {
+                    parseMode: "HTML",
+                    messageThreadId: threadOf(threadSession),
+                    replyMarkup: { inline_keyboard: keyboard },
+                  },
+                )
+                .catch((error) => log("WARN", "sh confirm card", safe(error)));
+            }
+            return;
+          }
           if (!(await forms.connect())) {
             await reply("La API local no responde.");
             return;
@@ -4517,6 +4576,74 @@ export default {
                 }
                 await ack("Esta pregunta ya no está activa");
               };
+              if (payload.startsWith("shok:") || payload.startsWith("shno:")) {
+                // Confirm/cancel of a guarded /sh. The command only runs
+                // here — never on first sight — and it is deleted before the
+                // POST so a crash mid-run cannot re-trigger it.
+                const shId = payload.slice(5);
+                const pending = pendingSh.get(shId);
+                if (!pending) {
+                  await ripDeadButtons("sh:" + shId);
+                  return;
+                }
+                if (payload.startsWith("shno:")) {
+                  pendingSh.delete(shId);
+                  await ack("Comando cancelado");
+                  log("INFO", `sh cancelado por el usuario: ${pending.command.slice(0, 60)}`);
+                  await telegram
+                    .editMessageReplyMarkup(cq.message?.chat?.id ?? chatId ?? 0, cq.message?.message_id ?? 0)
+                    .catch(() => undefined);
+                  return;
+                }
+                pendingSh.delete(shId);
+                await ack("Ejecutando…");
+                log("INFO", `sh confirmado por el usuario: ${pending.command.slice(0, 60)}`);
+                if (!(await forms.connect())) {
+                  await telegram
+                    .sendMessage(cq.message?.chat?.id ?? chatId ?? 0, "La API local no responde.", {
+                      parseMode: "HTML",
+                      ...(cq.message?.message_thread_id !== undefined
+                        ? { messageThreadId: cq.message.message_thread_id }
+                        : {}),
+                    })
+                    .catch(() => undefined);
+                  return;
+                }
+                try {
+                  await forms.request("POST", "/session/" + encodeURIComponent(pending.target) + "/shell", {
+                    command: pending.command,
+                  });
+                  await telegram
+                    .sendMessage(
+                      cq.message?.chat?.id ?? chatId ?? 0,
+                      `▶️ Ejecutando (confirmado):\n<code>${escapeHtml(pending.command.slice(0, 300))}</code>`,
+                      {
+                        parseMode: "HTML",
+                        ...(cq.message?.message_thread_id !== undefined
+                          ? { messageThreadId: cq.message.message_thread_id }
+                          : {}),
+                      },
+                    )
+                    .catch(() => undefined);
+                } catch (error) {
+                  log("WARN", "sh confirmado", safe(error));
+                  await telegram
+                    .sendMessage(
+                      cq.message?.chat?.id ?? chatId ?? 0,
+                      isSessionNotFound(error)
+                        ? SESSION_UNLOADED
+                        : "No se pudo correr: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                      {
+                        parseMode: "HTML",
+                        ...(cq.message?.message_thread_id !== undefined
+                          ? { messageThreadId: cq.message.message_thread_id }
+                          : {}),
+                      },
+                    )
+                    .catch(() => undefined);
+                }
+                return;
+              }
               if (payload.startsWith("help:")) {
                 // help:<command> — the detailed section of the tapped
                 // command, from docs/COMMANDS.md (the source of truth).

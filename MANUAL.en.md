@@ -159,7 +159,7 @@ prompt, and the result lands in the task's topic.
 | `/delthread` | Deletes the forum topic (the session lives on in OpenCode) |
 | `/rebuild` | Wipes ALL threads and rebuilds the forum clean: fresh threads for the active sessions (most recent on top), the rest return on their next activity |
 | `/rename` | Renames the topic's session (or `/rename <ses_id> <title>`) — the thread and the desktop follow |
-| `/sh <cmd>` | Runs a shell command INSIDE the session (background, agent undisturbed). Note: the shell is PowerShell — `;` not `&&` |
+| `/sh <cmd>` | Runs a shell command INSIDE the session (background, agent undisturbed). Note: the shell is PowerShell — `;` not `&&`. Commands that can interrupt the service ask for confirmation; destructive ones (format, mass deletion, machine shutdown) are blocked |
 | `/note <text>` | Leaves a note in the transcript — the agent reads it on its next turn |
 | `/instructions` | The session's persistent instructions: list, `<key> <text>` adds, `del <key>` removes |
 | `/perms` | The saved "always" permissions; `del <id>` revokes one |

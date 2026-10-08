@@ -22,6 +22,8 @@ const suites = [
   "_sttcheck",
   "_leadercheck",
   "_cardscheck",
+  "_dangercheck",
+  "_offsetcheck",
   "_extracheck",
 ];
 

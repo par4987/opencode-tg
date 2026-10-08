@@ -187,6 +187,8 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 
 **Notas**: El shell de la sesión es PowerShell — `&&` no funciona, usá `;`. El output llega al hilo.
 
+**Comandos protegidos**: los que pueden interrumpir el servicio (reiniciar/parar el server, matar procesos) piden confirmación por botón antes de ejecutarse. Los que no tienen vuelta atrás (formatear, borrado masivo recursivo, apagar/reiniciar la máquina) se bloquean de una — ni con confirmación se ejecutan, porque el offset persistente del poll es lo único que evita que un reinicio se reenvíe indefinidamente.
+
 ### /note
 
 **Qué hace**: Deja una nota en el transcript — el agente la lee en su próximo turno, sin despertarse ahora.

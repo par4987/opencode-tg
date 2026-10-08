@@ -7,6 +7,8 @@
  * two error codes that actually occur (429 flood, "message is not modified").
  */
 
+import { readFileSync, writeFileSync } from "node:fs";
+
 import { log } from "./log.js";
 
 export interface TelegramConfig {
@@ -15,6 +17,15 @@ export interface TelegramConfig {
   baseUrl?: string;
   /** Long-poll timeout in seconds. */
   pollTimeout?: number;
+  /**
+   * Where the last acknowledged update id is kept. Without this, a process
+   * that dies mid-command restarts with offset 0 and Telegram re-delivers
+   * everything pending — measured: a `/sh` that restarted the OpenCode
+   * server never finished, the server came back, the update arrived again,
+   * and the bridge looped a restart every ~10s until the plugin was
+   * disabled. The file is the memory between restarts.
+   */
+  offsetPath?: string;
 }
 
 export interface TelegramErrorInfo {
@@ -120,6 +131,11 @@ export class Telegram {
   private readonly base: string;
   private readonly pollTimeout: number;
   private offset = 0;
+  /** Path of the persisted offset, if any. */
+  private readonly offsetFile?: string;
+  /** Debounce the offset write: one write per settled batch, not per update. */
+  private offsetDirty = false;
+  private offsetTimer: ReturnType<typeof setTimeout> | undefined;
   /**
    * The long poll's heartbeat — touched on every loop turn. A leader whose
    * poll is stuck inside one never-returning call shows no errors at all;
@@ -165,6 +181,34 @@ export class Telegram {
     if (!config.token) throw new Error("Telegram: missing bot token");
     this.base = `${(config.baseUrl ?? "https://api.telegram.org").replace(/\/+$/, "")}/bot${config.token}`;
     this.pollTimeout = config.pollTimeout ?? 30;
+    this.offsetFile = config.offsetPath;
+    this.offset = this.loadOffset();
+  }
+
+  /** Read the last acknowledged id so a restart never replays old updates. */
+  private loadOffset(): number {
+    if (!this.offsetFile) return 0;
+    try {
+      const raw = readFileSync(this.offsetFile, "utf8").trim();
+      const id = Number(raw);
+      return Number.isFinite(id) && id > 0 ? id : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Persist the offset. Telegram drops everything below this id only after
+   * it is echoed back on the next call, so surviving a crash is what stops a
+   * re-delivery loop. Sync write: the process can be killed a tick later.
+   */
+  private saveOffset(): void {
+    if (!this.offsetFile) return;
+    try {
+      writeFileSync(this.offsetFile, String(this.offset));
+    } catch {
+      /* best effort */
+    }
   }
 
   /** Raw Bot API call with flood control and no-op edit suppression. */
@@ -682,6 +726,11 @@ export class Telegram {
       for (const update of updates ?? []) {
         // Advance the offset before handling so a crash never re-delivers.
         this.offset = Math.max(this.offset, update.update_id + 1);
+        // Persist NOW, before the handler runs: a handler that kills this
+        // process (measured: `/sh opencode service restart`) must not come
+        // back as a fresh update on the next start and loop forever. Sync
+        // write — the process can be dead a tick later.
+        this.saveOffset();
         try {
           await onUpdate(update);
         } catch (error) {
