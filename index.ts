@@ -283,6 +283,29 @@ interface BridgeRegistry {
   wrappers: WeakMap<BridgeInstance, BridgeInstance>;
 }
 
+/** joinBridge's per-instance seat: the watchdog tick plus the teardown. */
+export interface BridgeSeat {
+  /** One watchdog round — the caller's timer fires this every LOCK_INTERVAL. */
+  tick: () => Promise<void>;
+  /** Removes the member; a leader hands the seat over on its way out. */
+  cleanup: () => Promise<void>;
+}
+
+/**
+ * A leader is exempt from `alive()` scrutiny for this long after its start
+ * begins. `start()` awaits Telegram (setMyCommands x3) and the poll only
+ * becomes observable once longPoll's first iteration stamps `lastPollAt` —
+ * inside that window `alive()` legitimately answers false, and the first
+ * watchdog to see it deposed the fresh leader and took the seat itself
+ * (measured: five "toma el liderazgo" in one second, then five polls
+ * fighting over one token, 2026-10-08). The grace must outlive a
+ * pathological start — three hanging setMyCommands are 45s of timeout —
+ * while staying in the same order as WEDGED_MS so a wedged start cannot
+ * hold the seat much longer than a wedged holder. Tests shrink it through
+ * TG_STARTUP_GRACE_MS.
+ */
+const STARTUP_GRACE_MS = Number(process.env.TG_STARTUP_GRACE_MS ?? 60_000);
+
 const REGISTRY_KEY = Symbol.for("opencode-tg.registry");
 const SEEN_KEY = Symbol.for("opencode-tg.seen");
 
@@ -338,28 +361,52 @@ function firstSighting(event: { id?: unknown; type?: unknown }): boolean {
   return true;
 }
 
-async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => Promise<void>> {
+export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<BridgeSeat> {
   const reg = registry();
   reg.members.add(instance);
   reg.memberModes.set(instance, mode);
 
-  // Track whether THIS instance ever became the leader, so its cleanup always
-  // stops what it started — even if it was since replaced. Without that, a
-  // leader that is ousted between `start()` and cleanup returns early and its
-  // longPoll keeps running next to the new leader's: one token, two polls,
-  // Telegram answers both with HTTP 409 forever.
-  let started = false;
+  // The wrapper owns the start/stop lifecycle, because two registry races
+  // lived in the old `started` flag (both measured in the 2026-10-08 storm):
+  //
+  // 1. A freshly installed leader answered alive() === false until start()
+  //    resolved — it awaits setMyCommands — so any watchdog ticking in those
+  //    seconds deposed it and took the seat, each waiter in turn: five
+  //    "toma el liderazgo" in one second, then five polls on one token.
+  //    "starting" now counts as alive within STARTUP_GRACE_MS.
+  // 2. stop() during "starting" still aborts the transport: the abort fails
+  //    the in-flight start, and the phase guard keeps that failure from
+  //    marking a stopped instance "running".
+  // Cleanup keeps its guarantee — stop what was started, even if ousted
+  // since — because stop() proceeds from "starting" and "running" alike.
+  type Phase = "idle" | "starting" | "running" | "stopped";
+  let phase: Phase = "idle";
+  let startedAt = 0;
   const guarded: BridgeInstance = {
     start: async () => {
-      await instance.start();
-      started = true;
+      if (phase === "starting" || phase === "running") return;
+      phase = "starting";
+      startedAt = Date.now();
+      try {
+        await instance.start();
+        if (phase === "starting") phase = "running";
+      } catch (error) {
+        if (phase === "starting") phase = "idle";
+        throw error;
+      }
     },
     stop: async () => {
-      if (!started) return;
-      started = false;
+      if (phase === "idle" || phase === "stopped") return;
+      phase = "stopped";
       await instance.stop();
     },
-    alive: () => started && (instance.alive ? instance.alive() : true),
+    alive: () => {
+      if (phase !== "starting" && phase !== "running") return false;
+      // Within the grace a starting/running leader is presumed healthy: the
+      // poll's first heartbeat only lands after start()'s awaits resolve.
+      if (Date.now() - startedAt < STARTUP_GRACE_MS) return true;
+      return phase === "running" && (instance.alive ? instance.alive() : true);
+    },
   };
   // A hand-over must install the same object the registry compares leaders
   // against (`reg.leader === guarded`), so keep raw -> wrapper mapped.
@@ -369,8 +416,6 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
   // the file lock is what keeps a second OpenCode from polling the same token.
   const needsLock = mode === "live";
   if (needsLock) ensureLockDir();
-
-  let timer: ReturnType<typeof setInterval> | undefined;
 
   // The leader was chosen by the FIRST instance to join, which read whatever
   // mode config.json had at that moment. If the file has been flipped since
@@ -415,9 +460,11 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
    * per instance closes all three gaps: it watches WHOEVER holds the
    * registry seat (hand-off leaders included), replaces one whose poll
    * heartbeat froze, and re-contests a leaderless seat the lock says is
-   * contestable.
+   * contestable. The tick is a returned closure rather than a wired timer
+   * so tests can drive the exact interleavings that once produced the
+   * storm without waiting on real clocks.
    */
-  timer = setInterval(async () => {
+  const tick = async (): Promise<void> => {
     const leader = reg.leader;
     if (leader === guarded) {
       // We lead: the file is the arbiter, not our own belief that we won,
@@ -444,7 +491,14 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
         // Hand the seat to a *different* live member: picking ourselves would
         // restart the same dead instance and loop forever. If there is none,
         // the seat stays open for any other process to contest below — and
-        // this process's own waiters will keep watching.
+        // this process's own waiters will keep watching. But only if it is
+        // STILL empty: every waiter in this process watches the same dead
+        // leader and contests the seat the moment it empties, so one of them
+        // will already have taken it while the stop above was awaited.
+        // Overwriting that winner here is how several instances each
+        // believed they led (measured: five "toma el liderazgo" in one
+        // second, then five polls fighting over one token).
+        if (reg.leader !== undefined) return;
         const next = [...reg.members].find((member) => member !== instance);
         const wrapper = next ? reg.wrappers.get(next) : undefined;
         if (next && wrapper) {
@@ -496,8 +550,16 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
     // The seat is empty and we are alive: contest it. Waiting instances
     // never re-tried before — a leaderless bridge stayed leaderless until a
     // restart. The lock decides: a fresh foreign holder keeps it, a dead or
-    // wedged one does not (see leader.ts for the wedge margin).
-    if (!needsLock || acquireLock()) {
+    // wedged one does not (see leader.ts for the wedge margin). The seat is
+    // re-checked HERE, at contest time: the read at the top of this tick is
+    // stale by now — deposing a dead leader awaits its stop, and every
+    // waiter that walked the same path resumes after that await believing
+    // the seat is empty. Each one used to install itself right below, and
+    // the file lock could not say no: it is per PID, so every instance of
+    // THIS process "wins" it (measured 2026-10-08). This block is
+    // synchronous, so check-and-set is atomic within the process — exactly
+    // one waiter wins.
+    if (!reg.leader && (!needsLock || acquireLock())) {
       reg.leader = guarded;
       reg.leaderMode = mode;
       log("INFO", `toma el liderazgo (pid ${process.pid})`);
@@ -510,29 +572,40 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
         log("ERROR", "toma de liderazgo", safe(error));
       });
     }
-  }, LOCK_INTERVAL);
+  };
 
-  return async () => {
+  const cleanup = async (): Promise<void> => {
     reg.members.delete(instance);
-    if (timer) clearInterval(timer);
     if (reg.leader === guarded) {
       reg.leader = undefined;
       reg.leaderMode = undefined;
       await guarded.stop();
-      if (needsLock) releaseLock();
+      // A waiter may have won the seat while the stop above was awaited —
+      // handing over on top of it installs a second leader. Act only if
+      // the seat is still empty.
+      if (reg.leader !== undefined) return;
       const next = [...reg.members].find((member) => member !== instance);
-      if (!next) return;
-      const wrapper = reg.wrappers.get(next);
-      if (!wrapper) return;
-      reg.leader = wrapper;
-      reg.leaderMode = reg.memberModes.get(next);
-      log("INFO", "traspaso de liderazgo a otra instancia");
-      try {
-        await wrapper.start();
-      } catch (error) {
-        reg.leader = undefined;
-        reg.leaderMode = undefined;
-        log("ERROR", "traspaso", safe(error));
+      const wrapper = next ? reg.wrappers.get(next) : undefined;
+      if (next && wrapper) {
+        reg.leader = wrapper;
+        reg.leaderMode = reg.memberModes.get(next);
+        log("INFO", "traspaso de liderazgo a otra instancia");
+        try {
+          await wrapper.start();
+        } catch (error) {
+          reg.leader = undefined;
+          reg.leaderMode = undefined;
+          // The failed heir holds nothing; give the lock back so another
+          // process does not have to wait out the wedge margin for it.
+          if (needsLock) releaseLock();
+          log("ERROR", "traspaso", safe(error));
+        }
+        // The lock stays with this pid: the promoted member refreshes its
+        // heartbeat on its own next tick. The old cleanup released it here,
+        // opening a window where another process grabbed the lock
+        // mid-hand-off while the promoted member was already polling.
+      } else if (needsLock) {
+        releaseLock();
       }
     } else {
       // Not the leader, but we may have started as one before being ousted —
@@ -540,6 +613,8 @@ async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<() => P
       await guarded.stop().catch((error) => log("ERROR", "stop de instancia relevada", safe(error)));
     }
   };
+
+  return { tick, cleanup };
 }
 
 export default {
@@ -5695,6 +5770,20 @@ export default {
       poll = undefined;
     }
 
-    return joinBridge({ start, stop, alive: () => !streamClosed && (dry ? true : telegram.pollAlive()) }, config.mode);
+    const seat = await joinBridge(
+      { start, stop, alive: () => !streamClosed && (dry ? true : telegram.pollAlive()) },
+      config.mode,
+    );
+    // The watchdog timer lives here, outside joinBridge, so the tick is a
+    // plain function tests can drive through the exact interleavings that
+    // once put five leaders on one token.
+    const timer = setInterval(
+      () => void seat.tick().catch((error) => log("ERROR", "watchdog", safe(error))),
+      LOCK_INTERVAL,
+    );
+    return async () => {
+      clearInterval(timer);
+      await seat.cleanup();
+    };
   },
 };
