@@ -56,11 +56,22 @@ export class TopicStore {
   private persist(): void {
     try {
       mkdirSync(dirname(this.file), { recursive: true });
+      // Merge, never clobber: several bots (one TopicStore per chat) share
+      // this file, and a blind rewrite would erase every other chat's
+      // mappings — orphaning threads that can never be named again (the Bot
+      // API has no "list topics"). Read the current file and replace only
+      // this chat's slice.
+      let existing: StoredTopics = {};
+      try {
+        existing = JSON.parse(readFileSync(this.file, "utf-8")) as StoredTopics;
+      } catch {
+        /* first write for this file */
+      }
       const chat: Record<string, number> = {};
       for (const [sessionId, threadId] of this.cache) chat[sessionId] = threadId;
       const payload: StoredTopics = {
-        chats: { [String(this.chatId)]: chat },
-        archived: { [String(this.chatId)]: [...this.archivedSet] },
+        chats: { ...(existing.chats ?? {}), [String(this.chatId)]: chat },
+        archived: { ...(existing.archived ?? {}), [String(this.chatId)]: [...this.archivedSet] },
       };
       writeFileSync(this.file, JSON.stringify(payload, null, 2), "utf-8");
     } catch (error) {

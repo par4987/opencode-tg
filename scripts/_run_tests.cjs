@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Runner de la suite completa: las 19 suites en secuencia, con el veredicto
+ * Runner de la suite completa: las 21 suites en secuencia, con el veredicto
  * al final y exit 1 si alguna falla. `node --import tsx` ejecuta los .ts con
  * el tsx instalado como devDependency del propio proyecto.
  */
@@ -24,6 +24,7 @@ const suites = [
   "_seatcheck",
   "_revivecheck",
   "_localecheck",
+  "_botcheck",
   "_cardscheck",
   "_dangercheck",
   "_offsetcheck",

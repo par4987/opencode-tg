@@ -36,6 +36,10 @@ and events as the desktop — no separate process, no bot duplicating state.
 - **Scheduled tasks** with a persistent wizard (`/newtask`, `/tasks`).
 - **`/models`** mirrors the desktop picker; **`/usagestats`** brings
   tokens, cost and streak.
+- **Multi-bot (optional)**: extra bots (`TELEGRAM_BOT_TOKEN_<NAME>` in the
+  `.env`) with a one-bot-per-project or one-bot-per-session topology — the
+  latter keeps the conversation at the chat root and the subagents as
+  threads. `/bots` shows the layout; see the MANUAL.
 
 The full user manual is in [`MANUAL.md`](MANUAL.md) (Español) /
 [`MANUAL.en.md`](MANUAL.en.md) (English).
@@ -59,7 +63,8 @@ The full user manual is in [`MANUAL.md`](MANUAL.md) (Español) /
    ```
 
 3. Adjust `config.json` next to the plugin: `mode` (`off`/`dry`/`live`),
-   `mirror` (`all`/`watched`), `coalesceMs`, `coalesceBusyMs`,
+   `mirror` (`all`/`watched`), `bots` (multi-bot topology),
+   `coalesceMs`, `coalesceBusyMs`,
    `archiveAfterDays`, `render.*`. Start in `dry` to validate without
    touching Telegram.
 
@@ -115,15 +120,15 @@ Common `stt` options: `whisper` and `model` (local paths), `baseUrl` +
 ```sh
 npm install
 npm run typecheck   # tsc with the project's tsconfig — 0 errors
-npm test            # the 20 suites (476 checks) with their own runner
+npm test            # the 21 suites (514 checks) with their own runner
 ```
 
 GitHub Actions runs both on every push (`.github/workflows/ci.yml`).
 
-Twenty suites (`_setupcheck` … `_extracheck`, 476 checks) cover the event
+Twenty-one suites (`_setupcheck` … `_extracheck`, 514 checks) cover the event
 pump, rendering, topics, forms, configuration, tasks, ingest, leader
-election, per-message cards, i18n, outgoing media, STT, dangerous
-operations and API helpers. Typecheck: `tsc --noEmit index.ts`.
+election, per-message cards, i18n, outgoing media, STT, multi-bot topology,
+dangerous operations and API helpers. Typecheck: `tsc --noEmit index.ts`.
 
 ## Maintenance
 

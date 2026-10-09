@@ -17,6 +17,22 @@
   // watched -> solo las marcadas con /watch en el chat.
   "mirror": "all",
 
+  // Multi-bot: cada token extra (TELEGRAM_BOT_TOKEN_<NOMBRE> en el .env) es
+  // otro bot con su propio chat y foro. "topology" decide quién espeja qué:
+  //   "single"      -> un solo bot, todo en su foro (el clásico).
+  //   "per-project" -> un bot por proyecto: sus sesiones son hilos del foro
+  //                    de SU bot. "assign" fija proyecto→bot a mano; el
+  //                    resto toma el primer bot libre en su primer turno.
+  //   "per-session" -> un bot por sesión: la conversación vive en la raíz
+  //                    del chat del bot y los hilos son sus subagentes.
+  //                    /release y /archive devuelven el bot al pool.
+  // El bot principal (TELEGRAM_BOT_TOKEN) es el hub: espeja todo lo que no
+  // tenga bot propio. /bots en cualquier chat muestra el reparto.
+  // "bots": {
+  //   "topology": "per-project",
+  //   "assign": [ { "project": "E:/ruta/al/proyecto", "bot": "SAP" } ]
+  // },
+
   // /rebuild recrea los hilos de las sesiones que usaste dentro de estas
   // horas. El server pisa el campo "updated" de TODAS las sesiones al
   // reiniciar, asi que ordenar por ese campo resucitaba sesiones que nadie

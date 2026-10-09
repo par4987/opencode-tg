@@ -11,7 +11,6 @@
  * is erased at compile time and this folder needs no node_modules.
  */
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { configProviders } from "./src/config-models.js";
 import { projectConfigFile, withDefaultModel } from "./src/config-edit.js";
@@ -22,7 +21,8 @@ import { sttAvailable, transcribeFile } from "./src/stt.js";
 import { clearDraft, fmtDateTime, formatSchedule, newTaskId, nextRunOf, parseScheduleDetail, readDraft, readTasks, updateTaskPrompt, writeDraft, writeTasks, type Task, type TaskDraft, type TaskSchedule } from "./src/tasks.js";
 import { desktopVisibleModels } from "./src/desktop-models.js";
 import { AcpClient, type PermissionOutcome, type RequestPermissionParams } from "./src/acp.js";
-import { loadConfig, type Mode } from "./src/config.js";
+import { loadConfig, type Config, type Mode } from "./src/config.js";
+import { BotRegistry, buildSpecs, claimsFilePath, CLAIM_TRIGGERS, type BotSpec } from "./src/bots.js";
 import { acquireLock, ensureLockDir, heartbeat, lockHeldBy, releaseLock, LOCK_INTERVAL } from "./src/leader.js";
 import { log, safe } from "./src/log.js";
 import { DryRunTelegram, Telegram, type Update } from "./src/telegram.js";
@@ -234,6 +234,47 @@ export interface BridgeSeat {
   tick: () => Promise<void>;
   /** Removes the member; a leader hands the seat over on its way out. */
   cleanup: () => Promise<void>;
+}
+
+/**
+ * One Telegram bot of the bridge. The orchestrator (setup) builds one per
+ * spec and routes each event to the runtime owning its session; everything
+ * inside a runtime is the classic single-bot bridge.
+ */
+interface BotRuntime {
+  spec: BotSpec;
+  chatId: number | undefined;
+  route: (event: { type: string; data?: unknown }) => void;
+  /** The ACP permission card rendered in THIS bot's chat. */
+  permissionCard: (params: RequestPermissionParams) => Promise<PermissionOutcome>;
+  start: () => Promise<void>;
+  stop: () => Promise<void>;
+  /** The transport's poll is turning (dry answers true — nothing polls). */
+  alive: () => boolean;
+  /** Send into this bot's chat, optionally into a session's thread. */
+  send: (text: string, session?: string) => Promise<void>;
+}
+
+/**
+ * State every bot in this process shares: the session map (one source of
+ * truth for ownership), the subagent ignore list, the write-side clients,
+ * and the routing registry that decides who mirrors what.
+ */
+interface SharedState {
+  config: Config;
+  specs: BotSpec[];
+  sessions: Map<string, TrackedSession>;
+  ignoredSubagents: Set<string>;
+  acp: AcpClient;
+  forms: FormClient;
+  registry: BotRegistry;
+  /**
+   * Pump-side bookkeeping before routing: keeps the shared session map
+   * fresh (title, directory, parent) so ownership can decide on data the
+   * owning runtime has not even seen yet. Idempotent — the runtime's own
+   * track() refines on top.
+   */
+  observe: (sessionID: string, type: string, data: Record<string, unknown>) => void;
 }
 
 /**
@@ -564,37 +605,220 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
 export default {
   id: "opencode-tg",
 
+  /**
+   * The orchestrator: builds the shared state, one runtime per bot, and the
+   * single event pump that routes every event to the bot owning its session.
+   * Leadership is unchanged — one bridge per process, one poller per token;
+   * the leader simply runs every bot at once.
+   */
   async setup(ctx: Context) {
     const config = loadConfig();
-    log("INFO", `setup mode=${config.mode} mirror=${config.mirror} allowed=${config.allowedUsers.length} debug=${config.debugEvents}`);
+    const specs = buildSpecs(config);
+    log(
+      "INFO",
+      `setup mode=${config.mode} mirror=${config.mirror} allowed=${config.allowedUsers.length} debug=${config.debugEvents} topology=${config.bots.topology} bots=${specs.length}`,
+    );
 
     if (config.mode === "off") return;
     if (!config.token) {
       log("ERROR", "no TELEGRAM_BOT_TOKEN \u2014 plugin disabled");
       return;
     }
-    const chatId = config.allowedUsers[0];
-    if (chatId === undefined && config.mode === "live") {
+    if (config.allowedUsers[0] === undefined && config.mode === "live") {
       log("ERROR", "ALLOWED_USERS is empty \u2014 nowhere to send");
       return;
     }
+    if (config.bots.topology !== "single" && specs.length < 2) {
+      log("WARN", `topologia ${config.bots.topology} sin bots extra \u2014 declara TELEGRAM_BOT_TOKEN_<NOMBRE> en ~/.opencode/tg/.env; corriendo como single`);
+    }
+
+    // ── shared state: one per leading process ────────────────────────────────
+    const sharedSessions = new Map<string, TrackedSession>();
+    const registry = new BotRegistry(specs, config.bots.topology, config.bots.assign, claimsFilePath(), {
+      session: (id) => sharedSessions.get(id),
+    });
+    const shared: SharedState = {
+      config,
+      specs,
+      sessions: sharedSessions,
+      ignoredSubagents: new Set<string>(),
+      acp: new AcpClient(),
+      forms: new FormClient(),
+      registry,
+      observe: (sessionID, type, data): void => {
+        let session = sharedSessions.get(sessionID);
+        if (!session) {
+          const meta = readSessionMeta(sessionID);
+          session = {
+            id: sessionID,
+            title: meta?.title || t("no_title"),
+            directory: meta?.directory ?? "",
+            lastSeen: 0,
+            idle: false,
+          };
+          sharedSessions.set(sessionID, session);
+        }
+        if (type === "session.created") {
+          const bornParent = str(data.parentID);
+          if (bornParent) session.parentID = bornParent;
+          const loc = data.location;
+          if (loc && typeof loc === "object") {
+            const dir = str((loc as Record<string, unknown>).directory);
+            if (dir) session.directory = dir;
+          }
+          const fresh = str(data.title);
+          if (fresh) session.title = fresh;
+        }
+        session.lastSeen = Date.now();
+        session.idle = false;
+      },
+    };
+
+    // ── one runtime per bot ──────────────────────────────────────────────────
+    const runtimes: BotRuntime[] = [];
+    for (const spec of specs) {
+      try {
+        runtimes.push(await this.runtime(ctx, config, spec, shared));
+      } catch (error) {
+        log("ERROR", `bot ${spec.name} no arranco`, safe(error));
+        if (spec.primary) throw error;
+      }
+    }
+    if (runtimes.length === 0) {
+      log("ERROR", "ningun bot operativo \u2014 plugin desactivado");
+      return;
+    }
+    const primary = runtimes[0];
+
+    // Permission prompts reach the OWNING bot's chat, not always the primary's.
+    shared.acp.permissionHandler = (params: RequestPermissionParams): Promise<PermissionOutcome> => {
+      const owner = runtimes.find((r) => r.spec.name === shared.registry.of(params.sessionId).name) ?? primary;
+      return owner.permissionCard(params);
+    };
+
+    // ── the single event pump: route each event to its owning bot ────────────
+    const subscription = new AbortController();
+    let pump: Promise<void> | undefined;
+    let streamClosed = false;
+    const poolNotified = new Set<string>();
+    const startPump = (): void => {
+      if (pump) return;
+      pump = (async () => {
+        try {
+          for await (const event of ctx.event.subscribe({ signal: subscription.signal })) {
+            if (!firstSighting(event as { id?: unknown; type?: unknown })) continue;
+            // Deltas fire once per token; logging those would bury the shapes we
+            // actually want to verify, so only the structural events are dumped.
+            if (config.debugEvents && DEBUG_EVENTS.has(event.type)) {
+              log("INFO", `event ${event.type}`, safe(event.data, 300));
+            }
+            const data = dataOf(event as { data?: unknown });
+            const formSession =
+              event.type.startsWith("form.")
+                ? str((data.form as { sessionID?: unknown } | undefined)?.sessionID)
+                : "";
+            const sessionID = formSession || str(data.sessionID ?? data.sessionId);
+            if (!sessionID) continue;
+            shared.observe(sessionID, event.type, data);
+            // A pool bot is only claimed when a turn is really happening:
+            // dormant sessions the server replays at startup must not drain
+            // the pool before anything live gets a chance.
+            const mayClaim = CLAIM_TRIGGERS.has(event.type);
+            if (config.bots.topology === "per-session" && mayClaim && shared.registry.exhausted(sessionID)) {
+              if (!poolNotified.has(sessionID)) {
+                poolNotified.add(sessionID);
+                void primary
+                  .send(t("bots_pool_empty", { ses: escapeHtml(sessionID.slice(0, 18)) }))
+                  .catch((error) => log("WARN", "aviso de pool", safe(error)));
+              }
+            }
+            const ownerSpec = shared.registry.of(sessionID, mayClaim);
+            const owner = runtimes.find((r) => r.spec.name === ownerSpec.name) ?? primary;
+            owner.route(event as { type: string; data?: unknown });
+          }
+          // Reaching the end of the async iterator without an abort means the
+          // server closed the subscription underneath us — OpenCode dismantled
+          // this instance. Flag it so the bridge can hand leadership to a
+          // survivor instead of leaving a corpse holding the token.
+          if (!subscription.signal.aborted) {
+            streamClosed = true;
+            log("WARN", "event stream cerrado por el servidor");
+          }
+        } catch (error) {
+          if (!subscription.signal.aborted) log("ERROR", "event stream", safe(error));
+        }
+      })();
+    };
+
+    async function start(): Promise<void> {
+      for (const runtime of runtimes) await runtime.start();
+      startPump();
+      // "ready (dry)" stays byte-identical for the single-bot case — tests
+      // and log greps key on it; the count only appears when it matters.
+      log("INFO", `ready (${config.mode}${runtimes.length > 1 ? `, ${runtimes.length} bots` : ""})`);
+    }
+
+    async function stop(): Promise<void> {
+      log("INFO", "cleanup");
+      subscription.abort();
+      // Await the transports first: their poll sockets outlive the abort
+      // signal by a beat, and a replacement leader starting inside that
+      // window collides at Telegram with HTTP 409.
+      await Promise.all(runtimes.map((runtime) => runtime.stop()));
+      await shared.acp.stop();
+      await pump;
+      pump = undefined;
+    }
+
+    const seat = await joinBridge(
+      { start, stop, alive: () => !streamClosed && runtimes.some((runtime) => runtime.alive()) },
+      config.mode,
+    );
+    // The watchdog timer lives here, outside joinBridge, so the tick is a
+    // plain function tests can drive through the exact interleavings that
+    // once put five leaders on one token.
+    const timer = setInterval(
+      () => void seat.tick().catch((error) => log("ERROR", "watchdog", safe(error))),
+      LOCK_INTERVAL,
+    );
+    return async () => {
+      clearInterval(timer);
+      await seat.cleanup();
+    };
+  },
+
+  /**
+   * One Telegram bot of the bridge: its own transport (token + offset
+   * file), its own chat and forum, its own watched/foreground state. The
+   * orchestrator's pump decides which runtime an event belongs to; inside,
+   * this is the classic single-bot bridge, unchanged.
+   */
+  async runtime(ctx: Context, config: Config, spec: BotSpec, shared: SharedState): Promise<BotRuntime> {
+    const { sessions, ignoredSubagents, acp, forms, registry } = shared;
+    const topology = config.bots.topology;
+    const dry = config.mode === "dry";
+    const chatId = spec.chatId ?? config.allowedUsers[0];
 
     // ── transport ────────────────────────────────────────────────────────────
-    const dry = config.mode === "dry";
     const telegram: Telegram = dry
-      ? new DryRunTelegram((kind, text) => log("INFO", `${kind.toUpperCase()} ${text}`))
+      ? new DryRunTelegram(
+          (kind, text) =>
+            log("INFO", `${shared.specs.length > 1 ? `[${spec.name}] ` : ""}${kind.toUpperCase()} ${text}`),
+        )
       : new Telegram({
-          token: config.token,
+          token: spec.token,
           // The last acknowledged update id lives next to the log so a
           // restart cannot replay anything. Without it, a `/sh` that kills
-          // this process re-delivered forever (measured, 2026-10-07).
-          offsetPath: join(homedir(), ".opencode", "tg", "offset.txt"),
+          // this process re-delivered forever (measured, 2026-10-07). One
+          // file per bot: each token acknowledges its own updates.
+          offsetPath: spec.offsetPath,
         });
 
     // ── write side: prompts and permission answers ───────────────────────────
-    // Mirroring is read-only by design; the ACP client is what lets the chat
-    // push a prompt back into a session and approve/deny a tool call.
-    const acp = new AcpClient();
+    // Mirroring is read-only by design; the ACP client (shared across bots)
+    // is what lets the chat push a prompt back into a session and approve or
+    // deny a tool call. The card below renders in THIS bot's chat — the
+    // orchestrator dispatches by session ownership.
     const pendingPermissions = new Map<string, { messageId?: number; options: RequestPermissionParams["options"] }>();
     /**
      * Armed confirmations for shell commands the guard flagged. `/sh` never
@@ -605,7 +829,8 @@ export default {
      */
     const pendingSh = new Map<string, { command: string; target: string }>();
 
-    acp.permissionHandler = async (params: RequestPermissionParams): Promise<PermissionOutcome> => {
+    /** The ACP permission card in THIS bot's chat. */
+    const permissionCard = async (params: RequestPermissionParams): Promise<PermissionOutcome> => {
       if (chatId === undefined) return { outcome: { outcome: "cancelled" } };
       const reqId = String(pendingPermissions.size + 1) + ":" + Date.now();
       const opts = params.options ?? [];
@@ -634,7 +859,8 @@ export default {
     const permissionResolvers = new Map<string, (outcome: PermissionOutcome) => void>();
 
     // ── session bookkeeping ──────────────────────────────────────────────────
-    const sessions = new Map<string, TrackedSession>();
+    // `sessions` is the shared map: ownership, listings and every runtime
+    // read the same source of truth.
     /**
      * Sessions with a `question` tool still open. A question is not a normal
      * turn: the agent is blocked waiting for the answer. Knowing it is open is
@@ -822,8 +1048,8 @@ export default {
     /**
      * Subagent sessions under `"subagents": "off"` — ignored from the first
      * `session.created` (which carries the parentID) until the run ends.
+     * Shared across bots: the setting is bridge-wide.
      */
-    const ignoredSubagents = new Set<string>();
     const mirrorAll = config.mirror === "all";
     // One Telegram thread per session. The resolver is a no-op (returns
     // undefined) until the store has a mapping, and schedules the topic
@@ -956,12 +1182,30 @@ export default {
      * `watched` set override it made `/watch <id>` silently kill mirroring for
      * every *other* session, and `/watch off` look broken when it restored
      * `all` instead of nothing.
+     *
+     * In per-session mode the extras ignore the watch list: whatever the
+     * registry routes here is theirs by definition (the owned session and
+     * its subagents). The primary keeps the classic semantics as the hub.
      */
     const isWatched = (id: string): boolean =>
-      (mirrorAll ? watched.size === 0 || watched.has(id) : watched.has(id)) &&
-      topicStore?.isArchived(id) !== true;
-    const threadOf = (id: string | undefined): number | undefined =>
-      id ? (isWatched(id) ? topicResolver?.get(id) : undefined) : undefined;
+      topology === "per-session" && !spec.primary
+        ? registry.isMine(spec, id) && topicStore?.isArchived(id) !== true
+        : (mirrorAll ? watched.size === 0 || watched.has(id) : watched.has(id)) &&
+          topicStore?.isArchived(id) !== true;
+    const threadOf = (id: string | undefined): number | undefined => {
+      if (!id) return undefined;
+      // per-session: the owned session IS this chat — its conversation lives
+      // at the root, and the threads belong to the subagents.
+      if (topology === "per-session" && registry.ownedSession(spec) === id) return undefined;
+      return isWatched(id) ? topicResolver?.get(id) : undefined;
+    };
+    /**
+     * Multi-bot scoping for listings (/sessions, /running, /rebuild): each
+     * chat shows only the sessions its own bot mirrors. Single mode has one
+     * runtime, so everything is its business.
+     */
+    const mine = (session: { id: string; directory?: string }): boolean =>
+      topology === "single" ? true : registry.isMine(spec, session.id, session.directory);
 
     /**
      * Archive a thread the way THIS chat can. In a supergroup forum that is
@@ -1046,7 +1290,8 @@ export default {
      * settles it over OpenCode's local API — so the PC and Telegram race for it
      * and `form.replied` tells the loser which side won.
      */
-    const forms = new FormClient();
+    // `forms` is the shared local-API client, destructured above: every bot
+    // talks to the same server through it.
 
     /**
      * A session's project directory, restart-proof.
@@ -1463,8 +1708,14 @@ export default {
      */
     let foreground: string | undefined;
     const targetSession = (): string | undefined => {
+      // per-session: an extra bot's chat IS its owned session — prompts at
+      // the root go there, never to whatever else happens to be active.
+      if (topology === "per-session" && !spec.primary) {
+        const owned = registry.ownedSession(spec);
+        if (owned) return owned;
+      }
       if (foreground && sessions.has(foreground)) return foreground;
-      const sorted = [...sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen);
+      const sorted = [...sessions.values()].filter(mine).sort((a, b) => b.lastSeen - a.lastSeen);
       return sorted[0]?.id;
     };
     const sending = new Set<string>();
@@ -1867,7 +2118,10 @@ export default {
     const startTaskTimer = (): void => {
       if (taskTimer !== undefined) return;
       taskTimer = setInterval(() => {
-        tickTasks();
+        // Scheduled tasks fire ONCE per bridge — with N bots running N
+        // timers, every due task would fire N times. Archiving stays
+        // per-bot: each store only knows its own chat's threads.
+        if (spec.primary) tickTasks();
         tickArchive();
       }, 30_000);
     };
@@ -1990,6 +2244,8 @@ export default {
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
       { command: "locale", description: "Switch the bot's language: /locale <es|en>" },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
+      { command: "bots", description: "This bridge's bots and what each mirrors" },
+      { command: "release", description: "Give this per-session bot back to the pool" },
 
       { command: "queue", description: "Show queued messages" },
       { command: "flush", description: "Send the queue now; /flush <text> steers" },
@@ -2117,10 +2373,10 @@ export default {
           }
           const merged = new Map<string, TrackedSession>();
           for (const s of sessions.values()) {
-            if (!s.idle && now - s.lastSeen < 5 * 60_000) merged.set(s.id, s);
+            if (!s.idle && now - s.lastSeen < 5 * 60_000 && mine(s)) merged.set(s.id, s);
           }
           for (const id of activeIds) {
-            if (!merged.has(id)) {
+            if (!merged.has(id) && (topology === "single" || registry.isMine(spec, id))) {
               const info = identity.get(id);
               merged.set(id, {
                 id,
@@ -2928,7 +3184,7 @@ export default {
             const badge = session.parentID ? " \u{1F916} sub" : "";
             return `${mark} <code>${session.id.slice(0, 18)}\u2026</code> ${escapeHtml(title)}${badge}`;
           };
-          const all = [...sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen);
+          const all = [...sessions.values()].filter(mine).sort((a, b) => b.lastSeen - a.lastSeen);
           const active = all.filter((session) => !session.idle).slice(0, 20).map(row);
           const dormant = all.filter((session) => session.idle).slice(0, 20).map(row);
           const parts = [t("sessions_header")];
@@ -2954,7 +3210,7 @@ export default {
           watched.add(target);
           track(target);
           const label = sessions.get(target)?.title ?? t("no_title");
-          await reply(`\u{1F3AF} Escribo a <b>${escapeHtml(label)}</b> <code>${target.slice(0, 18)}\u2026</code>\nY vigilo sus novedades.`);
+          await reply(t("use_now", { label: escapeHtml(label), id: target.slice(0, 18) }) + "\n" + t("use_watch"));
           return;
         }
 
@@ -3480,6 +3736,12 @@ export default {
             // The confirmation cannot ride the thread that just died — it
             // goes to the chat root.
             await send(t("archived_privately"));
+          }
+          // per-session: archiving the owned session frees this bot for the
+          // pool — its chat goes quiet until another session claims it.
+          if (topology === "per-session" && !spec.primary && registry.ownedSession(spec) === target) {
+            registry.release(spec);
+            await send(t("bots_released_archived", { name: escapeHtml(spec.name) }));
           }
           return;
         }
@@ -4137,44 +4399,66 @@ export default {
           return;
         }
 
+        case "bots": {
+          // The multi-bot roster: which bot mirrors what, who is free, and
+          // how to grow the pool. Same answer in every bot's chat.
+          const topoKey =
+            topology === "per-project" ? "bots_topo_project" : topology === "per-session" ? "bots_topo_session" : "bots_topo_single";
+          const claims = registry.allClaims();
+          const countMine = (botSpec: BotSpec): number =>
+            [...sessions.values()].filter((s) =>
+              topology === "single" ? botSpec.primary : registry.isMine(botSpec, s.id, s.directory),
+            ).length;
+          const lines = [t("bots_card", { topo: t(topoKey) })];
+          for (const botSpec of shared.specs) {
+            const claim = claims[botSpec.name];
+            if (botSpec.primary) {
+              lines.push(
+                topology === "single"
+                  ? t("bots_row_single", { name: botSpec.name, n: countMine(botSpec) })
+                  : t("bots_row_hub", { name: botSpec.name, n: countMine(botSpec) }),
+              );
+              continue;
+            }
+            if (claim?.kind === "project") {
+              lines.push(t("bots_row_project", { name: botSpec.name, dir: escapeHtml(claim.key), n: countMine(botSpec) }));
+            } else if (claim?.kind === "session") {
+              const label = sessions.get(claim.key)?.title ?? claim.key.slice(0, 18);
+              lines.push(
+                t("bots_row_session", { name: botSpec.name, ses: escapeHtml(claim.key.slice(0, 18)), title: escapeHtml(label) }),
+              );
+            } else {
+              lines.push(t("bots_row_free", { name: botSpec.name }));
+            }
+          }
+          lines.push(t(shared.specs.length === 1 ? "bots_hint_single" : "bots_hint_multi"));
+          await reply(lines.join("\n"));
+          return;
+        }
+
+        case "release": {
+          // per-session only: give THIS bot back to the pool. The session it
+          // mirrored falls to the hub until some session claims a bot again.
+          if (topology !== "per-session" || spec.primary) {
+            await reply(t("bots_release_only"));
+            return;
+          }
+          const released = registry.release(spec);
+          await reply(released ? t("bots_released", { name: escapeHtml(spec.name) }) : t("bots_release_none"));
+          return;
+        }
+
         default:
           await reply(t("unknown_command", { name: escapeHtml(name) }));
       }
     };
 
-    // ── event subscription ───────────────────────────────────────────────────
-    const subscription = new AbortController();
-    let pump: Promise<void> | undefined;
+    // ── lifecycle & inbound poll (this bot's token only) ─────────────────────
+    // The event subscription lives in the orchestrator: one pump routes
+    // each event to the bot that owns its session, so a runtime only ever
+    // sees its own traffic here.
     let poll: Promise<void> | undefined;
     let started = false;
-    let streamClosed = false;
-
-    function startPump(): void {
-      if (pump) return;
-      pump = (async () => {
-        try {
-          for await (const event of ctx.event.subscribe({ signal: subscription.signal })) {
-            if (!firstSighting(event as { id?: unknown; type?: unknown })) continue;
-            // Deltas fire once per token; logging those would bury the shapes we
-            // actually want to verify, so only the structural events are dumped.
-            if (config.debugEvents && DEBUG_EVENTS.has(event.type)) {
-              log("INFO", `event ${event.type}`, safe(event.data, 300));
-            }
-            route(event as { type: string; data?: unknown });
-          }
-          // Reaching the end of the async iterator without an abort means the
-          // server closed the subscription underneath us — OpenCode dismantled
-          // this instance. Flag it so the bridge can hand leadership to a
-          // survivor instead of leaving a corpse holding the token.
-          if (!subscription.signal.aborted) {
-            streamClosed = true;
-            log("WARN", "event stream cerrado por el servidor");
-          }
-        } catch (error) {
-          if (!subscription.signal.aborted) log("ERROR", "event stream", safe(error));
-        }
-      })();
-    }
 
     function route(event: { type: string; data?: unknown }): void {
       const data = dataOf(event);
@@ -4856,7 +5140,7 @@ export default {
                       (Array.isArray(list) ? list : []) as RebuildSession[],
                       Date.now(),
                       config.rebuildIdleHours,
-                    );
+                    ).filter((s) => mine({ id: s.id, directory: (s as ApiSession).location?.directory }));
                     for (const s of rows) {
                       // A session whose topic survived the sweep (failed
                       // delete) keeps it — recreating on top would orphan
@@ -5799,16 +6083,14 @@ export default {
       }
       renderer.start();
       startTaskTimer();
-      startPump();
       startPoll();
-      log("INFO", `ready (${config.mode})`);
+      log("INFO", `bot ${spec.name} listo (${config.mode})`);
     }
 
     async function stop(): Promise<void> {
       if (!started) return;
       started = false;
-      log("INFO", "cleanup");
-      subscription.abort();
+      log("INFO", `cleanup bot ${spec.name}`);
       renderer.stop();
       stopTaskTimer();
       // Await the transport first: its poll socket outlives the abort signal
@@ -5816,25 +6098,22 @@ export default {
       // collides at Telegram with HTTP 409. Settling `poll` afterwards only
       // knows the loop exited, not that the socket closed.
       await telegram.stop();
-      await Promise.allSettled([pump, poll, acp.stop()]);
-      pump = undefined;
+      await poll;
       poll = undefined;
     }
 
-    const seat = await joinBridge(
-      { start, stop, alive: () => !streamClosed && (dry ? true : telegram.pollAlive()) },
-      config.mode,
-    );
-    // The watchdog timer lives here, outside joinBridge, so the tick is a
-    // plain function tests can drive through the exact interleavings that
-    // once put five leaders on one token.
-    const timer = setInterval(
-      () => void seat.tick().catch((error) => log("ERROR", "watchdog", safe(error))),
-      LOCK_INTERVAL,
-    );
-    return async () => {
-      clearInterval(timer);
-      await seat.cleanup();
+    // The orchestrator owns leadership: it joins the bridge once and runs
+    // every runtime's poll. This runtime surfaces exactly what the interface
+    // promises — nothing else leaks out of the closure.
+    return {
+      spec,
+      chatId,
+      route,
+      permissionCard,
+      start,
+      stop,
+      alive: () => (dry ? true : telegram.pollAlive()),
+      send,
     };
   },
 };

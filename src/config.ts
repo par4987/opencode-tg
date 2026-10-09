@@ -19,12 +19,28 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RenderOptions } from "./render-options.js";
 import type { SttConfig } from "./stt.js";
+import type { Topology, BotAssign } from "./bots.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** Plugin root: this file lives in `src/`, config.json sits one level up. */
 const ROOT = join(HERE, "..");
 
 export type Mode = "off" | "dry" | "live";
+
+/** A extra bot token declared as TELEGRAM_BOT_TOKEN_<NAME> in the .env. */
+export interface ExtraBot {
+  name: string;
+  token: string;
+  /** Where this bot writes; defaults to the first allowed user. */
+  chatId?: number;
+}
+
+export interface BotsConfig {
+  /** How sessions map to bots — see src/bots.ts for what each shape means. */
+  topology: Topology;
+  /** per-project: explicit project-directory → bot-name pins. */
+  assign: BotAssign[];
+}
 
 export interface Config {
   mode: Mode;
@@ -66,6 +82,10 @@ export interface Config {
   stt: SttConfig;
   /** Subagent (task) sessions in the chat: mirrored read-only topics, or off. */
   subagents: "mirror" | "off";
+  /** Multi-bot: which bot mirrors which session (src/bots.ts). */
+  bots: BotsConfig;
+  /** Tokens beyond TELEGRAM_BOT_TOKEN, one per extra bot. Never in the repo. */
+  extraBots: ExtraBot[];
 }
 
 const DEFAULTS: Omit<Config, "token"> = {
@@ -79,6 +99,8 @@ const DEFAULTS: Omit<Config, "token"> = {
   debugEvents: false,
   stt: {},
   subagents: "mirror",
+  bots: { topology: "single", assign: [] },
+  extraBots: [],
   render: {
     editIntervalMs: 1400,
     showDiffs: true,
@@ -231,6 +253,38 @@ export function loadConfig(): Config {
   if (env.TG_STT_LANGUAGE !== undefined) stt.language = String(env.TG_STT_LANGUAGE);
   if (env.STT_API_KEY !== undefined) stt.apiKey = String(env.STT_API_KEY);
 
+  // ── multi-bot: topology + explicit assignments (config.json), tokens in
+  // the .env only. TELEGRAM_BOT_TOKEN_<NAME> declares an extra bot; its
+  // chat is the first allowed user unless TG_BOT_CHAT_<NAME> says else.
+  const botsObj = typeof env.bots === "object" && env.bots !== null ? (env.bots as Record<string, unknown>) : {};
+  const topology =
+    asChoice(env.TG_TOPOLOGY ?? botsObj.topology, ["single", "per-project", "per-session"] as const) ??
+    DEFAULTS.bots.topology;
+  const assign: BotAssign[] = [];
+  for (const entry of Array.isArray(botsObj.assign) ? botsObj.assign : []) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.project === "string" && record.project && typeof record.bot === "string" && record.bot) {
+      assign.push({ project: record.project, bot: record.bot });
+    }
+  }
+  const extraBots: ExtraBot[] = [];
+  const seenBots = new Set<string>();
+  for (const [key, value] of Object.entries(env)) {
+    const match = /^TELEGRAM_BOT_TOKEN_([A-Za-z0-9_-]+)$/.exec(key);
+    const token = String(value ?? "").trim();
+    if (!match || !token) continue;
+    const name = match[1];
+    if (name.toLowerCase() === "main") {
+      // "main" is the primary token's reserved name.
+      continue;
+    }
+    if (seenBots.has(name)) continue;
+    seenBots.add(name);
+    const chat = Number(env[`TG_BOT_CHAT_${name}`]);
+    extraBots.push({ name, token, ...(Number.isFinite(chat) ? { chatId: chat } : {}) });
+  }
+
   return {
     mode,
     token,
@@ -244,5 +298,7 @@ export function loadConfig(): Config {
     debugEvents: asBool(env.TG_DEBUG_EVENTS) ?? asBool(env.debugEvents) ?? DEFAULTS.debugEvents,
     stt,
     subagents: asChoice(env.TG_SUBAGENTS, ["mirror", "off"] as const) ?? asChoice(env.subagents, ["mirror", "off"] as const) ?? DEFAULTS.subagents,
+    bots: { topology, assign },
+    extraBots,
   };
 }

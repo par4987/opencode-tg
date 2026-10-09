@@ -306,3 +306,25 @@ Deletion is **path-scoped**: `Remove-Item` (and `rm`, `del`, `rmdir`...) is allo
 - `/locale es` → switches directly; the confirmation arrives IN the chosen language
 
 **Notes**: The choice persists in `~/.opencode/tg/locale.txt` — a restart does not lose it. `TG_LOCALE` in `.env` becomes the initial value. A new language is a new object in `CATALOGS` (src/locale.ts) plus its `COMMANDS.<language>.md` — no extra code.
+
+### /bots
+
+**What it does**: Shows the multi-bot layout: which bot mirrors which project or session, who is free, and the primary bot (the hub) covering everything else.
+
+**Usage**: `/bots`
+
+**Examples**:
+- `/bots` → one line per bot with its claim (project, session or "free") and the active topology
+
+**Notes**: Extra bots are declared as `TELEGRAM_BOT_TOKEN_<NAME>` in `~/.opencode/tg/.env` — never in the repo. The topology (`single` / `per-project` / `per-session`) and the explicit mapping (`assign`) live in the `"bots"` block of `config.json`. With a single bot the card explains how to add another. Every extra bot needs topics enabled in BotFather, just like the primary.
+
+### /release
+
+**What it does**: Gives THIS bot back to the pool — `per-session` topology only. Its session falls to the hub until another one claims the bot.
+
+**Usage**: `/release` (from the chat of the bot you want to free)
+
+**Examples**:
+- `/release` → "🧹 released — its session falls back to the hub"
+
+**Notes**: The bot is also freed automatically when the session that claimed it is archived (`/archive`). In `single` and `per-project` the command answers that it does not apply. When the session wakes up, its next turn claims a free bot automatically.

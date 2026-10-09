@@ -169,6 +169,47 @@ y se reabren solos si la sesión revive.
 
 ---
 
+## Multi-bot: un bot por proyecto o por sesión
+
+Con un solo bot, todas las sesiones de todos los proyectos comparten un foro.
+Los bots extra separan el ruido: cada uno abre su propio chat con vos (mismo
+`ALLOWED_USERS`) y muestra sólo su parte.
+
+**Dar de alta un bot extra**:
+
+1. Crealo con [@BotFather](https://t.me/BotFather) (`/newbot`) y habilitale
+   los topics (`/topics` → *Enable*), igual que al principal.
+2. Sumá su token a `~/.opencode/tg/.env`: `TELEGRAM_BOT_TOKEN_SAP=…` — el
+   nombre es el sufijo de la clave.
+3. Elegí la topología en el bloque `"bots"` de `config.json` y reiniciá el
+   server de OpenCode (el plugin se carga al arrancar).
+
+**Topologías**:
+
+- `"single"` — como siempre: un bot, un foro, un hilo por sesión.
+- `"per-project"` — un bot por proyecto. `"assign"` fija el mapeo a mano
+  (`{ "project": "E:/ruta", "bot": "SAP" }`); los proyectos sin entrada toman
+  el primer bot libre en su primer turno real, y lo que queda sin bot cae al
+  bot principal (el hub). Cada sesión del proyecto es un hilo del foro de su
+  bot, igual que siempre.
+- `"per-session"` — un bot por sesión: la conversación vive en la **raíz**
+  del chat del bot y **los hilos son sus subagentes**. Una sesión reclama su
+  bot en su primer turno; `/archive` de esa sesión (o `/release` en su chat)
+  lo devuelve al pool. Si el pool se agota, la sesión nueva cae al hub con un
+  aviso — nada queda sin espejo.
+
+**En la práctica**:
+
+- `/bots` (en cualquier chat) muestra el reparto actual.
+- Los claims persisten en `~/.opencode/tg/bots.json`: reiniciar no mueve
+  sesiones de bot.
+- Los listados (`/sessions`, `/running`, `/rebuild`) muestran sólo las
+  sesiones del bot de ese chat; `/send` sigue alcanzando cualquier sesión.
+- Preguntas, permisos y notas de voz de una sesión llegan al chat del bot
+  que la espeja.
+
+---
+
 ## Configuración (opcional)
 
 Todo vive en `config.json` junto al plugin; el token y la lista de chats

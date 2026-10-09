@@ -295,6 +295,28 @@ El borrado está **acotado por ruta**: `Remove-Item` (y `rm`, `del`, `rmdir`...)
 
 **Notas**: La elección persiste en `~/.opencode/tg/locale.txt` — un reinicio no la pierde. `TG_LOCALE` en `.env` queda como valor inicial. Un idioma nuevo es un objeto nuevo en `CATALOGS` (src/locale.ts) más su `COMMANDS.<idioma>.md` — nada de código adicional.
 
+### /bots
+
+**Qué hace**: Muestra el reparto multi-bot: qué bot espeja qué proyecto o sesión, quién está libre, y el bot principal (hub) que cubre todo lo demás.
+
+**Uso**: `/bots`
+
+**Ejemplos**:
+- `/bots` → una línea por bot con su claim (proyecto, sesión o "libre") y la topología activa
+
+**Notas**: Los bots extra se declaran como `TELEGRAM_BOT_TOKEN_<NOMBRE>` en `~/.opencode/tg/.env` — nunca en el repo. La topología (`single` / `per-project` / `per-session`) y el mapeo explícito (`assign`) viven en el bloque `"bots"` de `config.json`. Con un solo bot, la tarjeta explica cómo sumar otro. Cada bot extra necesita topics habilitados en BotFather, igual que el principal.
+
+### /release
+
+**Qué hace**: Devuelve ESTE bot al pool — sólo en topología `per-session`. Su sesión pasa al hub hasta que otra la reclame.
+
+**Uso**: `/release` (desde el chat del bot que querés liberar)
+
+**Ejemplos**:
+- `/release` → "🧹 liberado — su sesión vuelve al hub"
+
+**Notas**: El bot también vuelve solo al archivar (`/archive`) la sesión que lo tenía reclamado. En `single` y `per-project` el comando responde que no aplica. Al reactivarse la sesión, su próximo turno reclama un bot libre automáticamente.
+
 ### /context
 
 **Qué hace**: Tokens, costo, límite del modelo y compactaciones de una sesión.
