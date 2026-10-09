@@ -10,6 +10,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { log } from "./log.js";
+import { t } from "./locale.js";
 
 export interface TelegramConfig {
   token: string;
@@ -505,7 +506,7 @@ export class Telegram {
       push("chat_id", String(chatId));
       if (options.caption) push("caption", options.caption.slice(0, 1024));
       if (tid) push("message_thread_id", String(tid));
-      const name = filePath.split(/[\\/]/).pop() ?? "archivo.bin";
+      const name = filePath.split(/[\\/]/).pop() ?? t("fallback_file_name") + ".bin";
       parts.push(
         Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
       );

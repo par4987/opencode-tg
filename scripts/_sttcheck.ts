@@ -1,6 +1,13 @@
 /** stt checks: parseo del stdout de whisper-cli, defaults, disponibilidad. */
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseCloudResponse, parseTranscription, sttAvailable, sttDefaults, transcribeFile } from "../src/stt.js";
+// Pin ES for this suite: transcribeFile throws through the catalog, so the
+// operator's /locale choice would otherwise decide the error text the
+// assertions read. Dynamic import: a static one is hoisted above this.
+process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-stt-")), "locale.txt");
+delete process.env.TG_LOCALE;
+const { parseCloudResponse, parseTranscription, sttAvailable, sttDefaults, transcribeFile } = await import("../src/stt.js");
 
 let failures = 0;
 let total = 0;

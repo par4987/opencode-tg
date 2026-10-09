@@ -23,6 +23,7 @@ import { spawn } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { t } from "./locale.js";
 
 export interface SttConfig {
   /** "local" (whisper.cpp) or "openai-compatible" (Groq, OpenAI, self-hosted). */
@@ -95,7 +96,7 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: nu
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error(`timeout tras ${Math.round(timeoutMs / 1000)}s`));
+      reject(new Error(t("stt_timeout", { s: Math.round(timeoutMs / 1000) })));
     }, timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
@@ -118,8 +119,8 @@ async function transcribeLocal(oggPath: string, cfg: SttConfig, timeoutMs: numbe
   const d = sttDefaults();
   const whisper = cfg.whisper ?? d.whisper;
   const model = cfg.model ?? d.model;
-  if (!existsSync(whisper)) throw new Error(`whisper-cli no existe: ${whisper}`);
-  if (!existsSync(model)) throw new Error(`modelo no existe: ${model}`);
+  if (!existsSync(whisper)) throw new Error(t("stt_whisper_missing", { path: whisper }));
+  if (!existsSync(model)) throw new Error(t("stt_model_missing", { path: model }));
   // whisper.cpp's bundled miniaudio does not read Telegram's OGG/Opus on this
   // build (verified live: jfk.wav transcribes, the same audio as .ogg comes
   // back empty) — so ffmpeg (system PATH or stt.ffmpeg) decodes to 16 kHz
@@ -134,7 +135,7 @@ async function transcribeLocal(oggPath: string, cfg: SttConfig, timeoutMs: numbe
       Math.min(timeoutMs, 120_000),
     );
     if (conv.code !== 0 || !existsSync(wavPath)) {
-      throw new Error(`ffmpeg no pudo decodificar el audio: ${conv.stderr.slice(0, 200)}`);
+      throw new Error(t("stt_ffmpeg_fail", { detail: conv.stderr.slice(0, 200) }));
     }
     audioPath = wavPath;
   }
@@ -159,9 +160,9 @@ async function transcribeLocal(oggPath: string, cfg: SttConfig, timeoutMs: numbe
  * same multipart discipline as the plugin's sendPhoto.
  */
 async function transcribeCloud(oggPath: string, cfg: SttConfig, timeoutMs: number): Promise<string> {
-  if (!cfg.baseUrl) throw new Error("stt sin baseUrl (mir\u00e1 la secci\u00f3n Voz del README)");
-  if (!cfg.apiKey) throw new Error("stt sin STT_API_KEY en ~/.opencode/tg/.env");
-  if (!cfg.model) throw new Error("stt sin model (p.ej. whisper-large-v3-turbo)");
+  if (!cfg.baseUrl) throw new Error(t("stt_no_baseurl"));
+  if (!cfg.apiKey) throw new Error(t("stt_no_key"));
+  if (!cfg.model) throw new Error(t("stt_no_model"));
   const fs = await import("node:fs");
   const buffer = fs.readFileSync(oggPath);
   const boundary = "----opencode-tg-" + Date.now();

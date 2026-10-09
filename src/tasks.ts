@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { t } from "./locale.js";
 
 export type TaskSchedule =
   | { type: "once"; at: string }
@@ -177,13 +178,13 @@ export function nextRunOf(schedule: TaskSchedule, from = Date.now()): number {
 
 /** Human-readable schedule for listings and receipts. */
 export function formatSchedule(schedule: TaskSchedule): string {
-  if (schedule.type === "once") return `una vez \u2014 ${schedule.at}`;
-  if (schedule.type === "daily") return `todos los d\u00edas \u2014 ${schedule.time}`;
-  if (schedule.type === "weekly") return `cada ${schedule.weekday} \u2014 ${schedule.time}`;
+  if (schedule.type === "once") return t("sched_once", { at: schedule.at });
+  if (schedule.type === "daily") return t("sched_daily", { time: schedule.time });
+  if (schedule.type === "weekly") return t("sched_weekly", { weekday: schedule.weekday, time: schedule.time });
   const every = schedule.every;
-  if (every < 60) return `cada ${every} min`;
-  if (every % 60 === 0) return `cada ${every / 60} h`;
-  return `cada ${Math.floor(every / 60)} h ${every % 60} min`;
+  if (every < 60) return t("sched_mins", { n: every });
+  if (every % 60 === 0) return t("sched_hours", { n: every / 60 });
+  return t("sched_hours_mins", { h: Math.floor(every / 60), m: every % 60 });
 }
 
 /** Fresh id, without pulling a uuid dependency for four randoms. */
@@ -245,7 +246,7 @@ export function clearDraft(file: string = draftFile()): void {
 export function fmtDateTime(ts: number): string {
   if (!Number.isFinite(ts) || ts <= 0) return "?";
   const d = new Date(ts);
-  const days = ["dom", "lun", "mar", "mi\u00e9", "jue", "vie", "s\u00e1b"];
+  const days = t("days_short").split(",");
   const p2 = (n: number): string => String(n).padStart(2, "0");
   return `${days[d.getDay()]} ${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }

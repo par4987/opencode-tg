@@ -13,6 +13,7 @@
  *  created; the newest HTML is kept and re-sent once the id is known.
  */
 import { Telegram } from "./telegram.js";
+import { t } from "./locale.js";
 import { chunkHtml, escapeHtml, formatDiff, formatToolCard, guessToolName, toHtml, type ToolStatus } from "./render.js";
 import type { RenderOptions } from "./render-options.js";
 interface ToolRecord {
@@ -95,7 +96,7 @@ class SessionView {
    */
   private header(): string {
     if (this.threadOf() !== undefined) return "";
-    const title = this.titleOf().trim() || "(sin t\u00edtulo)";
+    const title = this.titleOf().trim() || t("no_title");
     return `${dotFor(this.sessionID)} <b>${escapeHtml(title.slice(0, 60))}</b>`;
   }
 

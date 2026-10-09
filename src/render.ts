@@ -1,3 +1,4 @@
+import { t } from "./locale.js";
 /**
  * Rendering: OpenCode events -> Telegram HTML.
  *
@@ -187,7 +188,7 @@ export function formatToolCard(tool: {
   let line = describe(name, input, str, tool.output ?? "");
   // A failed tool that arrived mid-hand-over (no `input.started`, no input)
   // would otherwise be an empty line with a red mark.
-  if (!line && tool.status === "failed") line = oneLine(tool.error ?? "", 120) || "cancelado";
+  if (!line && tool.status === "failed") line = oneLine(tool.error ?? "", 120) || t("tool_cancelled");
   return `${icon} <code>${escapeHtml(name)}</code> ${escapeHtml(line)} ${mark}`;
 }
 
@@ -309,7 +310,7 @@ export function formatDiff(oldText: string, newText: string, maxLines = 40): str
   if (takeRemoved.length && takeAdded.length) body += "\n";
   body += takeAdded.map((l) => `+ ${l}`).join("\n");
   if (removed.length > maxLines || added.length > maxLines) {
-    body += `\n  … (${removed.length - takeRemoved.length} líneas menos, ${added.length - takeAdded.length} líneas más)`;
+    body += t("diff_lines_note", { removed: removed.length - takeRemoved.length, added: added.length - takeAdded.length });
   }
   const afterContext = before.slice(endBefore, endBefore + 2);
   if (afterContext.length) body += "\n" + afterContext.map((l) => `  ${l}`).join("\n");

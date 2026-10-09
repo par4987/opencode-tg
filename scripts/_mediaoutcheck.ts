@@ -2,15 +2,13 @@
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  describeReplyTarget,
-  extractFilePaths,
-  isForumEcho,
-  MAX_IMAGES,
-  qualifyingImage,
-  selectImages,
-  withReplyContext,
-} from "../src/media-out.js";
+// Pin ES for this suite: describeReplyTarget renders through the catalog, so
+// the operator's /locale choice would otherwise decide what the assertions
+// see. Dynamic import: a static one is hoisted above this assignment.
+process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-mediaout-")), "locale.txt");
+delete process.env.TG_LOCALE;
+const { describeReplyTarget, extractFilePaths, isForumEcho, MAX_IMAGES, qualifyingImage, selectImages, withReplyContext } =
+  await import("../src/media-out.js");
 
 let failures = 0;
 let total = 0;

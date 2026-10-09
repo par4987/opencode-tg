@@ -25,6 +25,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { log } from "./log.js";
+import { t } from "./locale.js";
 
 export interface FormOption {
   value: string;
@@ -317,7 +318,7 @@ export class FormClient {
     timeoutMs: number,
     readWindowMs?: number,
   ): Promise<string> {
-    if (!this.ready && !(await this.connect())) throw new Error("API local de OpenCode no disponible");
+    if (!this.ready && !(await this.connect())) throw new Error(t("err_api_unavailable"));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), readWindowMs ?? timeoutMs);
     try {
@@ -355,7 +356,7 @@ export class FormClient {
   }
 
   private async call(method: "GET" | "POST" | "DELETE" | "PATCH" | "PUT", path: string, body?: unknown): Promise<unknown> {
-    if (!this.ready && !(await this.connect())) throw new Error("API local de OpenCode no disponible");
+    if (!this.ready && !(await this.connect())) throw new Error(t("err_api_unavailable"));
     const response = await fetch(`${this.base}${path}`, {
       method,
       headers: {

@@ -2,18 +2,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  formatSchedule,
-  newTaskId,
-  nextRunOf,
-  parseScheduleDetail,
-  parseTime,
-  readTasks,
-  updateTaskPrompt,
-  writeTasks,
-  type Task,
-  type TaskSchedule,
-} from "../src/tasks.js";
+import type { Task, TaskSchedule } from "../src/tasks.js";
+// Pin ES for this suite: formatSchedule renders through the catalog, so the
+// operator's /locale choice would otherwise decide what the assertions see.
+// Dynamic import: a static one is hoisted above this assignment and the env
+// would arrive too late to the locale module.
+process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-task-")), "locale.txt");
+delete process.env.TG_LOCALE;
+const { formatSchedule, newTaskId, nextRunOf, parseScheduleDetail, parseTime, readTasks, updateTaskPrompt, writeTasks } =
+  await import("../src/tasks.js");
 
 let failures = 0;
 let total = 0;

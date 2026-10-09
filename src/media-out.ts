@@ -6,6 +6,7 @@
  * the user sees the result without opening the PC. Pure, testable.
  */
 import { existsSync, statSync } from "node:fs";
+import { t } from "./locale.js";
 
 /** Extensions Telegram can display inline as photos. */
 const PHOTO_EXT = new Set(["png", "jpg", "jpeg", "webp", "bmp"]);
@@ -124,22 +125,22 @@ export function describeReplyTarget(
   if (!target) return undefined;
   const text = (target.text ?? target.caption ?? "").trim();
   if (text) return text.slice(0, 4000);
-  if (target.poll?.question) return `(una encuesta: ${target.poll.question.slice(0, 200)})`;
+  if (target.poll?.question) return t("media_poll", { q: target.poll.question.slice(0, 200) });
   if (target.forum_topic_created) {
-    return `(el mensaje de apertura del hilo «${target.forum_topic_created.name ?? "?"}»)`;
+    return t("media_topic_created", { name: target.forum_topic_created.name ?? "?" });
   }
-  if (target.photo && target.photo.length > 0) return "(una foto)";
-  if (target.animation) return "(una animación/GIF)";
-  if (target.document?.file_name) return `(el archivo ${target.document.file_name})`;
-  if (target.sticker?.emoji) return `(un sticker ${target.sticker.emoji})`;
-  if (target.voice?.duration) return `(un audio de ${target.voice.duration}s)`;
-  if (target.audio?.duration) return `(una pista de audio de ${target.audio.duration}s)`;
-  if (target.video_note?.duration) return `(un videomensaje de ${target.video_note.duration}s)`;
-  if (target.video?.file_name) return `(el video ${target.video.file_name})`;
-  if (target.dice?.emoji) return `(un dado ${target.dice.emoji})`;
-  if (target.location) return "(una ubicación)";
-  if (target.contact?.first_name) return `(el contacto ${target.contact.first_name})`;
-  return "(un mensaje sin texto)";
+  if (target.photo && target.photo.length > 0) return t("media_photo");
+  if (target.animation) return t("media_animation");
+  if (target.document?.file_name) return t("media_document", { name: target.document.file_name });
+  if (target.sticker?.emoji) return t("media_sticker", { emoji: target.sticker.emoji });
+  if (target.voice?.duration) return t("media_voice", { n: target.voice.duration });
+  if (target.audio?.duration) return t("media_audio", { n: target.audio.duration });
+  if (target.video_note?.duration) return t("media_video_note", { n: target.video_note.duration });
+  if (target.video?.file_name) return t("media_video", { name: target.video.file_name });
+  if (target.dice?.emoji) return t("media_dice", { emoji: target.dice.emoji });
+  if (target.location) return t("media_location");
+  if (target.contact?.first_name) return t("media_contact", { name: target.contact.first_name });
+  return t("media_no_text");
 }
 
 /**
@@ -169,5 +170,5 @@ export function isForumEcho(
  */
 export function withReplyContext(prompt: string, quote: string | undefined): string {
   if (!quote) return prompt;
-  return `El usuario está respondiendo a este mensaje anterior:\n\n<<<\n${quote}\n>>>\n\n${prompt}`;
+  return t("quote_prefix", { quote, prompt });
 }

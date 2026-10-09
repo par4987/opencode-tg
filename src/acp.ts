@@ -15,6 +15,7 @@ import { accessSync } from "node:fs";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { log, safe } from "./log.js";
+import { t } from "./locale.js";
 import { readSessionMeta } from "./session-meta.js";
 
 export interface ContentBlock {
@@ -180,7 +181,7 @@ export class AcpClient extends EventEmitter {
     }
     const meta = readSessionMeta(sessionId);
     const correct = meta?.directory;
-    if (!correct || correct === cwd) throw new Error(`acp: session ${sessionId} sin directorio conocido`);
+    if (!correct || correct === cwd) throw new Error(t("acp_no_cwd", { id: sessionId }));
     await this.request("session/load", { sessionId, cwd: correct, mcpServers: [] }, 120_000);
     log("INFO", `acp: cwd corregido a ${correct}`);
   }
@@ -260,7 +261,7 @@ export class AcpClient extends EventEmitter {
   }
 
   private send(message: object): void {
-    if (!this.proc?.stdin.writable) throw new Error("acp: stdin no es escribible");
+    if (!this.proc?.stdin.writable) throw new Error(t("acp_stdin"));
     this.proc.stdin.write(JSON.stringify(message) + "\n");
   }
 

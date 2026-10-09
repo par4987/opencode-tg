@@ -391,8 +391,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
       throw error;
     }
   } else {
-    const reason = reg.leader ? "líder en este proceso" : "líder en otro proceso";
-    log("INFO", `instancia en espera (${reason}; ${reg.members.size} en el proceso)`);
+    log("INFO", `instancia en espera (${reg.leader ? "líder en este proceso" : "líder en otro proceso"}; ${reg.members.size} en el proceso)`);
   }
 
   /**
@@ -754,7 +753,7 @@ export default {
               // TEXT_INLINE_LIMIT arrive complete, split on line boundaries
               // into numbered parts; bigger ones already ride as documents.
               const fs = await import("node:fs");
-              const name = img.path.split(/[\\/]/).pop() ?? "archivo";
+              const name = img.path.split(/[\\/]/).pop() ?? t("fallback_file_name");
               const content = fs.readFileSync(img.path, "utf8");
               const parts: string[] = [];
               let current = "";
@@ -936,7 +935,7 @@ export default {
         const meta = readSessionMeta(id);
         session = {
           id,
-          title: meta?.title || "(sin t\u00edtulo)",
+          title: meta?.title || t("no_title"),
           directory: meta?.directory ?? "",
           lastSeen: 0,
           idle: false,
@@ -1127,8 +1126,8 @@ export default {
         return undefined;
       } catch (error) {
         log("WARN", "rename", safe(error));
-        if (isSessionNotFound(error)) return SESSION_UNLOADED + "\n(Renombrar necesita la sesi\u00f3n activa en el server.)";
-        return "No se pudo renombrar: " + escapeHtml(String((error as Error).message).slice(0, 200));
+        if (isSessionNotFound(error)) return SESSION_UNLOADED + t("rename_needs_active");
+        return t("rename_failed") + escapeHtml(String((error as Error).message).slice(0, 200));
       }
     };
 
@@ -1182,14 +1181,14 @@ export default {
           .map((e) => ({ name: e.name, dir: e.isDirectory(), size: e.isFile() ? fs.statSync(join(full, e.name)).size : 0 }))
           .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
       } catch {
-        await send("No pude leer esa carpeta.", sessionID);
+        await send(t("ls_dir_read_fail"), sessionID);
         return;
       }
       const shown = entries.slice(0, 30);
-      const label = rel ? rel.replace(/\\/g, "/") : (directory.split(/[\\/]/).filter(Boolean).pop() ?? "proyecto");
+      const label = rel ? rel.replace(/\\/g, "/") : (directory.split(/[\\/]/).filter(Boolean).pop() ?? t("ls_project_fallback"));
       const lines = [
-        `\u{1F4C2} <b>${escapeHtml(label)}</b> \u2014 ${entries.length} entradas${entries.length > 30 ? " (primeras 30)" : ""}`,
-        "Carpeta para entrar \u00b7 archivo para descargar \u00b7 \u{1F4CE} lo adjunta al pr\u00f3ximo mensaje.",
+        t("ls_dir_header", { label: escapeHtml(label), n: entries.length }) + (entries.length > 30 ? t("ls_first30") : ""),
+        t("ls_footer"),
       ];
       const cleanRel = rel.replace(/\\/g, "/");
       const rows: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -1255,7 +1254,7 @@ export default {
       if (entry.settled) return "already";
       // Dry mode is read-only by contract: show what would happen, touch nothing.
       if (dry) {
-        await closeForm(entry, `\u{1F4E4} (dry) responder\u00eda: <b>${escapeHtml(chosen)}</b>`);
+        await closeForm(entry, t("form_dry_answer", { chosen: escapeHtml(chosen) }));
         return "dry";
       }
       let outcome: "ok" | "already";
@@ -1266,14 +1265,14 @@ export default {
         // Leave it open: the PC can still answer it, so a failed reply is not
         // the end of the question — it is a reason to say so plainly.
         log("ERROR", "form reply", safe(error));
-        await send(`\u274C no se pudo responder: ${escapeHtml(String((error as Error).message).slice(0, 240))}`);
+        await send(t("form_reply_failed", { detail: escapeHtml(String((error as Error).message).slice(0, 240)) }));
         return "error";
       }
       await closeForm(
         entry,
         outcome === "already"
-          ? `\u{1FED1} Ya la hab\u00edan respondido en la PC.`
-          : `\u2705 Respondido: <b>${escapeHtml(chosen)}</b>`,
+          ? t("form_already_answered_pc")
+          : t("form_answered", { chosen: escapeHtml(chosen) }),
       );
       return outcome;
     };
@@ -1291,7 +1290,7 @@ export default {
         // the first question's title would vanish behind the header.
         if (multi) {
           lines.push(""); // blank separator between questions
-          lines.push(`<b>${escapeHtml(choice.title || `Pregunta ${position + 1}`)}</b>`);
+          lines.push(`<b>${escapeHtml(choice.title || t("form_question_n", { n: position + 1 }))}</b>`);
         } else if (choice.title) {
           lines.push(escapeHtml(choice.title));
         }
@@ -1307,7 +1306,7 @@ export default {
         // tap edits this very message) reads as progress, not noise.
         if (chosenValue !== undefined) {
           const shown = Array.isArray(chosenValue) ? chosenValue.join(", ") : String(chosenValue);
-          lines.push(`\u2794 tu respuesta: ${escapeHtml(shown)}`);
+          lines.push(t("form_your_answer", { value: escapeHtml(shown) }));
         }
         // With several questions the buttons carry the question number, so
         // options from different questions cannot read as one flat list.
@@ -1322,14 +1321,14 @@ export default {
         );
       });
       if (entry.choices.length === 0) {
-        lines.push(`\u{1F4CC} Respondela desde la PC.`);
+        lines.push(t("form_answer_on_pc"));
       } else if (entry.choices.length === 1) {
-        lines.push(`\nToc\u00e1 una opci\u00f3n o mand\u00e1 el n\u00famero. Otra respuesta: <code>/txt tu texto</code>`);
+        lines.push(t("form_hint_single"));
         // The free-text door: one button, only for single-field questions —
         // with several fields a bare text would be a guess.
         rows.push([{ text: t("btn_other_answer"), callback_data: `formfree:${entry.formID}` }]);
       } else {
-        lines.push(`\nToc\u00e1 una opci\u00f3n por pregunta \u2014 podes corregir mientras no est\u00e9 completa.`);
+        lines.push(t("form_hint_multi"));
       }
       return { body: lines.join("\n"), rows };
     };
@@ -1354,7 +1353,7 @@ export default {
       const entry: OpenForm = {
         formID: form.id,
         sessionID: form.sessionID,
-        title: form.title || "Pregunta",
+        title: form.title || t("form_question"),
         choices,
         settled: false,
         body: "",
@@ -1383,7 +1382,7 @@ export default {
       // a question in another thread from sitting unseen.
       if (threadOf(form.sessionID) !== undefined && chatId !== undefined) {
         void telegram
-          .sendMessage(chatId, `\u{1F4AC} <b>${escapeHtml(entry.title)}</b> tiene una pregunta pendiente \u2014 respondela en su hilo.`, {
+          .sendMessage(chatId, t("form_pending_prompt", { title: escapeHtml(entry.title) }), {
             parseMode: "HTML",
           })
           .catch((error) => log("WARN", "form heads-up", safe(error)));
@@ -1450,9 +1449,9 @@ export default {
       // Already settled by a tap in this thread: the edit went out with it.
       if (!entry) return;
       if (type === "form.replied") {
-        await closeForm(entry, `\u2705 Respondido en la PC: <b>${escapeHtml(formatAnswer(data.answer))}</b>`);
+        await closeForm(entry, t("form_replied_pc", { answer: escapeHtml(formatAnswer(data.answer)) }));
       } else if (type === "form.cancelled") {
-        await closeForm(entry, `\u{1F6AB} Cancelado en la PC.`);
+        await closeForm(entry, t("form_cancelled_pc"));
       }
     };
 
@@ -1531,7 +1530,7 @@ export default {
       }
       if (queued) log("INFO", "queue", `al inbox del server: ${target.slice(0, 18)}`);
       try {
-        if (!(await forms.connect())) throw new Error("API local de OpenCode no disponible");
+        if (!(await forms.connect())) throw new Error(t("err_api_unavailable"));
         const sent = await forms.request<{ id?: string; delivery?: string }>(
           "POST",
           `/session/${encodeURIComponent(target)}/prompt`,
@@ -1627,7 +1626,7 @@ export default {
         };
       } catch (error) {
         log("WARN", "media", safe(error));
-        await send(`\u26A0\uFE0F No pude descargar ${escapeHtml(message.document?.file_name ?? "la foto")}.`);
+        await send(t("media_download_fail", { name: escapeHtml(message.document?.file_name ?? t("media_fallback_photo")) }));
         return undefined;
       }
     };
@@ -1798,14 +1797,14 @@ export default {
 
     /** Fire a task now: open its session, prompt, and let the mirror stream. */
     const runTaskNow = async (task: Task): Promise<void> => {
-      if (!existsSync(task.directory)) throw new Error("directorio inexistente: " + task.directory);
-      if (!(await forms.connect())) throw new Error("API local no disponible");
+      if (!existsSync(task.directory)) throw new Error(t("task_dir_missing", { dir: task.directory }));
+      if (!(await forms.connect())) throw new Error(t("err_api_unavailable"));
       const created = await forms.request<{ id?: string }>("POST", "/session", {
         location: { directory: task.directory },
         title: "\u23F0 " + task.name,
         ...(task.model ? { model: { id: task.model.id, providerID: task.model.providerID } } : {}),
       });
-      if (!created?.id) throw new Error("sin id de sesi\u00f3n");
+      if (!created?.id) throw new Error(t("err_no_session_id"));
       await forms.request("POST", "/session/" + encodeURIComponent(created.id) + "/prompt", { text: task.prompt });
     };
 
@@ -1813,24 +1812,24 @@ export default {
     const tickTasks = (): void => {
       const all = readTasks();
       let dirty = false;
-      for (const t of all) {
-        if (!t.enabled || t.nextRun > Date.now()) continue;
+      for (const task of all) {
+        if (!task.enabled || task.nextRun > Date.now()) continue;
         // A task pointing at a directory that no longer exists (the workspace
         // moved, a repo was deleted) would open ghost sessions in a dead cwd:
         // disable it and say so, plainly.
-        if (!existsSync(t.directory)) {
-          t.enabled = false;
-          t.lastStatus = "directorio inexistente: " + t.directory;
+        if (!existsSync(task.directory)) {
+          task.enabled = false;
+          task.lastStatus = t("task_dir_missing", { dir: task.directory });
           dirty = true;
-          log("WARN", "task deshabilitada por directorio inexistente: " + t.directory);
+          log("WARN", "task deshabilitada por directorio inexistente: " + task.directory);
           continue;
         }
-        t.lastRun = Date.now();
-        t.nextRun = nextRunOf(t.schedule, Date.now() + 1000);
-        if (t.schedule.type === "once") t.enabled = false;
+        task.lastRun = Date.now();
+        task.nextRun = nextRunOf(task.schedule, Date.now() + 1000);
+        if (task.schedule.type === "once") task.enabled = false;
         dirty = true;
-        const id = t.id;
-        runTaskNow(t)
+        const id = task.id;
+        runTaskNow(task)
           .then(() => {
             const tasks = readTasks();
             const x = tasks.find((y) => y.id === id);
@@ -1888,8 +1887,8 @@ export default {
       ]);
       return {
         text:
-          `\u{1F9F1} Modelo para <b>${escapeHtml(tracked?.title ?? state.target.slice(0, 18))}</b>\n` +
-          `Eleg\u00ed un proveedor para ver sus modelos.`,
+          t("models_pick_header", { label: escapeHtml(tracked?.title ?? state.target.slice(0, 18)) }) +
+          t("models_pick_provider"),
         keyboard,
       };
     };
@@ -1921,13 +1920,13 @@ export default {
       const heading = state.chosen
         ? (state.providers.find((p) => p.id === state.chosen)?.name ?? state.chosen)
         : state.search
-          ? `B\u00fasqueda: ${state.search}`
-          : "Todos";
+          ? t("models_search_label", { search: state.search })
+          : t("models_all");
       return {
         text:
-          `\u{1F9F1} Modelo para <b>${escapeHtml(tracked?.title ?? state.target.slice(0, 18))}</b>\n` +
-          `<b>${escapeHtml(heading)}</b> \u2014 p\u00e1gina ${safe + 1} de ${pages}\n` +
-          `Toc\u00e1 uno para cambiarlo (o <code>/models texto</code> para buscar otro).`,
+          t("models_pick_header", { label: escapeHtml(tracked?.title ?? state.target.slice(0, 18)) }) +
+          t("models_page_header", { heading: escapeHtml(heading), page: safe + 1, pages }) +
+          t("models_pick_hint"),
         keyboard,
       };
     };
@@ -1941,7 +1940,7 @@ export default {
       ]);
       const tracked = sessions.get(card.target);
       return {
-        text: `\u{1F916} Agente para <b>${escapeHtml(tracked?.title ?? card.target.slice(0, 18))}</b>\nToc\u00e1 uno para cambiarlo.`,
+        text: t("agents_pick_header", { label: escapeHtml(tracked?.title ?? card.target.slice(0, 18)) }),
         keyboard,
       };
     };
@@ -2059,7 +2058,7 @@ export default {
           const tracked = target ? sessions.get(target) : undefined;
           await telegram.sendMessage(
             chatId,
-            `\u2630 <b>opencode-tg</b>${tracked ? ` \u2014 hilo de <b>${escapeHtml(tracked.title.slice(0, 48))}</b>` : ""}`,
+            tracked ? t("menu_header_thread", { title: escapeHtml(tracked.title.slice(0, 48)) }) : t("menu_header_plain"),
             {
               parseMode: "HTML",
               ...(threadSession ? { messageThreadId: threadOf(threadSession) } : {}),
@@ -2172,7 +2171,7 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : "No pude leer la sesi\u00f3n: " + escapeHtml(String((error as Error).message).slice(0, 150)),
+                : t("err_read_session") + escapeHtml(String((error as Error).message).slice(0, 150)),
             );
             return;
           }
@@ -2192,13 +2191,13 @@ export default {
           const identity = (await sessionIdentityOf(target, info)) ?? { model: info.model, agent: info.agent };
           const modelLine = identity.model?.id
             ? `🧪 <b>${escapeHtml(identity.model.providerID ? (provName.get(identity.model.providerID) ?? identity.model.providerID) + " · " : "")}</b><code>${escapeHtml(identity.model.id)}</code>`
-            : "🧪 aún sin turnos registrados";
+            : t("status_no_turns");
           const lines = [
             `📊 <b>${escapeHtml(info.title ?? sessions.get(target)?.title ?? target.slice(0, 18))}</b>`,
-            `${modelLine} · agente <code>${escapeHtml(identity.agent ?? "?")}</code>`,
+            modelLine + t("status_agent", { agent: escapeHtml(identity.agent ?? "?") }),
             `🪙 ${fmtCost(info.cost ?? 0)} · 📥 ${fmtTokens(tokens.input ?? 0)} · 📤 ${fmtTokens(tokens.output ?? 0)} · 🧠 ${fmtTokens(tokens.reasoning ?? 0)} · ⚡ ${fmtTokens(tokens.cache?.read ?? 0)}`,
           ];
-          if (info.time?.updated) lines.push(`\u{1F550} \u00daltima actividad ${fmtAgo(info.time.updated)}`);
+          if (info.time?.updated) lines.push(t("status_last_activity", { ago: fmtAgo(info.time.updated) }));
           if (Array.isArray(providers) && providers.length > 0) {
             const names = providers
               .slice(0, 8)
@@ -2229,7 +2228,7 @@ export default {
             try {
               await forms.request("POST", `/api/experimental/mcp/${encodeURIComponent(name)}/${action}`, {});
               await reply(
-                `\u{1F50C} MCP ${action === "connect" ? "conectado" : "desconectado"}: <b>${escapeHtml(name)}</b>`,
+                t(action === "connect" ? "mcp_connected" : "mcp_disconnected", { name: escapeHtml(name) }),
               );
             } catch (error) {
               log("WARN", "mcp " + action, safe(error));
@@ -2435,7 +2434,7 @@ export default {
               (m) => `${m.providerID}/${m.modelID}` === rest || m.modelID === rest,
             );
             if (!hit) {
-              await reply(`No encuentro <code>${escapeHtml(rest)}</code> en el cat\u00e1logo \u2014 mir\u00e1 <code>/models</code>`);
+              await reply(t("models_not_in_catalog", { model: escapeHtml(rest) }));
               return;
             }
             const full = `${hit.providerID}/${hit.modelID}`;
@@ -2492,14 +2491,14 @@ export default {
           const parsed = (await import("node:fs")).readFileSync(file, "utf8");
           try {
             const cfg = JSON.parse(stripJsonc(parsed)) as Record<string, unknown>;
-            const lines = [`\u{1F527} <b>Config del proyecto</b> \u00b7 <code>${escapeHtml((directory.split(/[\\/]/).filter(Boolean).pop() ?? directory))}</code>`];
-            lines.push(`Modelo default: <code>${escapeHtml(typeof cfg.model === "string" ? cfg.model : "(ninguno \u2014 global)")}</code>`);
+            const lines = [t("config_card_title", { dir: escapeHtml((directory.split(/[\\/]/).filter(Boolean).pop() ?? directory)) })];
+            lines.push(t("config_model_default", { model: escapeHtml(typeof cfg.model === "string" ? cfg.model : t("config_none_global")) }));
             if (cfg.agents && typeof cfg.agents === "object") lines.push(`Agents custom: ${Object.keys(cfg.agents as object).length}`);
             if (cfg.mcp && typeof cfg.mcp === "object" && "servers" in (cfg.mcp as object)) {
               lines.push(`MCP servers: ${Object.keys((cfg.mcp as Record<string, unknown>).servers as object).join(", ")}`);
             }
-            if (Array.isArray(cfg.permissions)) lines.push(`Reglas de permiso: ${cfg.permissions.length}`);
-            lines.push(`\nCambiar default: <code>/config model proveedor/modelo</code>`);
+            if (Array.isArray(cfg.permissions)) lines.push(t("config_perm_rules", { n: cfg.permissions.length }));
+            lines.push(t("config_change_default"));
             await reply(lines.join("\n"));
           } catch {
             await reply(t("config_parse_fail"));
@@ -2546,7 +2545,7 @@ export default {
             await reply(t("vcs_clean"));
             return;
           }
-          const lines = [`\u{1F5C3} <b>Git \u00b7 cambios en el proyecto</b> \u2014 ${rows.length} archivo(s)`];
+          const lines = [t("git_changes_header", { n: rows.length })];
           for (const row of rows.slice(0, 25)) {
             const file = String(row.file ?? "?");
             const add = Number(row.additions ?? 0);
@@ -2554,7 +2553,7 @@ export default {
             const mark = String(row.status ?? "") === "added" ? "+" : String(row.status ?? "") === "deleted" ? "\u2212" : "~";
             lines.push(`<code>${mark}</code> ${escapeHtml(file)} <b>+${add}</b> <i>\u2212${del}</i>`);
           }
-          if (rows.length > 25) lines.push(`(\u2026y ${rows.length - 25} m\u00e1s)`);
+          if (rows.length > 25) lines.push(t("and_more", { n: rows.length - 25 }));
           if (chatId !== undefined) {
             await telegram
               .sendMessage(chatId, lines.join("\n"), {
@@ -2621,7 +2620,7 @@ export default {
           ).catch(() => undefined);
           const results = Array.isArray(found) ? found : [];
           if (results.length === 0) {
-            await reply(`Nada con \u00ab${escapeHtml(query)}\u00bb en el proyecto.`);
+            await reply(t("search_nothing", { query: escapeHtml(query) }));
             return;
           }
           const rows: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -2630,7 +2629,7 @@ export default {
             if (!p) continue;
             rows.push([{ text: "\u{1F4C4} " + p.slice(0, 55), callback_data: "lsd:" + lsKeyOf(p) }]);
           }
-          if (results.length > 25) rows.push([{ text: `(\u2026y ${results.length - 25} m\u00e1s)`, callback_data: "find:" + query }]);
+          if (results.length > 25) rows.push([{ text: t("and_more", { n: results.length - 25 }), callback_data: "find:" + query }]);
           if (chatId !== undefined) {
             await telegram
               .sendMessage(chatId, t("find_results_header", { n: results.length, query: escapeHtml(query) }), {
@@ -2675,27 +2674,32 @@ export default {
           ).catch(() => undefined);
           const comps = Array.isArray(compactions) ? compactions : [];
           const lines = [
-            `\u{1F4CA} <b>Contexto de la sesi\u00f3n</b>`,
-            `Modelo: <code>${escapeHtml(modelRef?.providerID ?? "?")}/${escapeHtml(modelRef?.id ?? "?")}</code> (l\u00edmite: ${limit !== undefined ? fmtTokens(limit) : "?"})`,
+            t("context_title"),
+            t("context_model", {
+              model: `${escapeHtml(modelRef?.providerID ?? "?")}/${escapeHtml(modelRef?.id ?? "?")}`,
+              limit: limit !== undefined ? fmtTokens(limit) : "?",
+            }),
           ];
           const toks = info.tokens;
           if (toks) {
             lines.push(
-              `\u{1F4E5} Input acumulado: ${fmtTokens((toks.input ?? 0) + (toks.reasoning ?? 0) + (toks.cache?.read ?? 0))}` +
-                ` \u00b7 \u{1F4E4} Output: ${fmtTokens(toks.output ?? 0)}`,
+              t("context_tokens", {
+                input: fmtTokens((toks.input ?? 0) + (toks.reasoning ?? 0) + (toks.cache?.read ?? 0)),
+                output: fmtTokens(toks.output ?? 0),
+              }),
             );
           }
-          if (info.cost !== undefined) lines.push(`\u{1FA99} Costo: ${fmtCost(info.cost)}`);
+          if (info.cost !== undefined) lines.push(t("context_cost", { cost: fmtCost(info.cost) }));
           lines.push(
             comps.length > 0
-              ? `\u{1F4DC} Compactaciones: ${comps.length} (\u00faltima: ${escapeHtml(String(comps[comps.length - 1]?.reason ?? "?"))})`
-              : `\u{1F4DC} Sin compactaciones a\u00fan.`,
+              ? t("context_compactions", { n: comps.length, reason: escapeHtml(String(comps[comps.length - 1]?.reason ?? "?")) })
+              : t("context_no_compactions"),
           );
           if (comps.length > 0) {
             const summary = String(comps[comps.length - 1]?.summary ?? "").slice(0, 200);
             if (summary) lines.push(`\n<i>${escapeHtml(summary)}\u2026</i>`);
           }
-          lines.push(`\n${limit !== undefined && toks !== undefined && (toks.input ?? 0) + (toks.cache?.read ?? 0) > limit * 0.5 ? "\u26A0\uFE0F Va denso \u2014 consider\u00e1 <code>/compact</code>." : ""}`);
+          lines.push(`\n${limit !== undefined && toks !== undefined && (toks.input ?? 0) + (toks.cache?.read ?? 0) > limit * 0.5 ? t("context_dense") : ""}`);
           await reply(lines.filter((l) => l.length > 1).join("\n"));
           return;
         }
@@ -2740,7 +2744,7 @@ export default {
               await reply(t("worktree_created", { name: escapeHtml(name) }));
             } catch (error) {
               log("WARN", "worktree create", safe(error));
-              await reply(t("err_generic", { action: "pudo crear el worktree", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
+              await reply(t("err_generic", { action: t("act_worktree"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
             }
             return;
           }
@@ -2778,16 +2782,16 @@ export default {
           const tracked = sessions.get(target);
           try {
             const forked = await forms.request<{ id?: string }>("POST", "/session/" + encodeURIComponent(target) + "/fork", {});
-            if (!forked?.id) throw new Error("sin id del fork");
+            if (!forked?.id) throw new Error(t("err_no_fork_id"));
             await reply(
-              `\u{1F374} Fork de <b>${escapeHtml(tracked?.title ?? target.slice(0, 18))}</b> creado: <code>${forked.id.slice(0, 22)}\u2026</code>\nEscribile \u2014 su hilo se crea con el primer mensaje.`,
+              t("fork_receipt", { label: escapeHtml(tracked?.title ?? target.slice(0, 18)), id: forked.id.slice(0, 22) }),
             );
           } catch (error) {
             log("WARN", "fork", safe(error));
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : "No se pudo forkear: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                : t("fork_failed") + escapeHtml(String((error as Error).message).slice(0, 200)),
             );
           }
           return;
@@ -2809,7 +2813,7 @@ export default {
               "GET",
               "/api/experimental/session/" + encodeURIComponent(target) + "/export",
             );
-            if (!exported) throw new Error("respuesta vac\u00eda del export");
+            if (!exported) throw new Error(t("err_empty_export"));
             const text = JSON.stringify(exported, null, 2);
             if (text.length > 40 * 1024 * 1024) {
               await reply(t("export_too_big"));
@@ -2818,7 +2822,7 @@ export default {
             const fs = await import("node:fs");
             const os = await import("node:os");
             const pathMod = await import("node:path");
-            const safeName = (tracked?.title ?? target.slice(0, 18)).replace(/[^\w\u00c0-\u017f-]+/g, "_").slice(0, 40) || "sesion";
+            const safeName = (tracked?.title ?? target.slice(0, 18)).replace(/[^\w\u00c0-\u017f-]+/g, "_").slice(0, 40) || t("fallback_session_slug");
             const tmp = pathMod.join(os.tmpdir(), `tg-export-${safeName}-${Date.now()}.json`);
             fs.writeFileSync(tmp, text, "utf8");
             try {
@@ -2863,7 +2867,7 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? t("export_unloaded")
-                : t("err_generic", { action: "exportar", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
+                : t("err_generic", { action: t("act_export"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -2920,7 +2924,7 @@ export default {
                 : session.idle
                   ? "\u{1F4A4}"
                   : "\u{1F7E2}";
-            const title = session.title || "(sin t\u00edtulo)";
+            const title = session.title || t("no_title");
             const badge = session.parentID ? " \u{1F916} sub" : "";
             return `${mark} <code>${session.id.slice(0, 18)}\u2026</code> ${escapeHtml(title)}${badge}`;
           };
@@ -2949,7 +2953,7 @@ export default {
           foreground = target;
           watched.add(target);
           track(target);
-          const label = sessions.get(target)?.title ?? "(sin t\u00edtulo)";
+          const label = sessions.get(target)?.title ?? t("no_title");
           await reply(`\u{1F3AF} Escribo a <b>${escapeHtml(label)}</b> <code>${target.slice(0, 18)}\u2026</code>\nY vigilo sus novedades.`);
           return;
         }
@@ -2979,8 +2983,8 @@ export default {
           // debugging lost half a day to this being invisible. Say it plainly.
           await reply(
             mirrorAll
-              ? `Vigilando <code>${escapeHtml(target)}</code>.\n\u26A0\uFE0F Est\u00e1s en <code>mirror=all</code>: ahora SOLO esta sesi\u00f3n se espeja \u2014 las dem\u00e1s quedan mudas. <code>/watch off</code> restaura el espejo completo.`
-              : `Vigilando <code>${escapeHtml(target)}</code>`,
+              ? t("watch_single_warning", { target: escapeHtml(target) })
+              : t("watch_now", { target: escapeHtml(target) }),
           );
           return;
         }
@@ -3019,7 +3023,7 @@ export default {
               `/session/${encodeURIComponent(target)}/inbox`,
             );
           } catch (error) {
-            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : `No pude leer el inbox: ${escapeHtml(String((error as Error).message).slice(0, 150))}`);
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : t("inbox_read_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 150)) }));
             return;
           }
           const card = {
@@ -3033,12 +3037,12 @@ export default {
               const text =
                 payload?.text ??
                 (itemType === "synthetic"
-                  ? "mensaje sintético"
+                  ? t("item_synthetic")
                   : itemType === "compaction"
-                    ? "compactación"
+                    ? t("item_compaction")
                     : itemType === "move"
-                      ? "movimiento"
-                      : "(sin texto)");
+                      ? t("item_move")
+                      : t("item_no_text"));
               return { id: String(item.id ?? ""), text };
             }),
           };
@@ -3081,7 +3085,7 @@ export default {
             if (flushTarget?.parentID) {
               const parent = sessions.get(flushTarget.parentID);
               await reply(
-                `\u{1F916} Ese es un subagente${parent ? ` de <b>${escapeHtml(parent.title)}</b>` : ""} \u2014 su tarea la maneja la sesi\u00f3n padre. No se inyect\u00f3 nada.`,
+                t("subagent_is") + (parent ? ` ${t("subagent_owner")} <b>${escapeHtml(parent.title)}</b>` : "") + " \u2014 " + t("subagent_no_inject_tail"),
               );
               return;
             }
@@ -3091,11 +3095,11 @@ export default {
                 `/session/${encodeURIComponent(session)}/prompt`,
                 { text: body, delivery: "steer" },
               );
-              if (!sent?.id) throw new Error("sin message id");
-              await reply(`\u25B6 Inyectado al turno en curso: ${escapeHtml(body.slice(0, 160))}`);
+              if (!sent?.id) throw new Error(t("err_no_message_id"));
+              await reply(t("steer_injected", { body: escapeHtml(body.slice(0, 160)) }));
             } catch (error) {
               log("WARN", "flush steer", safe(error));
-              await reply(`\u274C No se pudo inyectar: ${escapeHtml(String((error as Error).message).slice(0, 200))}`);
+              await reply(t("steer_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
             }
             return;
           }
@@ -3107,7 +3111,7 @@ export default {
               `/session/${encodeURIComponent(session)}/inbox`,
             );
           } catch (error) {
-            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : `No pude leer el inbox: ${escapeHtml(String((error as Error).message).slice(0, 150))}`);
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : t("inbox_read_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 150)) }));
             return;
           }
           const items = Array.isArray(inbox) ? inbox : [];
@@ -3130,8 +3134,8 @@ export default {
           }
           await reply(
             moved > 0
-              ? `\u25B6 ${moved} mensaje(s) adelantado(s) al turno en curso.`
-              : "\u{1F4E5} El inbox no retiene nada ahora \u2014 todo lo que mandaste ya est\u00e1 dentro del turno.",
+              ? t("queue_flushed_moved", { n: moved })
+              : t("queue_flushed_empty"),
           );
           return;
         }
@@ -3152,7 +3156,7 @@ export default {
               `/session/${encodeURIComponent(target)}/inbox`,
             );
           } catch (error) {
-            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : `No pude leer el inbox: ${escapeHtml(String((error as Error).message).slice(0, 150))}`);
+            await reply(isSessionNotFound(error) ? SESSION_UNLOADED : t("inbox_read_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 150)) }));
             return;
           }
           const items = Array.isArray(inbox) ? inbox : [];
@@ -3206,7 +3210,7 @@ export default {
               return `${icon} ${e.tool ? `<code>${escapeHtml(e.tool)}</code> ` : ""}${escapeHtml(text)}`;
             })
             .join("\n");
-          await reply(`\u{1F4DC} <b>${escapeHtml(label)}</b> — \u00faltimos ${entries.length}\n${body}`);
+          await reply(t("queue_card_header", { label: escapeHtml(label), n: entries.length, body }));
           return;
         }
 
@@ -3232,15 +3236,15 @@ export default {
             );
             await reply(
               result?.interrupted
-                ? `\u{1F6D1} Cancelado el turno de <b>${escapeHtml(label)}</b>.`
-                : `\u{1F6D1} <b>${escapeHtml(label)}</b> no ten\u00eda turno corriendo.`,
+                ? t("kill_ok", { label: escapeHtml(label) })
+                : t("kill_no_turn", { label: escapeHtml(label) }),
             );
           } catch (error) {
             log("WARN", "kill", safe(error));
             await reply(
               isSessionNotFound(error)
-                ? SESSION_UNLOADED + "\n(No est\u00e1 activa \u2014 no hay turno que cancelar.)"
-                : `\u274C no se pudo cancelar: ${escapeHtml(String((error as Error).message).slice(0, 200))}`,
+                ? SESSION_UNLOADED + t("kill_not_active")
+                : t("kill_failed", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -3266,7 +3270,7 @@ export default {
               location: { directory },
               ...(title ? { title: title.slice(0, 60) } : {}),
             });
-            if (!created?.id) throw new Error("sin id de sesi\u00f3n");
+            if (!created?.id) throw new Error(t("err_no_session_id"));
             const short = (directory.split(/[\\/]/).filter(Boolean).pop() ?? directory) as string;
             await reply(
               t("new_session_done", { id: created.id.slice(0, 22), project: escapeHtml(short) }) +
@@ -3358,7 +3362,7 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : t("err_generic", { action: "compactar", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
+                : t("err_generic", { action: t("act_compact"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -3628,7 +3632,7 @@ export default {
               const info = await forms.request<ApiSession>("GET", "/session/" + encodeURIComponent(target)).catch(() => undefined);
               const identity = await sessionIdentityOf(target, info);
               const modelRef = identity?.model;
-              if (!modelRef?.id) throw new Error("sin modelo para la sesión");
+              if (!modelRef?.id) throw new Error(t("err_no_model"));
               const exported = await forms
                 .request<Record<string, unknown>>("GET", "/api/experimental/session/" + encodeURIComponent(target) + "/export")
                 .catch(() => undefined);
@@ -3641,16 +3645,15 @@ export default {
                 "/api/experimental/generate",
                 {
                   prompt:
-                    `Una conversación se titula "${info?.title ?? identity?.model?.id ?? ""}". ` +
-                    `Fragmentos recientes: ${recent || "(sin mensajes)"}.\n` +
-                    "Proponé 3 títulos cortos (máximo 6 palabras cada uno) para esta conversación. " +
-                    "Respondé SOLO los 3 títulos, uno por línea, sin numeración ni comillas.",
+                    t("title_prompt_intro", { title: info?.title ?? identity?.model?.id ?? "" }) +
+                    t("title_prompt_fragments", { recent: recent || t("title_prompt_no_fragments") }) +
+                    t("title_prompt_ask"),
                   model: { id: modelRef.id, providerID: modelRef.providerID },
                 },
                 150_000,
               );
               const options = titleOptionsFrom(generateTextOf(raw));
-              if (options.length === 0) throw new Error("sin sugerencias");
+              if (options.length === 0) throw new Error(t("rename_no_suggestions"));
               const keyboard = options.map((o, i) => [{ text: o.slice(0, 60), callback_data: `rnme:${i}` }]);
               const sent = await telegram.sendMessage(chatId ?? 0, t("rename_pick_header"), {
                 parseMode: "HTML",
@@ -3772,7 +3775,7 @@ export default {
                 settled = true;
                 const output = String((last.output as { output?: unknown } | undefined)?.output ?? "");
                 const exit = Number(last.exit ?? "?");
-                const tail = output.length > 900 ? "\u2026" + output.slice(-900) : output || "(sin salida)";
+                const tail = output.length > 900 ? "\u2026" + output.slice(-900) : output || t("sh_no_output");
                 await reply(`${t("sh_done", { exit })}\n<code>${escapeHtml(tail)}</code>`);
               }
             }
@@ -3782,7 +3785,7 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : "No se pudo correr: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                : t("err_generic", { action: t("act_run"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -3814,7 +3817,7 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : "No se pudo anotar: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                : t("err_generic", { action: t("act_note"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -3882,7 +3885,7 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : "No pude leer las instrucciones: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                : t("err_generic", { action: t("act_instructions"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -3923,7 +3926,7 @@ export default {
             await reply(t("perms_header") + "\n" + lines.join("\n"));
           } catch (error) {
             log("WARN", "perms", safe(error));
-            await reply(t("err_generic", { action: "leer los permisos", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
+            await reply(t("err_generic", { action: t("act_perms"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
           }
           return;
         }
@@ -4046,7 +4049,7 @@ export default {
             await reply(
               isSessionNotFound(error)
                 ? SESSION_UNLOADED
-                : "No se pudo mover: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                : t("err_generic", { action: t("act_move"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
             );
           }
           return;
@@ -4071,10 +4074,10 @@ export default {
             }
             try {
               await forms.request("POST", "/session/" + encodeURIComponent(target) + "/command", { text });
-              await reply(`\u23F1 Comando corriendo: <code>${escapeHtml(text.slice(0, 80))}</code>`);
+              await reply(t("cmd_running", { cmd: escapeHtml(text.slice(0, 80)) }));
             } catch (error) {
               log("WARN", "command run", safe(error));
-              await reply(t("err_generic", { action: "correr", detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
+              await reply(t("err_generic", { action: t("act_run"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
             }
             return;
           }
@@ -4129,7 +4132,7 @@ export default {
             );
           } catch (error) {
             log("WARN", "skill.list failed", safe(error));
-            await reply(`No pude listar las skills: <code>${escapeHtml(String(error))}</code>`);
+            await reply(t("skills_list_fail", { detail: escapeHtml(String(error)) }));
           }
           return;
         }
@@ -4554,28 +4557,28 @@ export default {
                 // park the binary on disk and hand over the path.
                 try {
                   const doc = await telegram.getFile(message.document.file_id);
-                  if (!doc.file_path) throw new Error("sin file_path");
+                  if (!doc.file_path) throw new Error(t("err_no_file_path"));
                   const buffer = await telegram.downloadFile(doc.file_path);
-                  const name = message.document.file_name ?? "archivo";
+                  const name = message.document.file_name ?? t("fallback_file_name");
                   const mime = message.document.mime_type ?? "";
                   const caption = ((message.caption ?? "").trim()) || "";
                   if (buffer.length > 20 * 1024 * 1024) {
-                    await send("\u26A0\uFE0F El documento supera los 20 MB que Telegram entrega a un bot.", byThread);
+                    await send(t("doc_too_big"), byThread);
                     return;
                   }
                   if (isTextLike(name, mime, buffer)) {
                     const content = decodeText(buffer).slice(0, DOC_MAX_CHARS);
-                    const truncated = content.length >= DOC_MAX_CHARS ? "\n\n(truncado)" : "";
+                    const truncated = content.length >= DOC_MAX_CHARS ? t("doc_truncated") : "";
                     const body = caption
-                      ? caption + "\n\nArchivo adjunto \"" + name + "\":\n```\n" + content + truncated + "\n```"
-                      : "El usuario envi\u00f3 el contenido del archivo \"" + name + "\":\n```\n" + content + truncated + "\n```";
+                      ? caption + t("doc_attached", { name }) + content + truncated + "\n```"
+                      : t("doc_content_sent", { name }) + content + truncated + "\n```";
                     await sendPrompt(body, byThread);
                   } else {
                     const saved = saveBinary(name, buffer);
                     const size = (buffer.length / 1024 / 1024).toFixed(2);
                     const body = caption
-                      ? caption + "\n\nEl usuario envi\u00f3 el archivo binario \"" + name + "\" (" + mime + ", " + size + " MB), guardado en: " + saved
-                      : "El usuario envi\u00f3 el archivo binario \"" + name + "\" (" + mime + ", " + size + " MB), guardado en: " + saved + " \u2014 abrilo con tus file tools si lo necesit\u00e1s.";
+                      ? caption + "\n\n" + t("doc_binary_sent", { name, mime, size, saved })
+                      : t("doc_binary_sent", { name, mime, size, saved }) + t("doc_binary_hint");
                     await sendPrompt(body, byThread);
                   }
                 } catch (error) {
@@ -4588,7 +4591,7 @@ export default {
                 // Videos are always binary: save to disk, hand over the path.
                 try {
                   const file = await telegram.getFile(message.video.file_id);
-                  if (!file.file_path) throw new Error("sin file_path");
+                  if (!file.file_path) throw new Error(t("err_no_file_path"));
                   const buffer = await telegram.downloadFile(file.file_path);
                   if (buffer.length > 20 * 1024 * 1024) {
                     await send(t("video_too_big"), byThread);
@@ -4728,7 +4731,7 @@ export default {
                   await telegram
                     .sendMessage(
                       cq.message?.chat?.id ?? chatId ?? 0,
-                      `▶️ Ejecutando (confirmado):\n<code>${escapeHtml(pending.command.slice(0, 300))}</code>`,
+                      t("sh_running_confirmed", { cmd: escapeHtml(pending.command.slice(0, 300)) }),
                       {
                         parseMode: "HTML",
                         ...(cq.message?.message_thread_id !== undefined
@@ -4744,7 +4747,7 @@ export default {
                       cq.message?.chat?.id ?? chatId ?? 0,
                       isSessionNotFound(error)
                         ? SESSION_UNLOADED
-                        : "No se pudo correr: " + escapeHtml(String((error as Error).message).slice(0, 200)),
+                        : t("err_generic", { action: t("act_run"), detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
                       {
                         parseMode: "HTML",
                         ...(cq.message?.message_thread_id !== undefined
@@ -4943,15 +4946,15 @@ export default {
                   log("INFO", "revert confirmado desde TG: " + sessionID.slice(0, 18));
                   if (cq.message) {
                     await telegram
-                      .editMessageText(cq.message.chat.id, cq.message.message_id, "\u21A9\uFE0F Turno deshecho.", { parseMode: "HTML" })
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, t("revert_done_ack"), { parseMode: "HTML" })
                       .catch(() => undefined);
                   }
                 } catch (error) {
                   log("WARN", "revert commit", safe(error));
                   await ack(
                     isSessionNotFound(error)
-                      ? "Esa sesi\u00f3n no est\u00e1 activa en el server \u2014 abrila en la PC primero."
-                      : "No se pudo deshacer: " + String((error as Error).message).slice(0, 120),
+                      ? t("revert_needs_active")
+                      : t("revert_failed") + String((error as Error).message).slice(0, 120),
                   );
                 }
                 return;
@@ -5044,7 +5047,7 @@ export default {
                 }
                 const fs = await import("node:fs");
                 const size = fs.statSync(full).size;
-                const name = full.split(/[\\/]/).pop() ?? "archivo";
+                const name = full.split(/[\\/]/).pop() ?? t("fallback_file_name");
                 if (!isTextLike(name, "", Buffer.alloc(0))) {
                   await ack(t("ls_binary"));
                   return;
@@ -5068,7 +5071,7 @@ export default {
                 await ack(t("worktree_opening"));
                 try {
                   const created = await forms.request<{ id?: string }>("POST", "/session", { location: { directory: dir } });
-                  if (!created?.id) throw new Error("sin id");
+                  if (!created?.id) throw new Error(t("err_no_id"));
                   const name = dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
                   if (cq.message) {
                     await telegram
@@ -5098,10 +5101,10 @@ export default {
                 await ack(decision === "reject" ? t("perm_rejected") : decision === "always" ? t("perm_always") : t("perm_once_ok"));
                 if (cq.message) {
                   const label = decision === "reject"
-                    ? "\u2716 Permiso rechazado desde Telegram."
+                    ? t("perm_rejected_edit")
                     : decision === "always"
-                      ? "\u2705 Aprobado siempre (el server recuerda la regla)."
-                      : "\u2705 Aprobado por esta vez.";
+                      ? t("perm_always_edit")
+                      : t("perm_once_edit");
                   await telegram.editMessageText(cq.message.chat.id, cq.message.message_id, label, { parseMode: "HTML" }).catch(() => undefined);
                 }
                 if (await forms.connect()) {
@@ -5144,12 +5147,12 @@ export default {
                     const result = await settleForm(entry, partial, option.label);
                     await ack(
                       result === "ok"
-                        ? "Respondido"
+                        ? t("form_settle_ok")
                         : result === "already"
-                          ? "Ya estaba respondida"
+                          ? t("form_settle_already")
                           : result === "dry"
-                            ? "(dry) anotado"
-                            : "No se pudo responder",
+                            ? t("form_settle_dry")
+                            : t("form_settle_fail"),
                     );
                   } else {
                     entry.answers = mergeAnswer(entry.answers, partial);
@@ -5158,15 +5161,15 @@ export default {
                       const result = await settleForm(entry, entry.answers, chosen);
                       await ack(
                         result === "ok"
-                          ? "Respondido"
+                          ? t("form_settle_ok")
                           : result === "already"
-                            ? "Ya estaba respondida"
-                            : "No se pudo responder",
+                            ? t("form_settle_already")
+                            : t("form_settle_fail"),
                       );
                     } else {
                       await rerenderForm(entry);
                       const done = entry.choices.filter((c) => entry.answers[c.fieldKey] !== undefined).length;
-                      await ack(`Pregunta respondida (${done}/${entry.choices.length})`);
+                      await ack(t("form_progress", { done, total: entry.choices.length }));
                     }
                   }
                 } else {
@@ -5191,8 +5194,8 @@ export default {
                 entry.freeText = !entry.freeText;
                 await ack(
                   entry.freeText
-                    ? "Modo texto libre: tu próximo mensaje se toma tal cual como respuesta"
-                    : "Modo texto cancelado",
+                    ? t("form_freetext_on")
+                    : t("form_freetext_off"),
                 );
                 return;
               }
@@ -5307,7 +5310,7 @@ export default {
                   await ack(t("models_chosen", { name: chosen.name ?? chosen.id }));
                   if (cq.message) {
                     await telegram
-                      .editMessageText(cq.message.chat.id, cq.message.message_id, "\u{1F9F1} Modelo: <code>" + escapeHtml(chosen.id) + "</code>", { parseMode: "HTML" })
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, t("model_set_short", { id: escapeHtml(chosen.id) }), { parseMode: "HTML" })
                       .catch(() => undefined);
                   }
                   await wizardAsk(tsession);
@@ -5330,7 +5333,7 @@ export default {
                       .editMessageText(
                         cq.message.chat.id,
                         cq.message.message_id,
-                        `\u{1F9F1} Modelo \u2192 <b>${escapeHtml(chosen.name ?? chosen.id)}</b> <code>${escapeHtml(chosen.id)}</code>`,
+                        t("model_set_named", { name: escapeHtml(chosen.name ?? chosen.id), id: escapeHtml(chosen.id) }),
                         { parseMode: "HTML" },
                       )
                       .catch(() => undefined);
@@ -5614,10 +5617,10 @@ export default {
                       .request("POST", `/session/${encodeURIComponent(session)}/prompt`, { text: entry.text, delivery: "steer" })
                       .catch((error) => log("WARN", "inbox order send", safe(error)));
                   }
-                  await ack(`Enviados ${ordered.length} en el orden elegido`);
+                  await ack(t("queue_sent_ack", { n: ordered.length }));
                   if (cq.message) {
                     await telegram
-                      .editMessageText(cq.message.chat.id, cq.message.message_id, `\u25B6 ${ordered.length} mensaje(s) enviados en el orden elegido.`, { parseMode: "HTML" })
+                      .editMessageText(cq.message.chat.id, cq.message.message_id, t("queue_sent_card", { n: ordered.length }), { parseMode: "HTML" })
                       .catch(() => undefined);
                   }
                   inboxCards.drop(cq.message?.message_id);
@@ -5676,7 +5679,7 @@ export default {
                 }
                 if (action === "edit") {
                   inboxEdit = { id: item.id, text: item.text, session };
-                  await ack(`Reemplazo armado \u2014 mand\u00e1 el texto nuevo para: "${item.text.slice(0, 60)}"`);
+                  await ack(t("replace_armed", { text: item.text.slice(0, 60) }));
                   return;
                 }
                 await ack(t("action_unknown"));
@@ -5737,7 +5740,7 @@ export default {
                       .editMessageText(
                         cq.message.chat.id,
                         cq.message.message_id,
-                        `\u{1F916} Agente \u2192 <code>${escapeHtml(chosen.name ?? chosen.id)}</code>`,
+                        t("agent_set", { name: escapeHtml(chosen.name ?? chosen.id) }),
                         { parseMode: "HTML" },
                       )
                       .catch(() => undefined);
