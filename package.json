@@ -2,6 +2,7 @@
   "name": "opencode-tg",
   "private": true,
   "version": "1.0.0",
+  "license": "MIT",
   "type": "module",
   "description": "Telegram bridge that runs inside the OpenCode server (no runtime dependencies)",
   "engines": {

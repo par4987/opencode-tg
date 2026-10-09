@@ -115,10 +115,15 @@ Common `stt` options: `whisper` and `model` (local paths), `baseUrl` +
 ```sh
 npm install
 npm run typecheck   # tsc with the project's tsconfig — 0 errors
-npm test            # the 15 suites (~205 checks) with their own runner
+npm test            # the 20 suites (476 checks) with their own runner
 ```
 
 GitHub Actions runs both on every push (`.github/workflows/ci.yml`).
+
+Twenty suites (`_setupcheck` … `_extracheck`, 476 checks) cover the event
+pump, rendering, topics, forms, configuration, tasks, ingest, leader
+election, per-message cards, i18n, outgoing media, STT, dangerous
+operations and API helpers. Typecheck: `tsc --noEmit index.ts`.
 
 ## Maintenance
 
@@ -148,3 +153,7 @@ src/              transport (telegram), topics, renderer, coalescing,
 scripts/          the test suites + example generators (_gen_*)
 MANUAL.md/.en.md  end-user manual (Spanish / English)
 ```
+
+## License
+
+[MIT](LICENSE) © 2026 par4987
