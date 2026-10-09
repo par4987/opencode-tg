@@ -12,6 +12,10 @@ import { join } from "node:path";
 // the tests. Dynamic import: a static one is hoisted above this assignment
 // and the env would arrive too late to the plugin.
 process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-setup-")), "locale.txt");
+// Token-keyed state (leader lock + offsets + legacy migration) must never
+// touch the real bridge's dir — without this the suite migrated the REAL
+// offset.txt into a fingerprint file during the run.
+process.env.TG_TOKEN_STATE_DIR = mkdtempSync(join(tmpdir(), "tg-setup-state-"));
 delete process.env.TG_LOCALE;
 const plugin = (await import("../index.js")).default;
 

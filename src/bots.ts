@@ -27,6 +27,7 @@
  * stubs, and index.ts owns the transports.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { log, safe } from "./log.js";
@@ -75,21 +76,89 @@ export function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "bot";
 }
 
-/** Each bot acknowledges its own updates, so each needs its own offset file. */
-export function offsetPathFor(slug: string): string {
-  const dir = process.env.TG_STATE_DIR ?? join(homedir(), ".opencode", "tg");
-  return join(dir, slug === "main" ? "offset.txt" : `offset-${slug}.txt`);
+/**
+ * The shared, token-keyed state directory. Deliberately NOT per-checkout:
+ * two instances running the same token must meet in ONE place even when
+ * their configs or working copies live elsewhere, so only tests can move it
+ * (TG_TOKEN_STATE_DIR). Everything a token must share — the leader lock and
+ * the acknowledged-update cursor — lives here.
+ */
+export function tokenStateDir(): string {
+  return process.env.TG_TOKEN_STATE_DIR ?? join(homedir(), ".opencode", "tg");
+}
+
+/**
+ * 16 hex chars of SHA-256 — a filename-safe, log-safe fingerprint of the
+ * token. Never reversible, and the whole point: state keyed by WHO polls,
+ * not by WHERE the instance lives.
+ */
+export function tokenFingerprint(token: string): string {
+  return createHash("sha256").update(token).digest("hex").slice(0, 16);
+}
+
+/** The cross-process lock for one token: same token, same file, one poller. */
+export function tokenLockPath(fp: string): string {
+  return join(tokenStateDir(), `leader-${fp}.lock`);
+}
+
+/**
+ * Each bot acknowledges its own updates, keyed by the token fingerprint: any
+ * instance of the same token shares the same cursor, so a leadership
+ * hand-over between instances never replays already-acknowledged messages.
+ */
+export function offsetPathFor(fp: string, slug: string): string {
+  return join(tokenStateDir(), slug === "main" ? `offset-${fp}.txt` : `offset-${fp}-${slug}.txt`);
+}
+
+/**
+ * One-time migration: before the token-keyed cursor, the primary's offset
+ * lived at `offset.txt`. Starting the new naming from scratch would read 0
+ * and Telegram would re-deliver up to 24h of retained updates as fresh
+ * prompts (measured class of failure: the re-delivery loop of 2026-10-07).
+ * Take the MAX of legacy and current, write it to the token-keyed path.
+ * Idempotent — call at setup and again at leader start.
+ */
+export function bootstrapTokenOffsets(specs: BotSpec[]): void {
+  const legacy = join(tokenStateDir(), "offset.txt");
+  let legacyValue = 0;
+  try {
+    const parsed = Number(readFileSync(legacy, "utf8").trim());
+    if (Number.isFinite(parsed) && parsed > 0) legacyValue = parsed;
+  } catch {
+    return; /* no legacy file — nothing to migrate */
+  }
+  if (legacyValue <= 0) return;
+  for (const spec of specs) {
+    if (!spec.primary) continue; // extras never had a legacy cursor
+    let current = 0;
+    try {
+      const parsed = Number(readFileSync(spec.offsetPath, "utf8").trim());
+      if (Number.isFinite(parsed)) current = parsed;
+    } catch {
+      /* first run — the token-keyed file does not exist yet */
+    }
+    if (legacyValue > current) {
+      try {
+        if (!existsSync(tokenStateDir())) mkdirSync(tokenStateDir(), { recursive: true });
+        writeFileSync(spec.offsetPath, String(legacyValue));
+        log("INFO", `offset migrado al cursor token-keyed: ${legacyValue}`);
+      } catch (error) {
+        log("WARN", "offset: no se pudo migrar el cursor legacy", safe(error));
+      }
+    }
+  }
 }
 
 /** The primary bot plus every extra token the .env declared, in order. */
 export function buildSpecs(config: Config): BotSpec[] {
+  const fp = tokenFingerprint(config.token);
   const specs: BotSpec[] = [
     {
       name: "main",
       slug: "main",
       token: config.token,
       chatId: config.allowedUsers[0],
-      offsetPath: offsetPathFor("main"),
+      offsetPath: offsetPathFor(fp, "main"),
       primary: true,
     },
   ];
@@ -108,7 +177,7 @@ export function buildSpecs(config: Config): BotSpec[] {
       slug,
       token: extra.token,
       chatId: extra.chatId ?? config.allowedUsers[0],
-      offsetPath: offsetPathFor(slug),
+      offsetPath: offsetPathFor(fp, slug),
       primary: false,
     });
   }

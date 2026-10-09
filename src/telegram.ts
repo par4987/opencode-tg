@@ -208,6 +208,17 @@ export class Telegram {
   }
 
   /**
+   * Re-read the persisted offset, keeping the HIGHER value. A leadership
+   * hand-over bootstraps the token-keyed cursor right before the poll
+   * starts; without this resync the transport would poll from its
+   * construction-time snapshot and re-deliver everything acknowledged since.
+   */
+  resyncOffset(): void {
+    const saved = this.loadOffset();
+    if (saved > this.offset) this.offset = saved;
+  }
+
+  /**
    * Persist the offset. Telegram drops everything below this id only after
    * it is echoed back on the next call, so surviving a crash is what stops a
    * re-delivery loop. Sync write: the process can be killed a tick later.

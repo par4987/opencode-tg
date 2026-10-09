@@ -22,7 +22,7 @@ import { clearDraft, fmtDateTime, formatSchedule, newTaskId, nextRunOf, parseSch
 import { desktopVisibleModels } from "./src/desktop-models.js";
 import { AcpClient, type PermissionOutcome, type RequestPermissionParams } from "./src/acp.js";
 import { loadConfig, type Config, type Mode } from "./src/config.js";
-import { BotRegistry, buildSpecs, claimsFilePath, CLAIM_TRIGGERS, type BotSpec } from "./src/bots.js";
+import { BotRegistry, bootstrapTokenOffsets, buildSpecs, claimsFilePath, CLAIM_TRIGGERS, tokenFingerprint, tokenLockPath, type BotSpec } from "./src/bots.js";
 import { acquireLock, ensureLockDir, heartbeat, lockHeldBy, releaseLock, LOCK_INTERVAL } from "./src/leader.js";
 import { log, safe } from "./src/log.js";
 import { DryRunTelegram, Telegram, type Update } from "./src/telegram.js";
@@ -251,6 +251,8 @@ interface BotRuntime {
   stop: () => Promise<void>;
   /** The transport's poll is turning (dry answers true — nothing polls). */
   alive: () => boolean;
+  /** Pull the freshest persisted cursor — leadership hand-over bootstrap. */
+  resyncOffset: () => void;
   /** Send into this bot's chat, optionally into a session's thread. */
   send: (text: string, session?: string) => Promise<void>;
 }
@@ -347,7 +349,7 @@ function firstSighting(event: { id?: unknown; type?: unknown }): boolean {
   return true;
 }
 
-export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<BridgeSeat> {
+export async function joinBridge(instance: BridgeInstance, mode: Mode, lockFile?: string): Promise<BridgeSeat> {
   const reg = registry();
   reg.members.add(instance);
   reg.memberModes.set(instance, mode);
@@ -400,6 +402,8 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
 
   // Live mode needs one bridge *across processes*, not just within this one:
   // the file lock is what keeps a second OpenCode from polling the same token.
+  // `lockFile` is token-keyed by the caller — same token, same election, even
+  // from a different checkout (the 2026-10-09 silent-thief incident).
   const needsLock = mode === "live";
   if (needsLock) ensureLockDir();
 
@@ -419,7 +423,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
 
   // Only the leader may hold the cross-process lock — a waiting instance that
   // grabbed it would block the real leader in another process.
-  const isLeading = !reg.leader && (!needsLock || acquireLock());
+  const isLeading = !reg.leader && (!needsLock || acquireLock(lockFile));
   if (isLeading) {
     reg.leader = guarded;
     reg.leaderMode = mode;
@@ -428,7 +432,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
     } catch (error) {
       reg.leader = undefined;
       reg.leaderMode = undefined;
-      if (needsLock) releaseLock();
+      if (needsLock) releaseLock(lockFile);
       throw error;
     }
   } else {
@@ -456,7 +460,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
       // and a frozen pollAlive means the loop is stuck inside one call or
       // one handler — make room rather than hold the seat while polling
       // nothing.
-      const holder = lockHeldBy();
+      const holder = lockHeldBy(lockFile);
       if (needsLock && holder !== process.pid) {
         log("WARN", `lock perdido (lo tiene #${holder ?? "?"}) — este proceso deja de sondear`);
         reg.leader = undefined;
@@ -502,18 +506,18 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
           // window where another process grabs the lock mid-hand-off while
           // our own replacement is already starting to poll.
         } else if (needsLock) {
-          releaseLock();
+          releaseLock(lockFile);
         }
         return;
       }
-      if (needsLock) heartbeat();
+      if (needsLock) heartbeat(lockFile);
       return;
     }
     if (leader) {
       // Another member of THIS process holds the seat. Its own watchdog may
       // be the piece that died — watch it: a leader nobody watches is how
       // the bridge went dark for good.
-      const holder = lockHeldBy();
+      const holder = lockHeldBy(lockFile);
       if (needsLock && holder !== process.pid) {
         log("WARN", `lock en manos de #${holder ?? "?"} — el líder local cede el asiento`);
         reg.leader = undefined;
@@ -544,7 +548,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
     // THIS process "wins" it (measured 2026-10-08). This block is
     // synchronous, so check-and-set is atomic within the process — exactly
     // one waiter wins.
-    if (!reg.leader && (!needsLock || acquireLock())) {
+    if (!reg.leader && (!needsLock || acquireLock(lockFile))) {
       reg.leader = guarded;
       reg.leaderMode = mode;
       log("INFO", `toma el liderazgo (pid ${process.pid})`);
@@ -553,7 +557,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
           reg.leader = undefined;
           reg.leaderMode = undefined;
         }
-        if (needsLock) releaseLock();
+        if (needsLock) releaseLock(lockFile);
         log("ERROR", "toma de liderazgo", safe(error));
       });
     }
@@ -582,7 +586,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
           reg.leaderMode = undefined;
           // The failed heir holds nothing; give the lock back so another
           // process does not have to wait out the wedge margin for it.
-          if (needsLock) releaseLock();
+          if (needsLock) releaseLock(lockFile);
           log("ERROR", "traspaso", safe(error));
         }
         // The lock stays with this pid: the promoted member refreshes its
@@ -590,7 +594,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
         // opening a window where another process grabbed the lock
         // mid-hand-off while the promoted member was already polling.
       } else if (needsLock) {
-        releaseLock();
+        releaseLock(lockFile);
       }
     } else {
       // Not the leader, but we may have started as one before being ousted —
@@ -634,6 +638,19 @@ const pluginExport = {
     if (config.bots.topology !== "single" && specs.length < 2) {
       log("WARN", `topologia ${config.bots.topology} sin bots extra \u2014 declara TELEGRAM_BOT_TOKEN_<NOMBRE> en ~/.opencode/tg/.env; corriendo como single`);
     }
+
+    // ── token-keyed cross-process state ──────────────────────────────────────
+    // One token, one poller — ANYWHERE: the lock file is derived from the
+    // token's fingerprint, so a test rig in another checkout with the same
+    // token contends this same election instead of silently stealing every
+    // batch (measured 2026-10-09: a `--profile tg-test` CLI with its own
+    // state dir consumed every message for two hours while production's
+    // queue looked empty). The offset cursor follows the same keying so a
+    // hand-over between differently-located instances never replays.
+    const fp = tokenFingerprint(config.token);
+    const lockFile = tokenLockPath(fp);
+    bootstrapTokenOffsets(specs);
+    log("INFO", `token ${fp} — eleccion por huella (${lockFile})`);
 
     // ── shared state: one per leading process ────────────────────────────────
     const sharedSessions = new Map<string, TrackedSession>();
@@ -754,7 +771,15 @@ const pluginExport = {
     };
 
     async function start(): Promise<void> {
-      for (const runtime of runtimes) await runtime.start();
+      // A hand-over is starting a fresh leader: pull the freshest persisted
+      // cursor (the bootstrap may have just migrated a legacy file) into
+      // every transport BEFORE anything polls, or the first getUpdates
+      // would replay acknowledged messages as new prompts.
+      bootstrapTokenOffsets(specs);
+      for (const runtime of runtimes) {
+        runtime.resyncOffset();
+        await runtime.start();
+      }
       startPump();
       // "ready (dry)" stays byte-identical for the single-bot case — tests
       // and log greps key on it; the count only appears when it matters.
@@ -776,6 +801,7 @@ const pluginExport = {
     const seat = await joinBridge(
       { start, stop, alive: () => !streamClosed && runtimes.some((runtime) => runtime.alive()) },
       config.mode,
+      lockFile,
     );
     // The watchdog timer lives here, outside joinBridge, so the tick is a
     // plain function tests can drive through the exact interleavings that
@@ -6116,6 +6142,7 @@ const pluginExport = {
       start,
       stop,
       alive: () => (dry ? true : telegram.pollAlive()),
+      resyncOffset: () => telegram.resyncOffset(),
       send,
     };
   },

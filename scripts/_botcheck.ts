@@ -12,8 +12,19 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, unlinkSync } from "node:fs";
-import { BotRegistry, buildSpecs, normDir, offsetPathFor, slugify, type BotSpec, type RegistryLookup } from "../src/bots.js";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  BotRegistry,
+  bootstrapTokenOffsets,
+  buildSpecs,
+  normDir,
+  offsetPathFor,
+  slugify,
+  tokenFingerprint,
+  tokenLockPath,
+  type BotSpec,
+  type RegistryLookup,
+} from "../src/bots.js";
 import { TopicStore } from "../src/topics.js";
 import type { Config } from "../src/config.js";
 
@@ -68,12 +79,25 @@ async function main(): Promise<void> {
   check("normDir: vacia queda vacia", normDir("") === "");
   check("slugify: espacios y signos", slugify("SAP Research!") === "sap-research");
   check("slugify: solo basura cae a 'bot'", slugify("!!!") === "bot");
-  process.env.TG_STATE_DIR = DIR;
+  process.env.TG_TOKEN_STATE_DIR = DIR;
+  const FP_MAIN = tokenFingerprint("111:primary");
+  const FP_OTRO = tokenFingerprint("222:otro");
   check(
-    "offsets: uno por bot, el principal conserva offset.txt",
-    offsetPathFor("main").endsWith("offset.txt") && offsetPathFor("sap").endsWith("offset-sap.txt") && offsetPathFor("sap") !== offsetPathFor("main"),
+    "fingerprint: 16 hex, estable y distinta por token",
+    /^[0-9a-f]{16}$/.test(FP_MAIN) && tokenFingerprint("111:primary") === FP_MAIN && FP_MAIN !== FP_OTRO,
   );
-  delete process.env.TG_STATE_DIR;
+  check(
+    "offsets: keyeados por token, uno por bot",
+    offsetPathFor(FP_MAIN, "main").endsWith(`offset-${FP_MAIN}.txt`) &&
+      offsetPathFor(FP_MAIN, "sap").endsWith(`offset-${FP_MAIN}-sap.txt`) &&
+      offsetPathFor(FP_MAIN, "sap") !== offsetPathFor(FP_MAIN, "main"),
+  );
+  check(
+    "mismo token comparte cursor; token distinto no",
+    offsetPathFor(FP_MAIN, "main") === offsetPathFor(FP_MAIN, "main") && offsetPathFor(FP_MAIN, "main") !== offsetPathFor(FP_OTRO, "main"),
+  );
+  check("lock: un archivo de eleccion por token", tokenLockPath(FP_MAIN).endsWith(`leader-${FP_MAIN}.lock`) && tokenLockPath(FP_MAIN) !== tokenLockPath(FP_OTRO));
+  delete process.env.TG_TOKEN_STATE_DIR;
 
   // ── 2. buildSpecs: tokens -> bots ─────────────────────────────────────────
   const specs = buildSpecs(fakeConfig([{ name: "sap", token: "222:x" }, { name: "Web App", token: "333:y", chatId: -100 }]));
@@ -81,8 +105,10 @@ async function main(): Promise<void> {
   check("specs: chat default y override", specs[1].chatId === 42 && specs[2].chatId === -100);
   check("specs: slug saneado", specs[2].slug === "web-app");
   check(
-    "specs: un offset por bot",
-    specs[0].offsetPath !== specs[1].offsetPath && specs[1].offsetPath !== specs[2].offsetPath,
+    "specs: un offset por bot, todos con la huella del token",
+    specs[0].offsetPath !== specs[1].offsetPath &&
+      specs[1].offsetPath !== specs[2].offsetPath &&
+      specs.every((s) => s.offsetPath.includes(`offset-${tokenFingerprint("111:primary")}`)),
   );
   const dupSpecs = buildSpecs(fakeConfig([{ name: "sap", token: "a" }, { name: "SAP!", token: "b" }]));
   check("specs: slug duplicado se ignora", dupSpecs.length === 2, `${dupSpecs.length} specs`);
@@ -179,6 +205,39 @@ async function main(): Promise<void> {
     const reB = new TopicStore(222, file);
     check("recarga: A sigue mapeando", reA.get("ses_a") === 10);
     check("recarga: B sobrevivio a una escritura de A", reB.get("ses_b") === 20);
+  }
+
+  // ── 8. offset migration: the legacy cursor must never be lost ───────────────
+  {
+    process.env.TG_TOKEN_STATE_DIR = DIR;
+    const fp = tokenFingerprint("111:primary");
+    const legacy = join(DIR, "offset.txt");
+    const tokenFile = join(DIR, `offset-${fp}.txt`);
+    const mainSpec = { name: "main", slug: "main", token: "111:primary", offsetPath: tokenFile, primary: true } as BotSpec;
+    const extraSpec = { name: "sap", slug: "sap", token: "222:x", offsetPath: join(DIR, `offset-${fp}-sap.txt`), primary: false } as BotSpec;
+
+    writeFileSync(legacy, "9003");
+    bootstrapTokenOffsets([mainSpec, extraSpec]);
+    check("migracion: el cursor legacy se copia al token-keyed", readFileSync(tokenFile, "utf8") === "9003");
+    check("migracion: los extras no tocan el legacy", !existsSync(extraSpec.offsetPath));
+
+    // A fresher legacy (an old-code leader still acking during the upgrade)
+    // must win: max of both.
+    writeFileSync(legacy, "9100");
+    bootstrapTokenOffsets([mainSpec]);
+    check("migracion: toma el maximo", readFileSync(tokenFile, "utf8") === "9100");
+
+    // A legacy that fell behind never drags the cursor backwards.
+    writeFileSync(legacy, "9050");
+    bootstrapTokenOffsets([mainSpec]);
+    check("migracion: nunca retrocede", readFileSync(tokenFile, "utf8") === "9100");
+
+    // No legacy file: nothing is invented.
+    unlinkSync(legacy);
+    const fresh = join(DIR, `offset-${tokenFingerprint("999:otro")}.txt`);
+    bootstrapTokenOffsets([{ name: "main", slug: "main", token: "999:otro", offsetPath: fresh, primary: true } as BotSpec]);
+    check("migracion: sin legacy no crea nada", !existsSync(fresh));
+    delete process.env.TG_TOKEN_STATE_DIR;
   }
 }
 

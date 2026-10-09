@@ -221,6 +221,10 @@ bots separate the noise: each opens its own chat with you (same
   sessions; `/send` still reaches any session.
 - A session's questions, permissions and voice notes land in the chat of the
   bot mirroring it.
+- One token, one poller: the leader election and the acknowledged-update
+  cursor are shared by token fingerprint (`leader-<fingerprint>.lock`,
+  `offset-<fingerprint>.txt`), so a test instance with the same token in
+  another directory waits instead of stealing messages.
 
 ---
 

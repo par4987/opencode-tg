@@ -207,6 +207,10 @@ Los bots extra separan el ruido: cada uno abre su propio chat con vos (mismo
   sesiones del bot de ese chat; `/send` sigue alcanzando cualquier sesión.
 - Preguntas, permisos y notas de voz de una sesión llegan al chat del bot
   que la espeja.
+- Un token, un solo poller: la elección de líder y el cursor de updates se
+  comparten por huella del token (`leader-<huella>.lock`,
+  `offset-<huella>.txt`), así que una instancia de prueba con el mismo
+  token en otro directorio queda de espera en vez de robar mensajes.
 
 ---
 

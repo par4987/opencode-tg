@@ -15,6 +15,11 @@
  * This deliberately favours "one bridge, always" over "fastest to grab": a
  * tie is resolved by the last writer, and `firstSighting()` in index.ts is the
  * backstop that drops the duplicate events a hand-over can leak.
+ *
+ * The lock file is keyed by the TOKEN FINGERPRINT (src/bots.ts): every
+ * instance running the same bot token — even from a different checkout or
+ * state directory — contends the SAME file, so one token always has exactly
+ * one poller. Callers that pass no file keep the legacy path (tests).
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -46,9 +51,9 @@ function lockPath(): string {
   return process.env.TG_LOCK_FILE ?? LOCK_FILE;
 }
 
-function readLock(): LockFile | undefined {
+function readLock(file: string): LockFile | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(lockPath(), "utf8")) as LockFile;
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as LockFile;
     if (typeof parsed.pid !== "number" || typeof parsed.beat !== "number") return undefined;
     return parsed;
   } catch {
@@ -56,9 +61,9 @@ function readLock(): LockFile | undefined {
   }
 }
 
-function writeLock(lock: LockFile): void {
+function writeLock(file: string, lock: LockFile): void {
   try {
-    writeFileSync(lockPath(), JSON.stringify(lock));
+    writeFileSync(file, JSON.stringify(lock));
   } catch {
     /* the lock is best effort; the plugin still works without it */
   }
@@ -79,9 +84,10 @@ function pidAlive(pid: number): boolean {
  * (alive but heartbeat-frozen past WEDGED_MS). Returns whether this process
  * is now the leader.
  */
-export function acquireLock(): boolean {
+export function acquireLock(file?: string): boolean {
+  const path = file ?? lockPath();
   const now = Date.now();
-  const existing = readLock();
+  const existing = readLock(path);
 
   if (existing && existing.pid !== process.pid) {
     const dead = !pidAlive(existing.pid);
@@ -89,34 +95,35 @@ export function acquireLock(): boolean {
     if (!dead && !wedged) return false;
   }
 
-  writeLock({ pid: process.pid, since: existing?.since ?? now, beat: now });
+  writeLock(path, { pid: process.pid, since: existing?.since ?? now, beat: now });
 
   // Re-read: if a faster writer won, bow out instead of splitting the poll.
-  const after = readLock();
+  const after = readLock(path);
   return !!after && after.pid === process.pid;
 }
 
 /** Refresh the heartbeat so other processes know we are still here. */
-export function heartbeat(): void {
-  const existing = readLock();
+export function heartbeat(file?: string): void {
+  const path = file ?? lockPath();
+  const existing = readLock(path);
   if (!existing || existing.pid !== process.pid) return;
-  writeLock({ ...existing, beat: Date.now() });
+  writeLock(path, { ...existing, beat: Date.now() });
 }
 
 /** Release only if the lock is still ours. */
-export function releaseLock(): void {
-  const existing = readLock();
+export function releaseLock(file?: string): void {
+  const path = file ?? lockPath();
+  const existing = readLock(path);
   if (!existing || existing.pid !== process.pid) return;
   try {
-    unlinkSync(lockPath());
+    unlinkSync(path);
   } catch {
     /* already gone */
   }
 }
 
-export function lockHeldBy(): number | undefined {
-  const existing = readLock();
-  return existing?.pid;
+export function lockHeldBy(file?: string): number | undefined {
+  return readLock(file ?? lockPath())?.pid;
 }
 
 export const LOCK_INTERVAL = HEARTBEAT_MS;
