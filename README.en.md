@@ -19,6 +19,11 @@ and events as the desktop — no separate process, no bot duplicating state.
   renders live (text, reasoning, edit diffs, tool output).
 - **Heartbeats**: "typing…" while the turn runs; messages sent while the
   agent works are grouped by burst and delivered together.
+- **Notices when the provider fails**: when the model never starts the turn
+  (credits used up, rate limited, a model that was retired — the server fails
+  the inbox drain and emits no event, so the conversation used to just die), a
+  watchdog tails the server log and tells you the real cause at the 90s mark;
+  mid-turn dropouts get their retry card and a final, classified error.
 - **Reply-context**: replying to a topic message injects the quote into
   the prompt (with Telegram's forum echo filtered out).
 - **Multimedia**: photos → the agent sees them; text documents → inlined

@@ -29,6 +29,7 @@ const suites = [
   "_dangercheck",
   "_offsetcheck",
   "_extracheck",
+  "_healthcheck",
 ];
 
 let failed = 0;

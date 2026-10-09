@@ -89,6 +89,34 @@ answered — with **all the answers together**.
   won't ask again for that pattern. Tap and the turn continues without
   opening the PC.
 
+## When the model does not answer
+
+The most silent failure of all: the provider dies **before** the turn starts —
+credits used up, rate limited, a model that no longer exists. The server aborts
+the inbox drain, logs it as an internal error **and emits no event at all**: the
+thread keeps your message's receipt and nothing else. Two mechanisms keep you
+from opening the PC to find out what happened:
+
+- **Dead-prompt watchdog** (every 30s): if a delivered message did not start its
+  turn within `deadPromptMs` (90s by default; `0` disables it), the bot tails
+  the server log, classifies the failure and tells you **in the provider's own
+  words**:
+
+  > ❌ **My project** — your message never ran: provider credits/quota used up
+  > `AI.Error: Your monthly allowance is used up. Buy a usage top-up…`
+  > 💳 Top up the credits or switch providers: `/models`.
+
+  When the cause cannot be found it still says so: "unanswered for 2 min: the
+  turn never started."
+- **Failures mid-turn**: if the provider drops while the turn is running, the
+  server schedules a retry and the bot shows the retry card (which attempt and
+  in how many seconds). When the turn dies outright, a final error card arrives
+  with the failure classified — credits, rate limit, key, connection or model —
+  each with its own hint. Interruptions (you cancelled on the PC, the server
+  shut down, a newer message superseded it) report their reason too.
+
+All of it lands **in the session's thread**, where you are already looking.
+
 ---
 
 ## Commands
@@ -241,6 +269,7 @@ allowed-chats list in `~/.opencode/tg/.env`.
 | `coalesceBusyMs` | `8000` | Burst window (ms) while the agent works; then it enters the queue |
 | `archiveAfterDays` | `0` (off) | Idle days before topics auto-archive |
 | `rebuildIdleHours` | `24` | `/rebuild` only recreates topics for sessions used within this many hours; `0` removes the limit |
+| `deadPromptMs` | `90000` | Window (ms) of the dead-prompt watchdog; `0` disables it |
 | `stt.provider` | — | Voice transcription: `"local"` (whisper.cpp) or `"openai-compatible"` (see the README) |
 | `render.showReasoning` | `true` | Show the agent's reasoning in the topic |
 | `render.showDiffs` | `true` | Show diffs on file edits |
@@ -272,7 +301,8 @@ allowed-chats list in `~/.opencode/tg/.env`.
   persist a conversation to disk (their own log records "Failed to drain
   Session" failures). For those sessions, `/history` and `/export` work
   while the session is open on the PC; closed, they answer with the honest
-  notice instead of inventing an empty history.
+  notice instead of inventing an empty history. Those same drain failures are
+  what the dead-prompt watchdog now reports in the thread.
 - **Language**: Spanish by default; `TG_LOCALE=en` in the `.env` switches
   the interface to English. Catalogs live in `src/locale.ts` — a new
   language is a new object, nothing else.

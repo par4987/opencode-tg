@@ -76,6 +76,35 @@ los oculta por completo.
 - **Permisos**: si el agente necesita aprobación para algo, llega un mensaje
   con **[✅ Aprobar] [✖ Rechazar]**. Tocás y el turno continúa sin abrir la PC.
 
+## Cuando el modelo no responde
+
+La falla más silenciosa de todas: el proveedor muere **antes** de que el turno
+arranque — créditos agotados, rate limit, un modelo que dejó de existir. El
+server cancela el drenaje del inbox, lo anota como error interno **y no emite
+ningún evento**: el hilo se queda con la confirmación de tu mensaje y nada más.
+Dos mecanismos evitan que tengas que abrir la PC a ver qué pasó:
+
+- **Watchdog de prompts muertos** (cada 30s): si un mensaje entregado no arrancó
+  su turno en `deadPromptMs` (90s por defecto; `0` lo apaga), el bot lee la cola
+  del log del server, clasifica la falla y avisa **con las palabras del
+  proveedor**:
+
+  > ❌ **Mi proyecto** — tu mensaje no llegó a ejecutarse: créditos/cupo agotados del proveedor
+  > `AI.Error: Your monthly allowance is used up. Buy a usage top-up…`
+  > 💳 Recargá el crédito o cambiá de proveedor: `/models`.
+
+  Si no encuentra la causa, igual avisa: "lleva 2 min sin respuesta: el turno
+  nunca arrancó".
+- **Fallas a mitad del turno**: si el proveedor cae con el turno corriendo, el
+  server reprograma el intento y el bot muestra la tarjeta de reintento (qué
+  intento es y en cuántos segundos). Si el turno muere del todo, llega una
+  tarjeta de error final clasificada — créditos, rate limit, clave, conexión o
+  modelo — con una pista distinta para cada caso. Las interrupciones
+  (cancelaste en la PC, se apagó el server, llegó un mensaje más nuevo) también
+  avisan cuál fue el motivo.
+
+Todo eso llega **al hilo de la sesión**, donde ya estás mirando.
+
 ---
 
 ## Comandos
@@ -227,6 +256,7 @@ autorizados en `~/.opencode/tg/.env`.
 | `coalesceBusyMs` | `8000` | Ventana de ráfaga (ms) mientras el agente trabaja; luego entra a la cola |
 | `archiveAfterDays` | `0` (off) | Días de inactividad para auto-archivar hilos |
 | `rebuildIdleHours` | `24` | `/rebuild` solo recrea hilos de sesiones usadas en estas horas; `0` quita el límite |
+| `deadPromptMs` | `90000` | Ventana (ms) del watchdog de prompts muertos; `0` lo apaga |
 | `render.showReasoning` | `true` | Mostrar el razonamiento del agente en el hilo |
 | `render.showDiffs` | `true` | Mostrar diffs al editar archivos |
 | `render.editIntervalMs` | `1400` | Cada cuánto actualiza el mensaje en vivo |
@@ -239,7 +269,7 @@ autorizados en `~/.opencode/tg/.env`.
 - **Archivar en chat privado**: Telegram no permite que un bot cierre tópicos en un chat privado — así que `/archive` elimina el hilo del chat y silencia la sesión (sin espejo ni avisos); `/unarchive` lo recrea nuevo y despierta la sesión. `/delthread` borra el hilo sin silenciar: una sesión activa lo recrea con su próximo evento (para sacártela de encima de verdad: `/archive`).
 - **Borrar un hilo con el eliminar nativo de Telegram**: el bot lo nota solo — el próximo mensaje del agente cae en General una única vez y el hilo se reconstruye solo. No hace falta hacer nada.
 - **Sesiones tras un reinicio del server**: el server solo tiene en memoria las sesiones abiertas en la PC — después de un reinicio, mandarle un mensaje a un hilo cuyo session ya no está abierto responde «🚫 esa sesión no está activa en el server». No es un error del bot: abrila en la PC y sigue andando, o creá otra con `/new`. Los comandos de proyecto (`/ls`, `/git`, `/find`, `/config`, `/worktree`) y `/export` siguen funcionando igual porque leen del disco.
-- **Transcripts de sesiones nuevas**: los servers 2.0.19+ no siempre persisten la conversación a disco (su propio log registra fallos de «Failed to drain Session»). Para esas sesiones, `/history` y `/export` funcionan con la sesión abierta en la PC; cerrada, responden con el aviso honesto en lugar de inventar un historial vacío.
+- **Transcripts de sesiones nuevas**: los servers 2.0.19+ no siempre persisten la conversación a disco (su propio log registra fallos de «Failed to drain Session»). Para esas sesiones, `/history` y `/export` funcionan con la sesión abierta en la PC; cerrada, responden con el aviso honesto en lugar de inventar un historial vacío. Esos mismos fallos de drenaje son los que el watchdog de prompts muertos ahora te cuenta en el hilo.
 - **Idioma**: la interfaz es español por defecto; `TG_LOCALE=en` en el `.env` la cambia a inglés. Los catálogos viven en `src/locale.ts` — un idioma nuevo es un objeto nuevo, nada más.
 - **Mantenimiento automático**: el flujo `deps-audit` de GitHub Actions corre lunes y jueves 09:00 UTC — actualiza dependencias, sella vulnerabilidades, corre typecheck y las suites, y solo entonces empuja. Si algo falla, abre un issue con el log. No depende de que tu PC esté encendida.
 - **El nombre del hilo sigue al título de la sesión**: si el desktop la renombra, el hilo se renombra solo — y si el renombrado se pierde (un reinicio de por medio), un chequeo de deriva lo alcanza dentro de los 5 minutos de la próxima actividad.

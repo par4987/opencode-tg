@@ -78,6 +78,14 @@ export interface Config {
   coalesceBusyMs: number;
   /** Extra: log every event type, for developing the renderer. */
   debugEvents: boolean;
+  /**
+   * Dead-prompt watchdog: after a prompt is delivered, the turn must start
+   * within this window. When it does not, the bridge reads the server log
+   * for the real cause (provider credits, rate limit, down…) and says so in
+   * the thread — instead of leaving the conversation silently dead (the
+   * "no news, open the desktop" experience, measured 2026-10-09). 0 = off.
+   */
+  deadPromptMs: number;
   /** Local voice-note transcription (whisper.cpp) — paths/language. */
   stt: SttConfig;
   /** Subagent (task) sessions in the chat: mirrored read-only topics, or off. */
@@ -97,6 +105,7 @@ const DEFAULTS: Omit<Config, "token"> = {
   coalesceMs: 2000,
   coalesceBusyMs: 8_000,
   debugEvents: false,
+  deadPromptMs: 90_000,
   stt: {},
   subagents: "mirror",
   bots: { topology: "single", assign: [] },
@@ -242,6 +251,15 @@ export function loadConfig(): Config {
     coalesceBusyRaw !== undefined && Number.isFinite(Number(coalesceBusyRaw))
       ? Math.min(Math.max(Number(coalesceBusyRaw), 2000), 30_000)
       : DEFAULTS.coalesceBusyMs;
+  // Dead-prompt watchdog: a delivered prompt must start its turn inside this
+  // window; past it, the bridge surfaces the server-log cause. 0 disables.
+  const deadRaw = env.TG_DEAD_PROMPT_MS ?? env.deadPromptMs;
+  const deadPromptMs =
+    deadRaw !== undefined && Number.isFinite(Number(deadRaw))
+      ? Number(deadRaw) === 0
+        ? 0
+        : Math.min(Math.max(Number(deadRaw), 20_000), 15 * 60_000)
+      : DEFAULTS.deadPromptMs;
   // Voice transcription: an "stt" object in config.json, or TG_STT_* overrides.
   // The cloud key rides the .env as STT_API_KEY — never inside the repo.
   const stt = typeof env.stt === "object" && env.stt !== null ? { ...(env.stt as SttConfig) } : {};
@@ -296,6 +314,7 @@ export function loadConfig(): Config {
     coalesceMs,
     coalesceBusyMs,
     debugEvents: asBool(env.TG_DEBUG_EVENTS) ?? asBool(env.debugEvents) ?? DEFAULTS.debugEvents,
+    deadPromptMs,
     stt,
     subagents: asChoice(env.TG_SUBAGENTS, ["mirror", "off"] as const) ?? asChoice(env.subagents, ["mirror", "off"] as const) ?? DEFAULTS.subagents,
     bots: { topology, assign },

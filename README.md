@@ -19,6 +19,11 @@ eventos que el desktop — sin un proceso aparte ni un bot que duplica estado.
   renderiza en vivo (texto, razonamiento, diffs de edición, salida de tools).
 - **Señales de vida**: "escribiendo…" mientras el turno corre; los mensajes
   que mandás mientras trabaja se unifican y se entregan al terminar.
+- **Avisos cuando el proveedor falla**: si el modelo nunca arranca el turno
+  (créditos agotados, rate limit, modelo dado de baja — el server falla el
+  drenaje del inbox sin emitir evento, y la conversación quedaba muerta), un
+  watchdog lee el log del server y te dice la causa real a los 90s; las caídas
+  a mitad del turno traen su reintento y su error final clasificado.
 - **Reply-context**: responder con reply a un mensaje del hilo inyecta la
   cita en el prompt (con filtrado del eco del foro de Telegram).
 - **Multimedia**: fotos → el agente las ve; documentos de texto → inline al

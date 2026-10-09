@@ -43,6 +43,13 @@
   // validar: crece el fichero.
   "debugEvents": false,
 
+  // Watchdog de prompts muertos (ms): pasado este plazo sin que el turno
+  // arranque, el bot lee la cola del log del server y avisa en el hilo la
+  // causa real (creditos, rate limit, modelo dado de baja...). Cubre el caso
+  // en el que el server falla el drenaje del inbox sin emitir evento ninguno
+  // y la conversacion queda muerta. 0 = desactivado. 20s..15min.
+  "deadPromptMs": 90000,
+
   // Transcripcion de notas de voz — cada usuario elige su proveedor:
   //   "local"             -> whisper.cpp en ~/.opencode/tg/stt (sin nube).
   //   "openai-compatible" -> Groq / OpenAI / self-hosted; STT_API_KEY va en

@@ -34,6 +34,7 @@ import { MessageCards } from "./src/message-cards.js";
 import { NATIVE_NAMES, availableLocales, locale, setLocale, t } from "./src/locale.js";
 import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
+import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
@@ -94,6 +95,10 @@ const DEBUG_EVENTS = new Set([
   "session.idle",
   "session.execution.succeeded",
   "session.execution.failed",
+  "session.execution.interrupted",
+  "session.step.failed",
+  "session.retry.scheduled",
+  "session.compaction.failed",
   "permission.asked",
 ]);
 
@@ -1310,6 +1315,24 @@ const pluginExport = {
       }
     };
 
+    // ── the dead-conversation watchdog ─────────────────────────────────────
+    /**
+     * A prompt still in `pendingPrompts` past `deadPromptMs` never started
+     * its turn. `deliver()` stamps the time; the first TURN_START event
+     * clears it; `session.idle` restarts the window (a prompt queued behind a
+     * busy turn can only drain once that turn ends). Whatever is still here
+     * when the window passes never got a turn at all — and a provider that
+     * dies before the turn starts (credits used up, rate limit, a model that
+     * is no longer there) is exactly that: the server fails the inbox drain,
+     * logs it, and emits nothing (measured 2026-10-09). `tickDeadPrompts`
+     * then reads the log for the real cause and says it in the thread.
+     */
+    const pendingPrompts = new Map<string, { sentAt: number; warned: boolean }>();
+    /** Step failures and execution failures arrive as a pair — one card. */
+    const lastFailCardAt = new Map<string, number>();
+    /** A provider under fire schedules retries back-to-back — one per burst. */
+    const lastRetryNoticeAt = new Map<string, number>();
+
     // ── forms: answering the agent's `question` from either side ─────────────
     /**
      * `question` opens a *form* and blocks the turn until somebody answers it;
@@ -1822,6 +1845,8 @@ const pluginExport = {
           },
         );
         if (!sent?.id) log("WARN", `prompt a ${target.slice(0, 18)} sin message id`);
+        // The watchdog starts here: this prompt now owes the session a turn.
+        pendingPrompts.set(target, { sentAt: Date.now(), warned: false });
       } catch (error) {
         log("ERROR", "prompt", safe(error));
         const raw = String((error as Error).message);
@@ -2143,15 +2168,63 @@ const pluginExport = {
       }
     };
 
+    /**
+     * The dead-conversation watchdog.
+     *
+     * A prompt still in `pendingPrompts` past `deadPromptMs` never started
+     * its turn. The reason the server gives for that lives in its own log,
+     * not in any event: the provider fails while draining the inbox — the
+     * measured cases of 2026-10-09, "Your monthly allowance is used up"
+     * (apmix) and "Rate limit exceeded" — and nothing is emitted at all.
+     * Telling the user so, with the provider's own words, is the difference
+     * between "the conversation died, I had to open the desktop" and knowing
+     * it is time to top up the credits.
+     */
+    const tickDeadPrompts = (): void => {
+      if (config.deadPromptMs <= 0) return;
+      const now = Date.now();
+      for (const [id, pending] of pendingPrompts) {
+        if (pending.warned || now - pending.sentAt < config.deadPromptMs) continue;
+        // A session still mid-turn is not dead — its inbox has not drained
+        // yet, and the window restarts on idle anyway.
+        const tracked = sessions.get(id);
+        if (tracked && !tracked.idle) continue;
+        const label = escapeHtml(tracked?.title ?? t("no_title"));
+        // The drain failure lands at the server level; look for it in the
+        // tail of its log, newer than the prompt itself.
+        const hit = lastSessionError(serverLogTail(), id, pending.sentAt - 15_000);
+        // One card per dead prompt — the entry goes away so the next tick
+        // stays quiet (and the next message, if any, starts clean).
+        pendingPrompts.delete(id);
+        if (hit) {
+          const cls = classifyFailure(hit.message);
+          void send(
+            t("dead_card_cause", {
+              title: label,
+              cause: t("fail_" + cls),
+              detail: escapeHtml(hit.message.slice(0, 400)),
+              hint: t("hint_" + cls),
+            }),
+            id,
+          );
+          log("INFO", `prompt sin turno en ${id.slice(0, 18)}: ${cls}`);
+        } else {
+          void send(t("dead_card_silent", { title: label, mins: String(Math.max(1, Math.round((now - pending.sentAt) / 60_000))) }), id);
+          log("WARN", `prompt sin turno en ${id.slice(0, 18)}: sin causa en el log del server`);
+        }
+      }
+    };
+
     let taskTimer: ReturnType<typeof setInterval> | undefined;
     const startTaskTimer = (): void => {
       if (taskTimer !== undefined) return;
       taskTimer = setInterval(() => {
         // Scheduled tasks fire ONCE per bridge — with N bots running N
-        // timers, every due task would fire N times. Archiving stays
-        // per-bot: each store only knows its own chat's threads.
+        // timers, every due task would fire N times. Archiving and the
+        // watchdog stay per-bot: each only knows its own chat's sessions.
         if (spec.primary) tickTasks();
         tickArchive();
+        tickDeadPrompts();
       }, 30_000);
     };
     const stopTaskTimer = (): void => {
@@ -4505,8 +4578,12 @@ const pluginExport = {
       if (ignoredSubagents.has(sessionID)) return;
       const session = track(sessionID);
       // The first event of a running turn lights the thread's "typing…" lamp;
-      // `session.idle` — and a failed execution — put it out.
-      if (TURN_START_EVENTS.has(event.type) && isWatched(sessionID)) startTyping(sessionID);
+      // `session.idle` — and a failed execution — put it out. It also tells
+      // the watchdog the prompt it is waiting for has started its turn.
+      if (TURN_START_EVENTS.has(event.type)) {
+        pendingPrompts.delete(sessionID);
+        if (isWatched(sessionID)) startTyping(sessionID);
+      }
 
       switch (event.type) {
         case "session.renamed":
@@ -4668,10 +4745,15 @@ const pluginExport = {
           return;
         }
 
-        case "session.idle":
+        case "session.idle": {
           // `track` already cleared the flag for this event; mark it now so
           // `/sessions` can tell a finished turn from one still streaming.
           session.idle = true;
+          // A prompt queued behind the turn that just ended can only drain
+          // now — restart the watchdog window so a long turn is never
+          // mistaken for a dead provider.
+          const pending = pendingPrompts.get(sessionID);
+          if (pending) pending.sentAt = Date.now();
           stopTyping(sessionID);
           renderer.finalize(sessionID);
           flushTurnImages(sessionID);
@@ -4688,12 +4770,90 @@ const pluginExport = {
             }
           }
           return;
+        }
 
-        case "session.execution.failed": {
+        case "session.retry.scheduled": {
+          // The provider just failed mid-turn and the server scheduled another
+          // attempt — the desktop's "retrying…" banner. Without this card the
+          // thread goes quiet for exactly as long as the backoff takes, which
+          // looks identical to a dead conversation from the phone.
+          const err = (data.error ?? {}) as { message?: unknown };
+          const detail = str(err.message) || t("fail_other");
+          const attempt = typeof data.attempt === "number" ? data.attempt : 0;
+          const scheduled = typeof data.at === "number" ? data.at : 0;
+          const secs = Math.max(0, Math.round((scheduled - Date.now()) / 1000));
+          const now = Date.now();
+          // Retries arrive as a burst (1s, 2s, 4s…): the first attempt and at
+          // most one card per 90s carry the story.
+          if (attempt > 1 && now - (lastRetryNoticeAt.get(sessionID) ?? 0) < 90_000) return;
+          lastRetryNoticeAt.set(sessionID, now);
+          const cls = classifyFailure(detail);
+          void send(
+            t("retry_card", {
+              title: escapeHtml(session.title),
+              cause: t("fail_" + cls),
+              attempt: String(attempt || 1),
+              secs: String(secs || 1),
+              detail: escapeHtml(detail.slice(0, 300)),
+            }),
+            sessionID,
+          );
+          return;
+        }
+
+        case "session.execution.failed":
+        case "session.step.failed": {
+          // The terminal failure. `step.failed` is the canonical one and both
+          // can arrive for the same error — a single card, whichever lands.
+          const err = (data.error ?? {}) as { message?: unknown };
+          const detail = str(err.message) || t("fail_other");
+          const now = Date.now();
+          if (now - (lastFailCardAt.get(sessionID) ?? 0) < 5_000) return;
+          lastFailCardAt.set(sessionID, now);
           stopTyping(sessionID);
-          const error = (data.error ?? {}) as { message?: string };
-          const message = str(error.message) || "fallo desconocido";
-          void send(`\u274C <b>${escapeHtml(session.title)}</b>\n<code>${escapeHtml(message.slice(0, 600))}</code>`);
+          // No idle follows a failed turn — without this the last cards stay
+          // pinned to "running" forever, which is half of the dead feeling.
+          renderer.finalize(sessionID);
+          const cls = classifyFailure(detail);
+          void send(
+            t("exec_failed_card", {
+              title: escapeHtml(session.title),
+              cause: t("fail_" + cls),
+              detail: escapeHtml(detail.slice(0, 400)),
+              hint: t("hint_" + cls),
+            }),
+            sessionID,
+          );
+          return;
+        }
+
+        case "session.execution.interrupted": {
+          // A turn that never got to finish: cancelled on the PC, the server
+          // shut down, superseded by a newer message, or idle too long. All
+          // of them end the conversation; the thread should say which.
+          const reason = str(data.reason);
+          const key = ["user", "shutdown", "superseded", "inactivity"].includes(reason) ? reason : "other";
+          stopTyping(sessionID);
+          renderer.finalize(sessionID);
+          void send(
+            t("interrupted_card", { title: escapeHtml(session.title), reason: t("interrupt_reason_" + key) }),
+            sessionID,
+          );
+          return;
+        }
+
+        case "session.compaction.failed": {
+          // The context compaction failed: the turn carries on, but the
+          // thread deserves a warning because the next steps run blind.
+          const err = (data.error ?? {}) as { message?: unknown };
+          const detail = str(err.message) || t("fail_other");
+          void send(
+            t("compaction_failed_card", {
+              title: escapeHtml(session.title),
+              detail: escapeHtml(detail.slice(0, 300)),
+            }),
+            sessionID,
+          );
           return;
         }
 
