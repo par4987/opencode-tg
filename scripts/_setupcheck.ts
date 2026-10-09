@@ -101,7 +101,12 @@ process.env.ALLOWED_USERS = "123456789";
 
 let cleanup: (() => Promise<void>) | undefined;
 try {
-  const result = await (plugin as { setup: (c: unknown) => unknown }).setup(ctx);
+  // DETACHED, like production: OpenCode (Bun) invokes setup without the
+  // export object as receiver — `this` is undefined there. Calling it as a
+  // method here once hid "this.runtime is not a function" until the live
+  // server hit it (2026-10-09, the bot went silent for two hours).
+  const { setup } = plugin as { setup: (c: unknown) => unknown };
+  const result = await setup(ctx);
   cleanup = typeof result === "function" ? (result as () => Promise<void>) : undefined;
   await new Promise((resolve) => setTimeout(resolve, 400));
   if (cleanup) await cleanup();

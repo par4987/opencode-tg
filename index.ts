@@ -602,7 +602,10 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode): Promise<
   return { tick, cleanup };
 }
 
-export default {
+// Named, not anonymous: OpenCode (Bun) invokes `setup` DETACHED from the
+// export object — `this` is undefined there — so the orchestrator must reach
+// the runtime factory through the module-level name, never through `this`.
+const pluginExport = {
   id: "opencode-tg",
 
   /**
@@ -678,7 +681,7 @@ export default {
     const runtimes: BotRuntime[] = [];
     for (const spec of specs) {
       try {
-        runtimes.push(await this.runtime(ctx, config, spec, shared));
+        runtimes.push(await pluginExport.runtime(ctx, config, spec, shared));
       } catch (error) {
         log("ERROR", `bot ${spec.name} no arranco`, safe(error));
         if (spec.primary) throw error;
@@ -6117,3 +6120,5 @@ export default {
     };
   },
 };
+
+export default pluginExport;
