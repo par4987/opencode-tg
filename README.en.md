@@ -146,7 +146,7 @@ dangerous operations and API helpers. Typecheck: `tsc --noEmit index.ts`.
 ## Maintenance
 
 The [`deps-audit`](.github/workflows/deps-audit.yml) workflow runs Mondays
-and Thursdays at 09:00 UTC: updates dependencies, seals vulnerabilities,
+and Thursdays at 23:00 Argentina (UTC-3): updates dependencies, seals vulnerabilities,
 runs typecheck and the suites, and pushes only when everything stayed
 green — otherwise it opens an issue with the log. It runs in the cloud:
 your PC does not need to be on.

@@ -146,7 +146,7 @@ topología multi-bot, permisos peligrosos y helpers de la API. Typecheck:
 ## Mantenimiento
 
 El flujo [`deps-audit`](.github/workflows/deps-audit.yml) corre lunes y
-jueves 09:00 UTC: actualiza dependencias, sella vulnerabilidades, corre
+jueves 23:00 Argentina (UTC-3): actualiza dependencias, sella vulnerabilidades, corre
 typecheck y las suites, y empuja solo si todo quedó verde — si no, abre un
 issue con el log. Corre en la nube: no necesita tu PC encendida.
 

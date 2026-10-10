@@ -1,17 +1,17 @@
 # Dependency & vulnerability review — twice a week, fully automatic.
 #
-# Mondays and Thursdays at 09:00 UTC (plus manual dispatch): update the
-# dev toolchain, seal whatever npm audit found, prove the plugin still
-# typechecks and passes its suites, and only then push. When the proof
-# fails — or audit finds highs the fix could not seal — an issue carries
-# the log instead.
+# Mondays and Thursdays at 23:00 Argentina (UTC-3, no DST) = 02:00 UTC on
+# Tuesday and Friday (plus manual dispatch): update the dev toolchain, seal
+# whatever npm audit found, prove the plugin still typechecks and passes its
+# suites, and only then push. When the proof fails — or audit finds highs
+# the fix could not seal — an issue carries the log instead.
 #
 # Runs in the cloud — the user's PC does not need to be on.
 name: deps-audit
 
 on:
   schedule:
-    - cron: "0 9 * * 1,4"
+    - cron: "0 2 * * 2,5"
   workflow_dispatch:
 
 permissions:

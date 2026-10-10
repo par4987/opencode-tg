@@ -307,7 +307,7 @@ allowed-chats list in `~/.opencode/tg/.env`.
   the interface to English. Catalogs live in `src/locale.ts` — a new
   language is a new object, nothing else.
 - **Automated maintenance**: the `deps-audit` GitHub Actions workflow runs
-  Mondays and Thursdays at 09:00 UTC — updates dependencies, seals
+  Mondays and Thursdays at 23:00 Argentina (UTC-3) — updates dependencies, seals
   vulnerabilities, runs typecheck and the suites, and only then pushes.
   On failure it opens an issue with the log. It does not need your PC on.
 - **The thread's name follows the session's title**: when the desktop
