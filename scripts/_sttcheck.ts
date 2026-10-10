@@ -1,5 +1,5 @@
 /** stt checks: parseo del stdout de whisper-cli, defaults, disponibilidad. */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // Pin ES for this suite: transcribeFile throws through the catalog, so the
@@ -7,7 +7,7 @@ import { join } from "node:path";
 // assertions read. Dynamic import: a static one is hoisted above this.
 process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-stt-")), "locale.txt");
 delete process.env.TG_LOCALE;
-const { parseCloudResponse, parseTranscription, sttAvailable, sttDefaults, transcribeFile } = await import("../src/stt.js");
+const { parseCloudResponse, parseTranscription, sttAvailable, sttDefaults, transcribeFile, whisperFailureMessage, fmtBytes } = await import("../src/stt.js");
 
 let failures = 0;
 let total = 0;
@@ -58,6 +58,44 @@ try {
 } catch (error) {
   check("transcribeFile sin binarios → lanza", String((error as Error).message).includes("no existe"));
 }
+
+// ── clasificacion de fallos de whisper ───────────────────────────────────────
+// El stderr real grabado en una PC con 0.9 GB libres frente a ggml-small.
+const allocStderr = [
+  "load_backend: loaded BLAS backend from Release/ggml-blas.dll",
+  "load_backend: loaded CPU backend from Release/ggml-cpu-cascadelake.dll",
+  "whisper_model_load: loading model",
+  "ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate buffer of size 20971520",
+  "whisper_model_load: WARN no tensors loaded from model file - assuming empty model for testing",
+  "error: failed to initialize whisper context",
+].join("\r\n");
+
+// Un modelo "instalado" de juguete: la clasificacion lee su tamanno del disco.
+const sttDir = mkdtempSync(join(tmpdir(), "tg-stt-model-"));
+const fakeModel = join(sttDir, "ggml-small.bin");
+writeFileSync(fakeModel, Buffer.alloc(20 * 1024 * 1024));
+
+const mem = whisperFailureMessage({ stderr: allocStderr, code: 3, modelPath: fakeModel, freeBytes: 10 * 1024 * 1024 });
+check("memoria: clasifica la falla de alloc", mem.includes("no entr") && mem.includes("RAM"));
+check("memoria: nombra el modelo y los MB", mem.includes("ggml-small.bin") && mem.includes("20 MB") && mem.includes("10 MB"));
+check("memoria: incluye la pista del modelo chico", mem.includes("ggml-base.bin"));
+check("memoria: no suelta el stderr crudo", !mem.includes("load_backend"));
+
+// Modelo ausente (otra rama): no se aferra a la RAM — error plano util.
+const noModel = whisperFailureMessage({ stderr: allocStderr, code: 3, modelPath: join(sttDir, "no-hay.bin"), freeBytes: 10 * 1024 * 1024 });
+check("modelo ausente: error plano con cola util", noModel.startsWith("whisper-cli exit 3:") && noModel.includes("failed to initialize whisper context"));
+
+// Misma falla con RAM de sobra: no es un problema de memoria — error plano.
+const plenty = whisperFailureMessage({ stderr: allocStderr, code: 3, modelPath: fakeModel, freeBytes: 8 * 1024 * 1024 * 1024 });
+check("no-memoria: RAM amplia → error plano", plenty.startsWith("whisper-cli exit 3") && !plenty.includes("RAM"));
+check("no-memoria: el error util va al final", plenty.includes("failed to initialize whisper context") && !plenty.startsWith("whisper-cli exit 3: load_backend"));
+
+// Una falla sin alloc: tambien error plano, con el codigo y la cola del stderr.
+const weird = whisperFailureMessage({ stderr: "load_backend: loaded CPU backend\r\nerror: bad model magic", code: 9, modelPath: fakeModel, freeBytes: 900 * 1024 * 1024 });
+check("otra falla: plano con su codigo", weird.startsWith("whisper-cli exit 9:") && weird.includes("bad model magic"));
+
+check("fmtBytes: MB y GB", fmtBytes(487005696) === "464 MB" && fmtBytes(75497472) === "72 MB" && fmtBytes(2147483648) === "2.0 GB");
+check("fmtBytes: basura → ?", fmtBytes(Number.NaN) === "?" && fmtBytes(-1) === "?");
 
 // Los binarios reales solo existen donde se instalaron — CI-friendly.
 if (sttAvailable({})) {

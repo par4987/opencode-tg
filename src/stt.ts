@@ -20,9 +20,9 @@
  * Pure stdlib: child_process for the local binary, fetch for the cloud.
  */
 import { spawn } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync, rmSync, statSync } from "node:fs";
+import { freemem, homedir } from "node:os";
+import { basename, join } from "node:path";
 import { t } from "./locale.js";
 
 export interface SttConfig {
@@ -115,6 +115,63 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: nu
   });
 }
 
+/** Bytes as a compact human size — "465 MB", "72 MB", "1.2 GB". */
+export function fmtBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "?";
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${Math.round(mb)} MB`;
+}
+
+/**
+ * The failure patterns whisper.cpp prints when the model cannot be loaded
+ * into RAM (measured live on a box with 0.9 GB free against ggml-small):
+ *
+ *   ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate buffer of size 487005696
+ *   whisper_model_load: WARN no tensors loaded from model file - assuming empty model
+ *   whisper_init_state: whisper_kv_cache_init() failed
+ *
+ * The raw stderr the old card dumped starts with "load_backend: loaded BLAS
+ * backend from …", which tells the user nothing. This says what happened and
+ * what to do — but only when the free RAM actually could not hold the model,
+ * so an allocation failure with plenty of RAM stays a plain error.
+ */
+const MEMORY_FAILURE = /failed to allocate|no tensors loaded|out of memory|not enough memory/i;
+
+export function whisperFailureMessage(opts: {
+  stderr: string;
+  code: number;
+  modelPath: string;
+  freeBytes: number;
+}): string {
+  const { stderr, code, modelPath, freeBytes } = opts;
+  let modelSize = 0;
+  try {
+    modelSize = statSync(modelPath).size;
+  } catch {
+    modelSize = 0;
+  }
+  if (modelSize > 0 && freeBytes > 0 && freeBytes < modelSize * 1.5 && MEMORY_FAILURE.test(stderr)) {
+    return (
+      t("stt_memory_fail", {
+        model: escapeHtmlLocal(basename(modelPath)),
+        need: fmtBytes(modelSize),
+        free: fmtBytes(freeBytes),
+      }) +
+      "\n" +
+      t("stt_memory_hint")
+    );
+  }
+  // Anything else: the useful line is at the END of whisper's stderr ("error:
+  // failed to initialize whisper context"), not in the backend-loading header.
+  return `whisper-cli exit ${code}: ${stderr.slice(-320)}`;
+}
+
+/** Minimal HTML escaping for the model name — kept local to avoid a render.js cycle. */
+function escapeHtmlLocal(text: string): string {
+  return text.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch] ?? ch);
+}
+
 async function transcribeLocal(oggPath: string, cfg: SttConfig, timeoutMs: number): Promise<string> {
   const d = sttDefaults();
   const whisper = cfg.whisper ?? d.whisper;
@@ -146,7 +203,16 @@ async function transcribeLocal(oggPath: string, cfg: SttConfig, timeoutMs: numbe
       ["-m", model, "-f", audioPath, "-l", language, "-nt"],
       timeoutMs,
     );
-    if (code !== 0) throw new Error(`whisper-cli exit ${code}: ${stderr.slice(0, 300)}`);
+    if (code !== 0) {
+      throw new Error(
+        whisperFailureMessage({
+          stderr,
+          code,
+          modelPath: model,
+          freeBytes: freemem(),
+        }),
+      );
+    }
     return parseTranscription(stdout);
   } finally {
     // The temporary WAV never outlives the transcription.

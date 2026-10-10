@@ -702,6 +702,8 @@ const ES: Catalog = {
   stt_whisper_missing: "whisper-cli no existe: {path}",
   stt_model_missing: "modelo no existe: {path}",
   stt_ffmpeg_fail: "ffmpeg no pudo decodificar el audio: {detail}",
+  stt_memory_fail: "💾 <b>{model}</b> ({need}) no entró en la RAM — la PC tenía {free} libres cuando falló.",
+  stt_memory_hint: "Apuntá <code>stt.model</code> a <code>models/ggml-base.bin</code> (~140 MB) o <code>models/ggml-tiny.bin</code> (~75 MB), o cerrá apps pesadas de la PC.",
   tool_cancelled: "cancelado",
   rename_no_suggestions: "sin sugerencias",
 };
@@ -1374,6 +1376,8 @@ const EN: Catalog = {
   stt_whisper_missing: "whisper-cli does not exist: {path}",
   stt_model_missing: "model does not exist: {path}",
   stt_ffmpeg_fail: "ffmpeg could not decode the audio: {detail}",
+  stt_memory_fail: "💾 <b>{model}</b> ({need}) did not fit in RAM — the PC had {free} free when it failed.",
+  stt_memory_hint: "Point <code>stt.model</code> at <code>models/ggml-base.bin</code> (~140 MB) or <code>models/ggml-tiny.bin</code> (~75 MB), or close heavy apps on the PC.",
   tool_cancelled: "cancelled",
   rename_no_suggestions: "no suggestions",
 };

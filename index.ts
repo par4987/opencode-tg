@@ -5018,7 +5018,7 @@ const pluginExport = {
                   }
                 } catch (error) {
                   log("WARN", "stt", safe(error));
-                  await send(t("voice_transcribe_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }), byThread);
+                  await send(t("voice_transcribe_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 600)) }), byThread);
                 } finally {
                   fs.rmSync(oggPath, { force: true });
                 }

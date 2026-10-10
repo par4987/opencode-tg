@@ -88,7 +88,15 @@ WAV, que es lo que whisper.cpp lee — y bajar
 [releases de whisper.cpp](https://github.com/ggml-org/whisper.cpp/releases)
 a `~/.opencode/tg/stt/Release/` más un modelo ggml (p. ej.
 [ggml-small.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin))
-a `~/.opencode/tg/stt/models/` — esos son los paths default.
+a `~/.opencode/tg/stt/models/` — esos son los paths default. Ojo con la RAM:
+whisper carga el modelo **más** sus buffers, así que small (465 MB) necesita
+cerca de 600 MB libres; si la PC está apretada, un modelo más chico sigue
+andando —
+[ggml-base.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin)
+(~140 MB) o
+[ggml-tiny.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin)
+(~75 MB), apuntando `stt.model` al archivo. Cuando la memoria no alcanza, el
+bot lo dice en la tarjeta con los números, en vez de tirarte el stderr crudo.
 
 **Cloud — cualquier API compatible con OpenAI** (Groq, OpenAI, self-hosted):
 
