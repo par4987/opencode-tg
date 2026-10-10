@@ -76,23 +76,25 @@ const fakeModel = join(sttDir, "ggml-small.bin");
 writeFileSync(fakeModel, Buffer.alloc(20 * 1024 * 1024));
 
 const mem = whisperFailureMessage({ stderr: allocStderr, code: 3, modelPath: fakeModel, freeBytes: 10 * 1024 * 1024 });
-check("memoria: clasifica la falla de alloc", mem.includes("no entr") && mem.includes("RAM"));
+check("memoria: clasifica la falla de alloc", mem.includes("RAM") && mem.includes("reservar"));
 check("memoria: nombra el modelo y los MB", mem.includes("ggml-small.bin") && mem.includes("20 MB") && mem.includes("10 MB"));
 check("memoria: incluye la pista del modelo chico", mem.includes("ggml-base.bin"));
 check("memoria: no suelta el stderr crudo", !mem.includes("load_backend"));
 
-// Modelo ausente (otra rama): no se aferra a la RAM — error plano util.
+// Modelo ausente (otra rama): igual clasifica, con tamanno "?", sin caerse.
 const noModel = whisperFailureMessage({ stderr: allocStderr, code: 3, modelPath: join(sttDir, "no-hay.bin"), freeBytes: 10 * 1024 * 1024 });
-check("modelo ausente: error plano con cola util", noModel.startsWith("whisper-cli exit 3:") && noModel.includes("failed to initialize whisper context"));
+check("modelo ausente: clasifica con tamanno ?", noModel.includes("RAM") && noModel.includes("?"));
 
-// Misma falla con RAM de sobra: no es un problema de memoria — error plano.
+// Mismo fallo con RAM de sobra: whisper no obtuvo la allocation igual — la
+// tarjeta dice la verdad (no pasa al stderr plano y cricket).
 const plenty = whisperFailureMessage({ stderr: allocStderr, code: 3, modelPath: fakeModel, freeBytes: 8 * 1024 * 1024 * 1024 });
-check("no-memoria: RAM amplia → error plano", plenty.startsWith("whisper-cli exit 3") && !plenty.includes("RAM"));
-check("no-memoria: el error util va al final", plenty.includes("failed to initialize whisper context") && !plenty.startsWith("whisper-cli exit 3: load_backend"));
+check("memoria: RAM amplia igual clasifica la allocation", plenty.includes("RAM") && plenty.includes("ggml-small.bin") && !plenty.startsWith("whisper-cli exit"));
 
-// Una falla sin alloc: tambien error plano, con el codigo y la cola del stderr.
-const weird = whisperFailureMessage({ stderr: "load_backend: loaded CPU backend\r\nerror: bad model magic", code: 9, modelPath: fakeModel, freeBytes: 900 * 1024 * 1024 });
+// Una falla sin alloc: error plano, con el codigo y la cola del stderr.
+const longStderr = "load_backend: loaded BLAS backend from Release/ggml-blas.dll\r\nload_backend: loaded CPU backend from Release/ggml-cpu-cascadelake.dll\r\n" + "x".repeat(400) + "\r\nerror: bad model magic";
+const weird = whisperFailureMessage({ stderr: longStderr, code: 9, modelPath: fakeModel, freeBytes: 900 * 1024 * 1024 });
 check("otra falla: plano con su codigo", weird.startsWith("whisper-cli exit 9:") && weird.includes("bad model magic"));
+check("otra falla: la cola util, no la cabecera de backends", !weird.includes("load_backend"));
 
 check("fmtBytes: MB y GB", fmtBytes(487005696) === "464 MB" && fmtBytes(75497472) === "72 MB" && fmtBytes(2147483648) === "2.0 GB");
 check("fmtBytes: basura → ?", fmtBytes(Number.NaN) === "?" && fmtBytes(-1) === "?");

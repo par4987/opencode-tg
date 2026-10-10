@@ -151,11 +151,16 @@ export function whisperFailureMessage(opts: {
   } catch {
     modelSize = 0;
   }
-  if (modelSize > 0 && freeBytes > 0 && freeBytes < modelSize * 1.5 && MEMORY_FAILURE.test(stderr)) {
+  // An allocation failure IS the diagnosis, even when the free bytes look
+  // generous: whisper asks for the model plus its buffers contiguously, and
+  // the OS will not hand a single process everything that is left (measured:
+  // 487 MB refused with ~900 MB free). The card states the refusal and how
+  // much room there was; the hint stands in every case.
+  if (MEMORY_FAILURE.test(stderr)) {
     return (
       t("stt_memory_fail", {
         model: escapeHtmlLocal(basename(modelPath)),
-        need: fmtBytes(modelSize),
+        need: modelSize > 0 ? fmtBytes(modelSize) : "?",
         free: fmtBytes(freeBytes),
       }) +
       "\n" +
