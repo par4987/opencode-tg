@@ -56,6 +56,12 @@
   //                          ~/.opencode/tg/.env, nunca aca.
   "stt": { "provider": "local" },
 
+  // /ci — las runs de GitHub Actions del repo. El token es opcional: el repo
+  // es publico y la llamada anonima alcanza (60/hora por IP); GITHUB_TOKEN en
+  // ~/.opencode/tg/.env sube el limite y lee repos privados. Un fork cambia
+  // el repo aca o con TG_CI_REPO en el .env.
+  "ci": { "repo": "par4987/opencode-tg" },
+
   "render": {
     // Milisegundos minimos entre ediciones del mismo mensaje.
     // Telegram permite ~1 edicion/segundo por mensaje.

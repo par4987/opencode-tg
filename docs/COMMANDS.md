@@ -361,6 +361,19 @@ El borrado está **acotado por ruta**: `Remove-Item` (y `rm`, `del`, `rmdir`...)
 
 **Notas**: Es una ventana de lectura — no es el log completo.
 
+### /ci
+
+**Qué hace**: Muestra las últimas runs de GitHub Actions del repo — qué workflow, sobre qué commit, y verde o rojo. Lo que prueba que un push llegó entero: typecheck, suites y, dos veces por semana, el sello de dependencias.
+
+**Uso**: `/ci`, `/ci <n>` o `/ci <workflow>`
+
+**Ejemplos**:
+- `/ci` → las últimas 6 runs con su estado y un link al sha
+- `/ci 12` → las últimas 12
+- `/ci deps` → sólo las runs del workflow `deps-audit`
+
+**Notas**: Lee la API REST de GitHub sin dependencias. El repo es público, así que funciona sin token (60 consultas/hora por IP); un `GITHUB_TOKEN` en `~/.opencode/tg/.env` sube el límite y alcanza repos privados. El repo por defecto es `par4987/opencode-tg` — un fork lo cambia con `"ci": { "repo": "owner/repo" }` en `config.json` o `TG_CI_REPO`.
+
 ### /terminal
 
 **Qué hace**: La terminal de la sesión, solo lectura.

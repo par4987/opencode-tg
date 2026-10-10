@@ -35,6 +35,7 @@ import { NATIVE_NAMES, availableLocales, locale, setLocale, t } from "./src/loca
 import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
+import { fetchRuns, formatRuns, type CiRun } from "./src/ci.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
@@ -4547,6 +4548,37 @@ const pluginExport = {
           }
           const released = registry.release(spec);
           await reply(released ? t("bots_released", { name: escapeHtml(spec.name) }) : t("bots_release_none"));
+          return;
+        }
+
+        case "ci": {
+          // The repo's own CI from the phone: which workflow ran, on which
+          // commit, and green or red. An optional number caps the list; any
+          // other argument filters the workflow name (e.g. "/ci deps").
+          const arg = argument.trim();
+          let limit = 6;
+          let filter = "";
+          if (/^\d+$/.test(arg)) {
+            limit = Math.min(Math.max(Number(arg), 1), 20);
+          } else if (arg.length > 0) {
+            filter = arg.toLowerCase();
+          }
+          try {
+            let runs = await fetchRuns(config.ci.repo, Math.max(limit, 20), config.ci.token);
+            if (filter) {
+              runs = runs.filter((run: CiRun) => run.name.toLowerCase().includes(filter));
+              if (runs.length === 0) {
+                await reply(t("ci_none", { repo: config.ci.repo }));
+                return;
+              }
+              await reply(t("ci_filter", { q: escapeHtml(arg) }) + "\n" + formatRuns(runs.slice(0, limit), config.ci.repo));
+              return;
+            }
+            await reply(formatRuns(runs.slice(0, limit), config.ci.repo));
+          } catch (error) {
+            log("WARN", "ci", safe(error));
+            await reply(t("ci_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
+          }
           return;
         }
 

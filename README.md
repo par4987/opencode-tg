@@ -137,18 +137,20 @@ npm test            # las 21 suites (514 checks) con el runner propio
 
 GitHub Actions corre ambos en cada push (`.github/workflows/ci.yml`).
 
-Veintiuna suites (`_setupcheck` … `_extracheck`, 514 checks) cubren el pump
+Veintitrés suites (`_setupcheck` … `_cicheck`, 582 checks) cubren el pump
 de eventos, render, tópicos, formularios, configuración, tareas, ingesta,
 elección de líder, tarjetas por mensaje, i18n, medios salientes, STT,
-topología multi-bot, permisos peligrosos y helpers de la API. Typecheck:
-`tsc --noEmit index.ts`.
+salud del proveedor, CI de GitHub, topología multi-bot, permisos peligrosos
+y helpers de la API. Typecheck: `tsc --noEmit index.ts`.
 
 ## Mantenimiento
 
 El flujo [`deps-audit`](.github/workflows/deps-audit.yml) corre lunes y
 jueves 23:00 Argentina (UTC-3): actualiza dependencias, sella vulnerabilidades, corre
 typecheck y las suites, y empuja solo si todo quedó verde — si no, abre un
-issue con el log. Corre en la nube: no necesita tu PC encendida.
+issue con el log. Corre en la nube: no necesita tu PC encendida. Desde el
+teléfono, `/ci` muestra las últimas runs (estado, commit y link) sin abrir
+el navegador.
 
 ## Docker
 

@@ -182,6 +182,7 @@ el prompt y el resultado llega al hilo de esa tarea.
 | `/perms` | Los permisos «siempre» guardados; `del <id>` revoca uno |
 | `/turns` | Qué cambiaron los turnos de la sesión |
 | `/log` | Una muestra del log server-side de la sesión |
+| `/ci` | Las últimas runs de GitHub Actions del repo — estado, commit y link |
 | `/terminal` | La terminal de la sesión, solo lectura |
 | `/detach` | Desacopla la raíz del chat de su sesión (los hilos siguen igual) |
 | `/move` | Mueve la sesi?n del hilo a otro proyecto |

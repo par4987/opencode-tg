@@ -328,3 +328,16 @@ Deletion is **path-scoped**: `Remove-Item` (and `rm`, `del`, `rmdir`...) is allo
 - `/release` → "🧹 released — its session falls back to the hub"
 
 **Notes**: The bot is also freed automatically when the session that claimed it is archived (`/archive`). In `single` and `per-project` the command answers that it does not apply. When the session wakes up, its next turn claims a free bot automatically.
+
+### /ci
+
+**What it does**: Shows the repo's latest GitHub Actions runs — which workflow, on which commit, and green or red. The evidence that a push landed whole: typecheck, suites, and twice a week the dependency seal.
+
+**Usage**: `/ci`, `/ci <n>` or `/ci <workflow>`
+
+**Examples**:
+- `/ci` → the last 6 runs with their state and a link on the sha
+- `/ci 12` → the last 12
+- `/ci deps` → only the `deps-audit` workflow runs
+
+**Notes**: Reads GitHub's REST API with no dependencies. The repo is public, so it works with no token (60 calls/hour per IP); a `GITHUB_TOKEN` in `~/.opencode/tg/.env` raises the limit and reaches private repos. The default repo is `par4987/opencode-tg` — a fork overrides it with `"ci": { "repo": "owner/repo" }` in `config.json` or `TG_CI_REPO`.

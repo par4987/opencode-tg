@@ -30,6 +30,7 @@ const suites = [
   "_offsetcheck",
   "_extracheck",
   "_healthcheck",
+  "_cicheck",
 ];
 
 let failed = 0;

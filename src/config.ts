@@ -42,6 +42,14 @@ export interface BotsConfig {
   assign: BotAssign[];
 }
 
+/** /ci — which GitHub repo's Actions runs the command reports. */
+export interface CiConfig {
+  /** "owner/repo"; the GITHUB_TOKEN env reaches private repos too. */
+  repo: string;
+  /** Optional, from ~/.opencode/tg/.env as GITHUB_TOKEN — never logged. */
+  token?: string;
+}
+
 export interface Config {
   mode: Mode;
   token: string;
@@ -88,6 +96,8 @@ export interface Config {
   deadPromptMs: number;
   /** Local voice-note transcription (whisper.cpp) — paths/language. */
   stt: SttConfig;
+  /** /ci: the GitHub repo whose Actions runs the command shows. */
+  ci: CiConfig;
   /** Subagent (task) sessions in the chat: mirrored read-only topics, or off. */
   subagents: "mirror" | "off";
   /** Multi-bot: which bot mirrors which session (src/bots.ts). */
@@ -107,6 +117,7 @@ const DEFAULTS: Omit<Config, "token"> = {
   debugEvents: false,
   deadPromptMs: 90_000,
   stt: {},
+  ci: { repo: "par4987/opencode-tg" },
   subagents: "mirror",
   bots: { topology: "single", assign: [] },
   extraBots: [],
@@ -271,6 +282,16 @@ export function loadConfig(): Config {
   if (env.TG_STT_LANGUAGE !== undefined) stt.language = String(env.TG_STT_LANGUAGE);
   if (env.STT_API_KEY !== undefined) stt.apiKey = String(env.STT_API_KEY);
 
+  // /ci: the repo whose Actions runs the command shows. The token is
+  // optional — anonymous works for public repos — and rides the .env.
+  const ciObj = typeof env.ci === "object" && env.ci !== null ? (env.ci as Record<string, unknown>) : {};
+  const ci: CiConfig = {
+    repo: String(env.TG_CI_REPO ?? ciObj.repo ?? "").trim() || DEFAULTS.ci.repo,
+  };
+  if (env.GITHUB_TOKEN !== undefined || env.TG_GITHUB_TOKEN !== undefined) {
+    ci.token = String(env.GITHUB_TOKEN ?? env.TG_GITHUB_TOKEN);
+  }
+
   // ── multi-bot: topology + explicit assignments (config.json), tokens in
   // the .env only. TELEGRAM_BOT_TOKEN_<NAME> declares an extra bot; its
   // chat is the first allowed user unless TG_BOT_CHAT_<NAME> says else.
@@ -316,6 +337,7 @@ export function loadConfig(): Config {
     debugEvents: asBool(env.TG_DEBUG_EVENTS) ?? asBool(env.debugEvents) ?? DEFAULTS.debugEvents,
     deadPromptMs,
     stt,
+    ci,
     subagents: asChoice(env.TG_SUBAGENTS, ["mirror", "off"] as const) ?? asChoice(env.subagents, ["mirror", "off"] as const) ?? DEFAULTS.subagents,
     bots: { topology, assign },
     extraBots,

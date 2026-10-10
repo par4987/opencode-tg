@@ -194,6 +194,7 @@ prompt, and the result lands in the task's topic.
 | `/perms` | The saved "always" permissions; `del <id>` revokes one |
 | `/turns` | What the session's turns changed |
 | `/log` | A sample of the session's server-side log |
+| `/ci` | The repo's latest GitHub Actions runs — state, commit and link |
 | `/terminal` | The session's terminal, read-only |
 | `/detach` | Detaches the chat root from its session (threads unchanged) |
 | `/move` | Moves the topic's session to another project |
