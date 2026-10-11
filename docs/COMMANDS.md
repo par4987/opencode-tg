@@ -7,15 +7,19 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 
 ### /new
 
-**Qué hace**: Crea una sesión nueva en el proyecto actual.
+**Qué hace**: Crea una sesión nueva en el proyecto que elijas, con su hilo de Telegram abierto en el acto.
 
-**Uso**: `/new <título>`
+**Uso**: `/new <título?>`
 
 **Ejemplos**:
-- `/new Análisis de ventas` → crea una sesión titulada "Análisis de ventas"
-- `/new` → crea una sesión con el título por defecto
+- `/new Análisis de ventas` → muestra el picker de proyecto; al tocar uno, crea la sesión "Análisis de ventas" ahí
+- `/new` → pide el título en el chat y, una vez dado, muestra el picker
 
-**Notas**: El hilo de Telegram se crea con el primer mensaje. Para crear en otro proyecto: `/projects`.
+**Notas**:
+- El proyecto de la conversación actual va primero en el picker (✅) — es el default: un toque y listo.
+- "➕ Nuevo proyecto…" pide un nombre y crea esa carpeta al lado del proyecto actual; la sesión se abre adentro.
+- El hilo se abre en el momento de crear (antes nacía con el primer mensaje): escribí en él y la sesión ya está escuchando.
+- Si `/new` se manda sin título, el próximo mensaje escrito en ese hilo dentro de 10 minutos es el nombre.
 
 ### /use
 

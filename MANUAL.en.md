@@ -131,7 +131,7 @@ All of it lands **in the session's thread**, where you are already looking.
 | `/running` | Only the sessions working right now |
 | `/history` | History of the topic's session (or `/history <id>`) — reads from the server while the session is active, from the on-disk transcript otherwise |
 | `/kill` | Interrupts the current turn |
-| `/new` | New session with its own topic — `/new <title>` creates it already named; the topic follows session renames |
+| `/new` | New session in the project you pick — the current one is the default, with a "new project" option; the thread opens immediately and follows session renames |
 | `/send <id> <text>` | Send a prompt to a session without switching topics |
 | `/menu` | Main menu with buttons |
 | `/usage` | Current model usage (tokens and cost of the project) |

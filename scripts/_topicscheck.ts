@@ -110,6 +110,35 @@ async function main(): Promise<void> {
   check("titleOf async: el topico nace con el titulo resuelto", calls4[0]?.name === "Titulo vivo del server", calls4[0]?.name ?? "sin llamadas");
   check("y el mapeo quedo", store4.get("ses_w") === 888);
 
+  // 4b. ensure: /new opens the thread and WAITS for it. An event arriving
+  //     mid-flight must join that promise, not open a second topic — that is
+  //     the race the /new announcement used to run into.
+  const calls5: Array<{ chatId: number; name: string }> = [];
+  const gate: { resolve?: (v: number | undefined) => void } = {};
+  const stub5 = {
+    async createForumTopic(chatId: number, name: string): Promise<number | undefined> {
+      calls5.push({ chatId, name });
+      // Held open so a concurrent get() can race the creation.
+      return new Promise<number | undefined>((r) => {
+        gate.resolve = r;
+      });
+    },
+  };
+  const store5 = new TopicStore(555, FILE);
+  const resolver5 = new TopicResolver(store5, 555, stub5, () => "Asegurada", () => undefined);
+  const ensured = resolver5.ensure("ses_v");
+  // The event pump fires while the creation is still in flight.
+  const raced = resolver5.get("ses_v");
+  check("get durante ensure devuelve undefined", raced === undefined);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  check("get durante ensure no agenda otra creacion", calls5.length === 1, `${calls5.length} llamadas`);
+  gate.resolve?.(919);
+  check("ensure espera y devuelve el hilo creado", (await ensured) === 919);
+  check("el mapeo quedo tras ensure", store5.get("ses_v") === 919);
+  // A second ensure on a resolved session takes the known thread and never
+  // calls the transport again.
+  check("ensure sobre hilo conocido no llama al transporte", (await resolver5.ensure("ses_v")) === 919 && calls5.length === 1);
+
   // 5. /rebuild selection: the forum should show sessions a HUMAN used
   //    recently, not sessions the server's housekeeping touched. The bug
   //    this guards: after a service restart every session shares one

@@ -10,8 +10,8 @@
  * Runtime dependencies: none. `@opencode/plugin` is imported type-only, so it
  * is erased at compile time and this folder needs no node_modules.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { configProviders } from "./src/config-models.js";
 import { projectConfigFile, withDefaultModel } from "./src/config-edit.js";
 import { fmtSize, LS_HIDDEN, safeResolve } from "./src/lsbrowse.js";
@@ -36,6 +36,7 @@ import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
 import { fetchRuns, formatRuns, type CiRun } from "./src/ci.js";
+import { normalizeProjectName, normalizeTitle, projectChoices, type ProjectChoice } from "./src/new-session.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
@@ -938,6 +939,8 @@ const pluginExport = {
     const inboxCards = new MessageCards<{ session: string; items: Array<{ id: string; text: string }> }>();
     /** /rename suggestions, bound to the message that offers them. */
     const suggestCards = new MessageCards<{ session: string; options: string[] }>();
+    /** The /new project picker: the pending title plus the rows behind its buttons. */
+    const newProjectCards = new MessageCards<{ title: string; items: ProjectChoice[] }>();
     /** Armed by the edit button: the next message replaces that inbox item. */
     let inboxEdit: { id: string; text: string; session: string } | undefined;
     /**
@@ -1079,6 +1082,10 @@ const pluginExport = {
     let skillArmed: { id: string; name: string } | undefined;
     /** Armed by a /tasks "✏️ Prompt" tap: the next text in that thread becomes that task's new prompt. */
     let taskPromptEdit: { id: string; name: string; threadId: number | undefined; armedAt: number } | undefined;
+    /** Armed by /new without a title: the next text in that thread names the session. */
+    let titleAsk: { directory: string; threadId: number | undefined; armedAt: number } | undefined;
+    /** Armed by the picker's "new project" tap: the next text names the folder to create. */
+    let projectAsk: { title: string; parent: string; threadId: number | undefined; armedAt: number } | undefined;
     const watched = new Set<string>();
     /**
      * Subagent sessions under `"subagents": "off"` — ignored from the first
@@ -2364,6 +2371,96 @@ const pluginExport = {
      * Commands that target a session fall back to it, so `/send hola` inside a
      * thread needs no id at all.
      */
+    /**
+     * Create a session in `directory` and announce it INSIDE its own thread.
+     *
+     * `/new` is the one command whose whole point is to be answerable from the
+     * phone the moment it answers, so the topic is opened here instead of
+     * waiting for the first server event to schedule it. When topic mode is
+     * unavailable (private chat, or BotFather has it off) the announcement
+     * falls back to the thread the command was written in, and the old hint
+     * about the first message applies.
+     */
+    const bornSession = async (
+      directory: string,
+      title: string | undefined,
+      originThread: number | undefined,
+    ): Promise<void> => {
+      if (chatId === undefined) return;
+      const created = await forms.request<{ id?: string }>("POST", "/session", {
+        location: { directory },
+        ...(title ? { title } : {}),
+      });
+      if (!created?.id) throw new Error(t("err_no_session_id"));
+      const id = created.id;
+      track(id);
+      // Born watched. In `all` mode with an empty set it already is, and
+      // adding would NARROW the mirror to this one session (one /watch
+      // silences every other — the same trap /watch warns about). Only
+      // `watched` mode needs the pin for the new session to be mirrored.
+      if (!mirrorAll) watched.add(id);
+      // Shares the resolver's in-flight map: a `session.created` event landing
+      // before the topic exists joins this creation instead of opening a
+      // second one.
+      const tid = isWatched(id) ? await topicResolver?.ensure(id) : undefined;
+      const short = (directory.split(/[\\/]/).filter(Boolean).pop() ?? directory) as string;
+      await telegram
+        .sendMessage(
+          chatId,
+          t("new_session_done", { id: id.slice(0, 22), project: escapeHtml(short) }) +
+            (title ? "\n" + t("new_session_titled", { title: escapeHtml(title) }) : "") +
+            "\n" +
+            (tid !== undefined ? t("new_session_here") : t("new_session_write_hint", { id })),
+          { parseMode: "HTML", messageThreadId: tid ?? originThread },
+        )
+        .catch(() => undefined);
+      log("INFO", `sesi\u00f3n nueva ${id.slice(0, 18)} en ${directory}${tid !== undefined ? ` — hilo ${tid}` : " (sin hilo)"}`);
+    };
+
+    /**
+     * The project picker `/new` shows after it has a title: the current
+     * project first (the default), the rest freshest first, and a "new
+     * project" button. A tap — one round trip — opens the session.
+     */
+    const offerProjects = async (
+      title: string,
+      currentDir: string,
+      originThread: number | undefined,
+    ): Promise<void> => {
+      if (chatId === undefined) return;
+      if (!(await forms.connect())) {
+        await telegram.sendMessage(chatId, t("api_down"), { messageThreadId: originThread }).catch(() => undefined);
+        return;
+      }
+      const projects = await forms
+        .request<Array<{ canonical?: string; time?: { updated?: number; created?: number } }>>("GET", "/project")
+        .catch((error) => {
+          log("WARN", "new project list", safe(error));
+          return undefined;
+        });
+      const known: Array<{ directory: string; name: string; updated?: number }> = (Array.isArray(projects) ? projects : [])
+        .filter((p) => typeof p.canonical === "string" && existsSync(p.canonical as string))
+        .map((p) => ({
+          directory: p.canonical as string,
+          name: ((p.canonical as string).split(/[\\/]/).filter(Boolean).pop() ?? p.canonical) as string,
+          updated: p.time?.updated ?? p.time?.created,
+        }));
+      const items = projectChoices(currentDir, known);
+      const keyboard: Array<Array<{ text: string; callback_data: string }>> = items.map((item, i) => [
+        {
+          text: (item.current ? "\u2705 " : "") + item.name.slice(0, 58),
+          callback_data: `np:${i}`,
+        },
+      ]);
+      keyboard.push([{ text: t("new_btn_new_project"), callback_data: "npn:" }]);
+      const sent = await telegram.sendMessage(chatId, t("new_pick_project", { title: escapeHtml(title) }), {
+        parseMode: "HTML",
+        messageThreadId: originThread,
+        replyMarkup: { inline_keyboard: keyboard },
+      });
+      if (sent !== null) newProjectCards.set(sent, { title, items });
+    };
+
     const handleCommand = async (name: string, argument: string, threadSession?: string): Promise<void> => {
       // A reply belongs where the command was typed: the session's thread when
       // written there, the chat root when not. The switch talks through
@@ -3609,8 +3706,10 @@ const pluginExport = {
           return;
         }
         case "new": {
-          // A new session in the CURRENT project — /projects is the picker
-          // for jumping elsewhere; this is the one-tap everyday case.
+          // A new session, picked to a project: /new asks for a title (if it
+          // was not given), then shows the project picker — the current one
+          // first as the default. /projects remains the session picker for
+          // jumping into an existing conversation.
           const target = threadSession || targetSession();
           if (!(await forms.connect())) {
             await reply(t("api_down"));
@@ -3621,28 +3720,15 @@ const pluginExport = {
             await reply(t("newtask_needs_project"));
             return;
           }
-          try {
-            // /new <título> — the session is born with the title; the forum
-            // topic (created on the first message) carries it as its name.
-            const title = argument.trim();
-            const created = await forms.request<{ id?: string }>("POST", "/session", {
-              location: { directory },
-              ...(title ? { title: title.slice(0, 60) } : {}),
-            });
-            if (!created?.id) throw new Error(t("err_no_session_id"));
-            const short = (directory.split(/[\\/]/).filter(Boolean).pop() ?? directory) as string;
-            await reply(
-              t("new_session_done", { id: created.id.slice(0, 22), project: escapeHtml(short) }) +
-                (title
-                  ? "\n" + t("new_session_titled", { title: escapeHtml(title.slice(0, 60)) })
-                  : "\n" + t("new_session_untitled_hint")) +
-                "\n" +
-                t("new_session_write_hint", { id: created.id }),
-            );
-          } catch (error) {
-            log("WARN", "new session", safe(error));
-            await reply(t("newtask_create_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }));
+          const title = normalizeTitle(argument);
+          if (!title) {
+            // No title: ask for one. The next text in THIS thread within 10
+            // minutes names the session; anything else still reaches the agent.
+            titleAsk = { directory, threadId: threadOf(threadSession), armedAt: Date.now() };
+            await reply(t("new_title_ask"));
+            return;
           }
+          await offerProjects(title, directory, threadOf(threadSession));
           return;
         }
 
@@ -4977,6 +5063,64 @@ const pluginExport = {
                 await wizardStep(text, byThread);
                 return;
               }
+              // /new asked for a title and this text is it: the project picker
+              // follows. Stale (10 min) or written in another thread it falls
+              // through as a normal prompt, like the task-prompt edit above.
+              if (titleAsk && text && !text.startsWith("/")) {
+                const ask = titleAsk;
+                titleAsk = undefined;
+                if (Date.now() - ask.armedAt < 10 * 60_000 && message.message_thread_id === ask.threadId) {
+                  const title = normalizeTitle(text);
+                  if (!title) {
+                    titleAsk = { ...ask, armedAt: Date.now() };
+                    await send(t("new_title_bad"), byThread);
+                    return;
+                  }
+                  await offerProjects(title, ask.directory, ask.threadId);
+                  return;
+                }
+              }
+              // The picker's "new project" tap asked for a name and this text
+              // is it: the folder is created beside the current project and
+              // the session opens inside it.
+              if (projectAsk && text && !text.startsWith("/")) {
+                const ask = projectAsk;
+                projectAsk = undefined;
+                if (Date.now() - ask.armedAt < 10 * 60_000 && message.message_thread_id === ask.threadId) {
+                  const name = normalizeProjectName(text);
+                  if (!name) {
+                    projectAsk = { ...ask, armedAt: Date.now() };
+                    await send(t("new_project_bad_name"), byThread);
+                    return;
+                  }
+                  const dir = join(ask.parent, name);
+                  if (existsSync(dir)) {
+                    projectAsk = { ...ask, armedAt: Date.now() };
+                    await send(t("new_project_exists", { name: escapeHtml(name) }), byThread);
+                    return;
+                  }
+                  try {
+                    mkdirSync(dir, { recursive: true });
+                  } catch (error) {
+                    log("WARN", "new project mkdir", safe(error));
+                    await send(
+                      t("new_project_mkdir_fail", { name: escapeHtml(name), detail: escapeHtml(String((error as Error).message).slice(0, 160)) }),
+                      byThread,
+                    );
+                    return;
+                  }
+                  try {
+                    await bornSession(dir, ask.title, ask.threadId);
+                  } catch (error) {
+                    log("WARN", "new session", safe(error));
+                    await send(
+                      t("newtask_create_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
+                      byThread,
+                    );
+                  }
+                  return;
+                }
+              }
               // An inbox edit is armed: this message replaces that pending
               // item — cancel it and send the new text through the same inbox.
               if (inboxEdit && text && !text.startsWith("/") && (byThread ?? targetSession()) === inboxEdit.session) {
@@ -4996,6 +5140,8 @@ const pluginExport = {
                 return;
               }
               if (inboxEdit && text.startsWith("/")) inboxEdit = undefined;
+              if (titleAsk && text.startsWith("/")) titleAsk = undefined;
+              if (projectAsk && text.startsWith("/")) projectAsk = undefined;
               // Media is content for the agent, never a form answer: a photo
               // (or an image document) downloads and rides the prompt as an
               // image block, with the caption as its text.
@@ -6188,6 +6334,63 @@ const pluginExport = {
                   return;
                 }
                 await ack(t("action_unknown"));
+                return;
+              }
+              if (payload.startsWith("np:") || payload === "npn:") {
+                // The /new picker: a project to open the titled session in, or
+                // "new project" to ask for the folder name.
+                const card = newProjectCards.get(cq.message?.message_id);
+                if (!card) {
+                  await ack(t("projects_stale"));
+                  return;
+                }
+                const originThread = cq.message?.message_thread_id;
+                if (payload === "npn:") {
+                  newProjectCards.drop(cq.message?.message_id);
+                  const base = card.items[0]?.directory;
+                  if (!base) {
+                    await ack(t("projects_stale"));
+                    return;
+                  }
+                  projectAsk = { title: card.title, parent: dirname(base), threadId: originThread, armedAt: Date.now() };
+                  await ack();
+                  await telegram
+                    .sendMessage(
+                      cq.message?.chat?.id ?? chatId ?? 0,
+                      t("new_project_ask", { parent: escapeHtml((base.split(/[\\/]/).filter(Boolean).pop() ?? base) as string) }),
+                      { parseMode: "HTML", messageThreadId: originThread },
+                    )
+                    .catch(() => undefined);
+                  return;
+                }
+                const chosen = card.items[Number(payload.slice(3))];
+                if (!chosen) {
+                  await ack(t("projects_stale"));
+                  return;
+                }
+                // Drop BEFORE creating: a double tap must not open two sessions.
+                newProjectCards.drop(cq.message?.message_id);
+                await ack(t("new_opening"));
+                if (!(await forms.connect())) {
+                  await ack(t("api_down_ack"));
+                  return;
+                }
+                try {
+                  await bornSession(chosen.directory, card.title, originThread);
+                  if (cq.message) {
+                    await telegram
+                      .editMessageText(
+                        cq.message.chat.id,
+                        cq.message.message_id,
+                        t("new_picker_done", { title: escapeHtml(card.title), project: escapeHtml(chosen.name) }),
+                        { parseMode: "HTML" },
+                      )
+                      .catch(() => undefined);
+                  }
+                } catch (error) {
+                  log("WARN", "new session", safe(error));
+                  await ack(t("session_create_fail"));
+                }
                 return;
               }
               if (payload.startsWith("proj:")) {

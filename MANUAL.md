@@ -119,7 +119,7 @@ Todo eso llega **al hilo de la sesión**, donde ya estás mirando.
 | `/running` | Solo las sesiones trabajando ahora |
 | `/history` | Historial de la sesión del hilo (o `/history <id>`) — lee del server mientras la sesión está activa, del transcript en disco si no |
 | `/kill` | Interrumpe el turno en curso de la sesión |
-| `/new` | Sesión nueva con hilo propio — `/new <título>` la crea ya bautizada; el hilo sigue el nombre si la sesión se renombra |
+| `/new` | Sesión nueva en el proyecto que elijas — picker con el actual por defecto y opción de crear uno nuevo; el hilo se abre en el acto y sigue el nombre si la sesión se renombra |
 | `/send <id> <texto>` | Manda un prompt a una sesión sin cambiar de hilo |
 | `/menu` | Menú principal con botones |
 | `/usage` | Uso actual del modelo (tokens y costo del proyecto) |

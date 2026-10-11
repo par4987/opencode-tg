@@ -150,7 +150,14 @@ export class TopicStore {
  * the thread. That is one straggler message, not a broken transcript.
  */
 export class TopicResolver {
-  private readonly pending = new Set<string>();
+  /**
+   * In-flight creations, keyed by session: each promise resolves to the new
+   * thread id, or `undefined` when topic mode is unavailable. The scheduled
+   * path (`get`) and the eager one (`ensure`) share it, so a server event
+   * arriving while `/new` is opening its thread joins that promise instead of
+   * opening a second topic for the same session.
+   */
+  private readonly pending = new Map<string, Promise<number | undefined>>();
 
   constructor(
     private readonly store: TopicStore,
@@ -175,23 +182,41 @@ export class TopicResolver {
     const known = this.store.get(sessionId);
     if (known !== undefined) return known;
     if (this.pending.has(sessionId)) return undefined;
-    this.pending.add(sessionId);
-    void this.create(sessionId);
+    this.pending.set(sessionId, this.create(sessionId));
     return undefined;
   }
 
-  private async create(sessionId: string): Promise<void> {
+  /**
+   * The thread id, creating the topic NOW and waiting for it. `/new` announces
+   * inside the fresh thread, so it cannot settle for "scheduled" and read the
+   * chat root out of the answer. Shares the pending map with `get`, so a
+   * `session.created` event landing mid-flight joins this creation and the two
+   * never split into two topics.
+   */
+  async ensure(sessionId: string): Promise<number | undefined> {
+    const known = this.store.get(sessionId);
+    if (known !== undefined) return known;
+    const inflight = this.pending.get(sessionId);
+    if (inflight) return inflight;
+    const task = this.create(sessionId);
+    this.pending.set(sessionId, task);
+    return task;
+  }
+
+  private async create(sessionId: string): Promise<number | undefined> {
     const title = ((await this.titleOf(sessionId)) ?? "").trim() || sessionId.slice(0, 24);
     try {
       const threadId = await this.telegram.createForumTopic(this.chatId, title);
       if (threadId !== undefined) this.store.set(sessionId, threadId);
       else if (this.onUnavailable) this.onUnavailable();
+      return threadId;
     } catch (error) {
       // The transport is responsible for classifying the "not a forum" error
       // and returning undefined; a throw here is an unexpected failure. Report
       // it and do not retry, so one bad call cannot loop forever.
       if (this.onUnavailable) this.onUnavailable();
       void error;
+      return undefined;
     } finally {
       this.pending.delete(sessionId);
     }

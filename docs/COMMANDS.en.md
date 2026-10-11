@@ -8,15 +8,19 @@ its section.
 
 ### /new
 
-**What it does**: Creates a new session in the current project.
+**What it does**: Creates a new session in the project you pick, with its Telegram thread open right away.
 
-**Usage**: `/new <title>`
+**Usage**: `/new <title?>`
 
 **Examples**:
-- `/new Sales analysis` → creates a session titled "Sales analysis"
-- `/new` → creates a session with the default title
+- `/new Sales analysis` → shows the project picker; tapping one creates the "Sales analysis" session there
+- `/new` → asks for the title in the chat, then shows the picker
 
-**Notes**: The Telegram thread is created with the first message. To create in another project: `/projects`.
+**Notes**:
+- The current conversation's project comes first in the picker (✅) — it is the default: one tap and done.
+- "➕ New project…" asks for a name and creates that folder next to the current project; the session opens inside it.
+- The thread opens the moment the session is created (it used to appear with the first message): write in it and the session is already listening.
+- When `/new` is sent without a title, the next message written in that thread within 10 minutes is the name.
 
 ### /use
 
