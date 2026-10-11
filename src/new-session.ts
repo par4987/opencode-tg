@@ -63,6 +63,19 @@ export function projectChoices(
   ];
 }
 
+/**
+ * The provider the /new model picker opens on: the project default's — but
+ * only while it still has visible models, since a provider page that offers
+ * nothing but the back button is a dead end.
+ */
+export function defaultProviderOf(
+  items: Array<{ providerID: string }>,
+  def: { id?: string; providerID?: string } | undefined,
+): string | undefined {
+  if (!def?.providerID) return undefined;
+  return items.some((m) => m.providerID === def.providerID) ? def.providerID : undefined;
+}
+
 function baseName(directory: string): string {
   return directory.split(/[\\/]/).filter(Boolean).pop() ?? directory;
 }

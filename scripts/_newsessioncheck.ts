@@ -5,7 +5,7 @@
  * is one line; a project name is a NAME, never a path), and the picker draws
  * the current project first — that is the default the whole design promises.
  */
-import { normalizeProjectName, normalizeTitle, projectChoices } from "../src/new-session.js";
+import { defaultProviderOf, normalizeProjectName, normalizeTitle, projectChoices } from "../src/new-session.js";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {
@@ -81,6 +81,19 @@ function main(): void {
   //    current one is always offered, so /new never answers with an empty
   //    picker.
   check("sin proyectos conocidos, el actual igual se ofrece", projectChoices("C:\\solo", [])[0]?.directory === "C:\\solo");
+
+  // 7. The model picker opens on the project default's provider — but only
+  //    while that provider still has visible models: a page that offers
+  //    nothing but the back button is a dead end.
+  const modelItems = [
+    { providerID: "openrouter" },
+    { providerID: "nvidia" },
+    { providerID: "nvidia" },
+  ];
+  check("default con modelos visibles abre su proveedor", defaultProviderOf(modelItems, { id: "z-ai/glm-5.3", providerID: "nvidia" }) === "nvidia");
+  check("default sin provider cae a la lista de proveedores", defaultProviderOf(modelItems, { id: "x" }) === undefined);
+  check("default sin modelos visibles cae a la lista", defaultProviderOf(modelItems, { id: "y", providerID: "gateway" }) === undefined);
+  check("default en null cae a la lista", defaultProviderOf(modelItems, undefined) === undefined);
 
   console.log(failures === 0 ? "new-session: OK" : `new-session: ${failures} FALLAS`);
   if (failures > 0) process.exitCode = 1;

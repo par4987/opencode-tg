@@ -20,6 +20,7 @@ its section.
 - The current conversation's project comes first in the picker (✅) — it is the default: one tap and done.
 - "➕ New project…" asks for a name and creates that folder next to the current project; the session opens inside it.
 - The thread opens the moment the session is created (it used to appear with the first message): write in it and the session is already listening.
+- You pick provider and model in the new thread: it opens on the project's default-model provider, that model marked ✅ — one tap keeps it, or browse to another. Same later with `/models`.
 - When `/new` is sent without a title, the next message written in that thread within 10 minutes is the name.
 
 ### /use

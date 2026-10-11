@@ -19,6 +19,7 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 - El proyecto de la conversación actual va primero en el picker (✅) — es el default: un toque y listo.
 - "➕ Nuevo proyecto…" pide un nombre y crea esa carpeta al lado del proyecto actual; la sesión se abre adentro.
 - El hilo se abre en el momento de crear (antes nacía con el primer mensaje): escribí en él y la sesión ya está escuchando.
+- Elegís proveedor y modelo en el hilo nuevo: abre en el proveedor del modelo default del proyecto, con ese modelo marcado ✅ — un toque lo mantiene, o navegá a otro. Lo mismo después con `/models`.
 - Si `/new` se manda sin título, el próximo mensaje escrito en ese hilo dentro de 10 minutos es el nombre.
 
 ### /use

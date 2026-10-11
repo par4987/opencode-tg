@@ -36,7 +36,7 @@ import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
 import { fetchRuns, formatRuns, type CiRun } from "./src/ci.js";
-import { normalizeProjectName, normalizeTitle, projectChoices, type ProjectChoice } from "./src/new-session.js";
+import { defaultProviderOf, normalizeProjectName, normalizeTitle, projectChoices, type ProjectChoice } from "./src/new-session.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
@@ -928,6 +928,13 @@ const pluginExport = {
       search: string;
       /** Wizard mode: picking sets the task's model instead of POSTing. */
       taskMode?: boolean;
+      /** /new mode: a line above the picker — the session was just created in
+       *  this thread, so the card announces it and offers the model choice. */
+      announce?: string;
+      /** The title the header shows; /new knows it before the meta file lands. */
+      label?: string;
+      /** The project's default model, drawn ✅ on its button. */
+      currentModelID?: string;
     }
     /** One card per message, for every index-addressed picker. */
     const modelCards = new MessageCards<ModelPicker>();
@@ -2251,7 +2258,8 @@ const pluginExport = {
       ]);
       return {
         text:
-          t("models_pick_header", { label: escapeHtml(tracked?.title ?? state.target.slice(0, 18)) }) +
+          (state.announce ?? "") +
+          t("models_pick_header", { label: escapeHtml(state.label ?? tracked?.title ?? state.target.slice(0, 18)) }) +
           t("models_pick_provider"),
         keyboard,
       };
@@ -2270,8 +2278,9 @@ const pluginExport = {
       const keyboard = slice.map(({ m, idx }) => [
         {
           // The display name is what the desktop selector shows; the id only
-          // matters to the receipt.
-          text: (m.name ?? m.id).slice(0, 64),
+          // matters to the receipt. The project's default wears the check so
+          // /new's one-tap option is visible at a glance.
+          text: ((m.id === state.currentModelID ? "\u2705 " : "") + (m.name ?? m.id)).slice(0, 64),
           callback_data: `mpk:${idx}`,
         },
       ]);
@@ -2288,7 +2297,8 @@ const pluginExport = {
           : t("models_all");
       return {
         text:
-          t("models_pick_header", { label: escapeHtml(tracked?.title ?? state.target.slice(0, 18)) }) +
+          (state.announce ?? "") +
+          t("models_pick_header", { label: escapeHtml(state.label ?? tracked?.title ?? state.target.slice(0, 18)) }) +
           t("models_page_header", { heading: escapeHtml(heading), page: safe + 1, pages }) +
           t("models_pick_hint"),
         keyboard,
@@ -2307,6 +2317,76 @@ const pluginExport = {
         text: t("agents_pick_header", { label: escapeHtml(tracked?.title ?? card.target.slice(0, 18)) }),
         keyboard,
       };
+    };
+
+    /**
+     * The visible model catalogue for a directory — the same set the
+     * desktop's own "Models" screen shows: the models the user switched on
+     * there, with the config file as fallback when that state cannot be read.
+     * Shared by /models and /new's model step, so the two pickers can never
+     * disagree about what is on offer. The caller connects first.
+     */
+    const modelCatalog = async (
+      directory: string | undefined,
+    ): Promise<{ items: ApiModel[]; providers: Array<{ id: string; name: string }> } | undefined> => {
+      const [all, providers] = await Promise.all([
+        forms.request<ApiModel[]>("GET", "/model"),
+        forms.request<Array<{ id?: string; activation?: string; name?: string }>>("GET", "/provider"),
+      ]);
+      if (!Array.isArray(all) || all.length === 0) return undefined;
+      const provNames = new Map(
+        (Array.isArray(providers) ? providers : [])
+          .filter((p) => p.id !== undefined)
+          .map((p) => [p.id as string, p.name ?? (p.id as string)]),
+      );
+      // The curated lookup needs the directory; for an unloaded session the
+      // API GET 404s — the plugin's own records know it anyway.
+      const curated = configProviders(directory ? [directory] : []);
+      const enabledKeys = curated
+        .map((p) => [p.id, p.models.filter((m) => !m.disabled)] as const)
+        .filter(([, models]) => models.length > 0);
+      const curatedNames = new Map<string, string | undefined>(
+        curated.flatMap((p): Array<[string, string | undefined]> =>
+          p.models.map((m) => [`${p.id}\u0000${m.key}`, m.name]),
+        ),
+      );
+      const byProviderKey = new Map(
+        (Array.isArray(all) ? all : []).map((x) => [`${x.providerID}\u0000${x.modelID ?? x.id}`, x]),
+      );
+      // Build the visible set: desktop toggles when readable, config
+      // otherwise. Both worlds speak "providerID\u0000modelID".
+      const showKeys = new Set<string>();
+      const toggles = await desktopVisibleModels();
+      if (toggles.length > 0) {
+        for (const t of toggles) {
+          if (t.visible) showKeys.add(`${t.providerID}\u0000${t.modelID}`);
+        }
+      } else {
+        for (const [pid, models] of enabledKeys) {
+          for (const m of models) showKeys.add(`${pid}\u0000${m.key}`);
+        }
+      }
+      const items: ApiModel[] = [];
+      for (const key of showKeys) {
+        const known = byProviderKey.get(key);
+        if (known) {
+          items.push(known);
+        } else {
+          const [pid, modelID] = key.split("\u0000");
+          if (!modelID) continue;
+          items.push({
+            id: `${pid}/${modelID}`,
+            modelID,
+            providerID: pid,
+            name: curatedNames.get(key),
+          });
+        }
+      }
+      items.sort((a, b) => a.id.localeCompare(b.id));
+      const provList = [...new Set(items.map((m) => m.providerID))]
+        .map((pid) => ({ id: pid, name: provNames.get(pid) ?? pid }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return { items, providers: provList };
     };
 
     const commands = [
@@ -2372,21 +2452,21 @@ const pluginExport = {
      * thread needs no id at all.
      */
     /**
-     * Create a session in `directory` and announce it INSIDE its own thread.
+     * Create a session in `directory` and open its thread. Returns the id and
+     * the thread the announcement belongs in.
      *
      * `/new` is the one command whose whole point is to be answerable from the
      * phone the moment it answers, so the topic is opened here instead of
      * waiting for the first server event to schedule it. When topic mode is
-     * unavailable (private chat, or BotFather has it off) the announcement
-     * falls back to the thread the command was written in, and the old hint
-     * about the first message applies.
+     * unavailable (private chat, or BotFather has it off) `tid` is undefined
+     * and the caller falls back to the thread the command was written in.
      */
     const bornSession = async (
       directory: string,
       title: string | undefined,
       originThread: number | undefined,
-    ): Promise<void> => {
-      if (chatId === undefined) return;
+    ): Promise<{ id: string; tid: number | undefined } | undefined> => {
+      if (chatId === undefined) return undefined;
       const created = await forms.request<{ id?: string }>("POST", "/session", {
         location: { directory },
         ...(title ? { title } : {}),
@@ -2403,18 +2483,75 @@ const pluginExport = {
       // before the topic exists joins this creation instead of opening a
       // second one.
       const tid = isWatched(id) ? await topicResolver?.ensure(id) : undefined;
-      const short = (directory.split(/[\\/]/).filter(Boolean).pop() ?? directory) as string;
-      await telegram
-        .sendMessage(
-          chatId,
-          t("new_session_done", { id: id.slice(0, 22), project: escapeHtml(short) }) +
-            (title ? "\n" + t("new_session_titled", { title: escapeHtml(title) }) : "") +
-            "\n" +
-            (tid !== undefined ? t("new_session_here") : t("new_session_write_hint", { id })),
-          { parseMode: "HTML", messageThreadId: tid ?? originThread },
-        )
-        .catch(() => undefined);
       log("INFO", `sesi\u00f3n nueva ${id.slice(0, 18)} en ${directory}${tid !== undefined ? ` — hilo ${tid}` : " (sin hilo)"}`);
+      return { id, tid };
+    };
+
+    /**
+     * The model step of /new: announce the session INSIDE its fresh thread and
+     * offer the model choice right there. The ✅ is the project's default —
+     * one tap keeps it; the provider list is a tap away for anything else.
+     * The card is a plain ModelPicker, so the existing mpk/mpv/mpb/mp
+     * callbacks apply the model without knowing it came from /new.
+     */
+    const offerModelPicker = async (
+      target: string,
+      directory: string,
+      title: string | undefined,
+      projectName: string,
+      originThread: number | undefined,
+    ): Promise<void> => {
+      if (chatId === undefined) return;
+      const announce =
+        t("new_session_done", { id: target.slice(0, 22), project: escapeHtml(projectName) }) +
+        (title ? "\n" + t("new_session_titled", { title: escapeHtml(title) }) : "") +
+        "\n" +
+        t("new_session_here") +
+        "\n\n" +
+        t("new_pick_model");
+      const catalog = await modelCatalog(directory);
+      if (!catalog || catalog.items.length === 0) {
+        // No models to offer: the announcement still has to reach the thread
+        // so the user knows where to write. /models picks the model up later.
+        await telegram
+          .sendMessage(chatId, announce + "\n" + t("model_none"), {
+            parseMode: "HTML",
+            messageThreadId: originThread,
+          })
+          .catch(() => undefined);
+        return;
+      }
+      // The project's default model: open on its provider and mark its button
+      // ✅, so the one-tap option is what the eye lands on first. A default
+      // whose provider shows nothing here opens the provider list instead —
+      // an empty page is a dead end.
+      const def = await forms
+        .request<{ id?: string; providerID?: string }>(
+          "GET",
+          "/model/default?location%5Bdirectory%5D=" + encodeURIComponent(directory),
+        )
+        .catch((error) => {
+          log("WARN", "new default model", safe(error));
+          return undefined;
+        });
+      const chosen = defaultProviderOf(catalog.items, def);
+      const state: ModelPicker = {
+        target,
+        items: catalog.items,
+        providers: catalog.providers,
+        chosen,
+        search: "",
+        announce,
+        label: title,
+        currentModelID: def?.id,
+      };
+      const { text, keyboard } = chosen ? modelPickerPage(state, 0) : modelProviderPage(state);
+      const sent = await telegram.sendMessage(chatId, text, {
+        parseMode: "HTML",
+        messageThreadId: originThread,
+        replyMarkup: { inline_keyboard: keyboard },
+      });
+      if (sent !== null) modelCards.set(sent, state);
     };
 
     /**
@@ -2720,75 +2857,20 @@ const pluginExport = {
             await reply(t("api_down"));
             return;
           }
-          const [all, providers] = await Promise.all([
-            forms.request<ApiModel[]>("GET", "/model"),
-            forms.request<Array<{ id?: string; activation?: string; name?: string }>>("GET", "/provider"),
-          ]);
-          if (!Array.isArray(all) || all.length === 0) {
-            await reply(t("model_none"));
-            return;
-          }
-          // The picker mirrors the DESKTOP's own "Modelos" screen: the models
-          // the user switched on there (drafts.sqlite, visibility "show").
-          // The config file is the fallback when that state cannot be read —
-          // a gateway-listed model neither source vouches for is a door that
-          // may not even open with this account's key.
-          const provNames = new Map(
-            (Array.isArray(providers) ? providers : [])
-              .filter((p) => p.id !== undefined)
-              .map((p) => [p.id as string, p.name ?? (p.id as string)]),
-          );
           const current = await forms
             .request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`)
             .catch(() => undefined);
-          // The curated lookup needs the directory; for an unloaded session
-          // the API GET 404s — the plugin's own records know it anyway.
           const currentDirectory = current?.location?.directory ?? (await directoryOf(target));
-          const curated = configProviders(currentDirectory ? [currentDirectory] : []);
-          const enabledKeys = curated
-            .map((p) => [p.id, p.models.filter((m) => !m.disabled)] as const)
-            .filter(([, models]) => models.length > 0);
-          const curatedNames = new Map<string, string | undefined>(
-            curated.flatMap((p): Array<[string, string | undefined]> =>
-              p.models.map((m) => [`${p.id}\u0000${m.key}`, m.name]),
-            ),
-          );
-          const byProviderKey = new Map(
-            (Array.isArray(all) ? all : []).map((x) => [`${x.providerID}\u0000${x.modelID ?? x.id}`, x]),
-          );
-          // Build the visible set: desktop toggles when readable, config
-          // otherwise. Both worlds speak "providerID\u0000modelID".
-          const showKeys = new Set<string>();
-          const toggles = await desktopVisibleModels();
-          if (toggles.length > 0) {
-            for (const t of toggles) {
-              if (t.visible) showKeys.add(`${t.providerID}\u0000${t.modelID}`);
-            }
-          } else {
-            for (const [pid, models] of enabledKeys) {
-              for (const m of models) showKeys.add(`${pid}\u0000${m.key}`);
-            }
+          const catalog = await modelCatalog(currentDirectory);
+          if (!catalog) {
+            await reply(t("model_none"));
+            return;
           }
-          const items: ApiModel[] = [];
-          for (const key of showKeys) {
-            const known = byProviderKey.get(key);
-            if (known) {
-              items.push(known);
-            } else {
-              const [pid, modelID] = key.split("\u0000");
-              if (!modelID) continue;
-              items.push({
-                id: `${pid}/${modelID}`,
-                modelID,
-                providerID: pid,
-                name: curatedNames.get(key),
-              });
-            }
+          if (catalog.items.length === 0) {
+            await reply(t("models_nothing_enabled"));
+            return;
           }
-          items.sort((a, b) => a.id.localeCompare(b.id));
-          const provList = [...new Set(items.map((m) => m.providerID))]
-            .map((pid) => ({ id: pid, name: provNames.get(pid) ?? pid }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+          const { items, providers: provList } = catalog;
           // Where the picker opens: the session's own provider by default,
           // a matching provider name when the argument is one, a model search
           // when it is not. The provider list is always one tap away.
@@ -2799,11 +2881,7 @@ const pluginExport = {
             : undefined;
           const chosen = matchedProvider?.id ?? (arg ? undefined : home || undefined);
           const search = !matchedProvider && arg ? arg : "";
-          if (items.length === 0) {
-            await reply(t("models_nothing_enabled"));
-            return;
-          }
-          const state: ModelPicker = { target, items, providers: provList, chosen, search };
+          const state: ModelPicker = { target, items, providers: provList, chosen, search, currentModelID: current?.model?.id };
           if (chatId === undefined) return;
           const chosenPage = chosen || search;
           const { text, keyboard } = chosenPage ? modelPickerPage(state, 0) : modelProviderPage(state);
@@ -5110,7 +5188,11 @@ const pluginExport = {
                     return;
                   }
                   try {
-                    await bornSession(dir, ask.title, ask.threadId);
+                    const born = await bornSession(dir, ask.title, ask.threadId);
+                    if (born) {
+                      const short = (dir.split(/[\\/]/).filter(Boolean).pop() ?? dir) as string;
+                      await offerModelPicker(born.id, dir, ask.title, short, born.tid ?? ask.threadId);
+                    }
                   } catch (error) {
                     log("WARN", "new session", safe(error));
                     await send(
@@ -6376,7 +6458,10 @@ const pluginExport = {
                   return;
                 }
                 try {
-                  await bornSession(chosen.directory, card.title, originThread);
+                  const born = await bornSession(chosen.directory, card.title, originThread);
+                  if (born) {
+                    await offerModelPicker(born.id, chosen.directory, card.title, chosen.name, born.tid ?? originThread);
+                  }
                   if (cq.message) {
                     await telegram
                       .editMessageText(
