@@ -78,13 +78,13 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 
 **Ejemplos**:
 - `/archive` en un hilo → el hilo desaparece del chat
-- `/archive ses_xxx` → idem desde cualquier lugar
+- `/archive ses_xxx` → idem desde cualquier lugar (el id acepta prefijo único)
 
-**Notas**: `/unarchive` lo trae de vuelta (recrea el hilo en chat privado).
+**Notas**: `/unarchive` lo trae de vuelta — a secas abre el picker de las archivadas, así que no hace falta el id.
 
 ### /unarchive
 
-**Qué hace**: Despierta una sesión archivada — recrea su hilo y reactiva el espejo.
+**Qué hace**: Despierta una sesión archivada — sin id abre el picker; con texto busca por proyecto, título o id.
 
 **Uso**: `/unarchive`, `/unarchive <texto>` o `/unarchive <ses_id>`
 
@@ -110,7 +110,7 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 **Ejemplos**:
 - `/delthread` en un hilo → el hilo desaparece
 
-**Notas**: La sesión sigue existiendo — su próximo evento recrea el hilo. Para silenciarla: `/archive`.
+**Notas**: La sesión sigue existiendo — su próximo evento recrea el hilo. Para silenciarla: `/archive`. El id acepta prefijo único, sin distinguir mayúsculas.
 
 ### /rebuild
 

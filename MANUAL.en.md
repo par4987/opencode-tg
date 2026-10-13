@@ -285,9 +285,11 @@ allowed-chats list in `~/.opencode/tg/.env`.
 - **Archiving in a private chat**: Telegram does not let a bot close topics
   there — so `/archive` removes the thread from the chat and silences the
   session (no mirror, no heads-ups); `/unarchive` rebuilds it fresh and
-  wakes the session. `/delthread` deletes the thread without silencing: an
-  active session recreates it on its next event (to get rid of it for
-  real: `/archive`).
+  wakes the session. No id needed: bare `/unarchive` opens the picker of
+  archived ones (title · project · activity, most recent first), and
+  `/unarchive <text>` searches by project, title or id. `/delthread`
+  deletes the thread without silencing: an active session recreates it on
+  its next event (to get rid of it for real: `/archive`).
 - **Deleting a thread with Telegram's native delete**: the bot heals it on
   its own — the agent's next message lands in General once and the thread
   rebuilds itself. Nothing to do.

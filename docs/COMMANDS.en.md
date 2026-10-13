@@ -81,11 +81,11 @@ its section.
 - `/archive` in a thread → the thread disappears from the chat
 - `/archive ses_xxx` → same from anywhere
 
-**Notes**: `/unarchive` brings it back (recreates the thread in a private chat).
+**Notes**: `/unarchive` brings it back — bare opens the picker of archived ones, so the id is not needed.
 
 ### /unarchive
 
-**What it does**: Wakes an archived session — recreates its thread and reactivates the mirror.
+**What it does**: Wakes an archived session — without an id it opens the picker; with text it searches by project, title or id.
 
 **Usage**: `/unarchive`, `/unarchive <text>` or `/unarchive <ses_id>`
 
@@ -111,7 +111,7 @@ its section.
 **Examples**:
 - `/delthread` in a thread → the thread disappears
 
-**Notes**: The session still exists — its next event recreates the thread. To silence it for real: `/archive`.
+**Notes**: The session still exists — its next event recreates the thread. To silence it for real: `/archive`. The id accepts a unique prefix, case-insensitively.
 
 ### /rebuild
 
