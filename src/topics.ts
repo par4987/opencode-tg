@@ -121,6 +121,12 @@ export class TopicStore {
     this.persist();
   }
 
+  /** Every archived session — /unarchive's picker lists these. */
+  archivedIds(): string[] {
+    this.load();
+    return [...this.archivedSet];
+  }
+
   /** Forget a session entirely — its thread was deleted by hand. */
   remove(sessionId: string): void {
     this.load();

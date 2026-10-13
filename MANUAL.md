@@ -172,7 +172,7 @@ el prompt y el resultado llega al hilo de esa tarea.
 | Comando | Qué hace |
 | --- | --- |
 | `/archive` | Archiva el hilo de la sesión (queda visible pero cerrado) |
-| `/unarchive` | Lo reabre |
+| `/unarchive` | Lo reabre — a secas abre el picker de las archivadas (la más reciente primero); con texto busca por proyecto, título o id |
 | `/delthread` | Borra el hilo del foro (la sesión sigue en OpenCode) |
 | `/rebuild` | Borra TODOS los hilos y reconstruye el foro limpio: hilos nuevos para las sesiones que usaste últimamente (`rebuildIdleHours`, la más reciente arriba), el resto vuelve solo con su próxima actividad |
 | `/rename` | Renombra la sesión del hilo (o `/rename <ses_id> <título>`) — el hilo y el desktop siguen el cambio |

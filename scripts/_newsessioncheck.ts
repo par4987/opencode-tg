@@ -5,7 +5,15 @@
  * is one line; a project name is a NAME, never a path), and the picker draws
  * the current project first — that is the default the whole design promises.
  */
-import { defaultProviderOf, normalizeProjectName, normalizeTitle, projectChoices } from "../src/new-session.js";
+import {
+  archivedCandidates,
+  defaultProviderOf,
+  normalizeProjectName,
+  normalizeTitle,
+  projectChoices,
+  resolveSessionPrefix,
+  safeSlice,
+} from "../src/new-session.js";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail = ""): void {
@@ -94,6 +102,59 @@ function main(): void {
   check("default sin provider cae a la lista de proveedores", defaultProviderOf(modelItems, { id: "x" }) === undefined);
   check("default sin modelos visibles cae a la lista", defaultProviderOf(modelItems, { id: "y", providerID: "gateway" }) === undefined);
   check("default en null cae a la lista", defaultProviderOf(modelItems, undefined) === undefined);
+
+  // 8. An id argument resolves exactly, by UNIQUE prefix, or not at all —
+  //    ambiguity is the caller's business: /unarchive falls back to the
+  //    search picker rather than guessing which session you meant.
+  const ids = ["ses_aaa11111111111111111111", "ses_bbb22222222222222222222", "ses_bbb33333333333333333333"];
+  check("id exacto resuelve", resolveSessionPrefix(ids, ids[1] as string) === ids[1]);
+  check("prefijo unico resuelve", resolveSessionPrefix(ids, "ses_aaa") === ids[0]);
+  check("prefijo ambiguo no resuelve", resolveSessionPrefix(ids, "ses_bbb") === undefined);
+  check("prefijo inexistente no resuelve", resolveSessionPrefix(ids, "ses_zzz") === undefined);
+  check("argumento vacio no resuelve", resolveSessionPrefix(ids, "") === undefined);
+  check("la resolucion es case insensible", resolveSessionPrefix(ids, "SES_AAA") === ids[0]);
+
+  // 9. The /unarchive recovery picker: archived sessions freshest first,
+  //    subagent threads out (you resume a conversation, not a child task),
+  //    and an id archived before this process started still draws from what
+  //    the server knows about it. A query narrows by title, project or id.
+  const tracked = [
+    { id: "ses_aaa11111111111111111111", title: "Bug del login", directory: "C:\\repo\\web", lastSeen: 1000 },
+    { id: "ses_bbb22222222222222222222", title: "Deploy", directory: "C:\\repo\\api", lastSeen: 3000, parentID: "ses_parent" },
+    { id: "ses_ccc33333333333333333333", title: "No archivada", directory: "C:\\repo\\web", lastSeen: 2000 },
+  ];
+  const archivedIds = [
+    "ses_aaa11111111111111111111",
+    "ses_bbb22222222222222222222",
+    "ses_ddd44444444444444444444",
+    "ses_eee55555555555555555555",
+  ];
+  // Lo que el server sabe de las que el plugin no tiene en memoria — incluso
+  // una archivada antes de arrancar, cuyo timestamp la puede poner primera.
+  const known = (id: string): { title?: string; directory?: string; updated?: number } | undefined => {
+    if (id === "ses_ddd44444444444444444444") return { title: "Vieja", directory: "C:\\repo\\legacy", updated: 500 };
+    if (id === "ses_eee55555555555555555555") return { title: "Facturas Q3", directory: "C:\\repo\\contable", updated: 9000 };
+    return undefined;
+  };
+  const rowsOf = (query: string) => archivedCandidates(tracked, archivedIds, known, query);
+  check(
+    "frescas primero, subagentes y vivas fuera",
+    rowsOf("").map((r) => r.id).join(",") ===
+      ["ses_eee55555555555555555555", "ses_aaa11111111111111111111", "ses_ddd44444444444444444444"].join(","),
+  );
+  check("el proyecto viene del basename", rowsOf("")[1]?.project === "web");
+  check("busqueda por titulo", rowsOf("facturas").map((r) => r.id).join() === "ses_eee55555555555555555555");
+  check("busqueda por proyecto", rowsOf("legacy").map((r) => r.id).join() === "ses_ddd44444444444444444444");
+  check("busqueda por prefijo de id", rowsOf("ses_ddd").map((r) => r.id).join() === "ses_ddd44444444444444444444");
+  check("busqueda que no acierta", rowsOf("inexistente").length === 0);
+  check("la sin titulo usa no_title", archivedCandidates([{ id: "ses_zzz", title: "", directory: "C:\\p", lastSeen: 1 }], ["ses_zzz"], () => undefined, "")[0]?.title === "");
+
+  // 10. A button label never splits a surrogate pair — a title with an emoji
+  //     would otherwise render a replacement character at the seam.
+  check("corta lo que sobra", safeSlice("hola mundo", 4) === "hola");
+  check("no corta lo que no necesita", safeSlice("hola", 10) === "hola");
+  check("no parte un par suplente al final", safeSlice("a\ud83d\ude00", 2) === "a");
+  check("no parte un par suplente al medio", safeSlice("\ud83d\ude00x", 1) === "");
 
   console.log(failures === 0 ? "new-session: OK" : `new-session: ${failures} FALLAS`);
   if (failures > 0) process.exitCode = 1;

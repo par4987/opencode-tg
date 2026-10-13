@@ -220,6 +220,15 @@ async function main(): Promise<void> {
     check("un fallo transitorio deja 1 borrado / 1 fallido", result2.deleted === 0 && result2.failed === 1, `${result2.deleted}/${result2.failed}`);
     check("y el mapeo sigue ahi", reloaded6.get("ses_fail") === 102);
     reloaded6.remove("ses_fail");
+
+    // The list /unarchive's recovery picker draws from — archived ids must
+    // survive a reload, and dropping one must leave it empty.
+    reloaded6.setArchived("ses_arch", true);
+    check("archivedIds lista lo archivado", reloaded6.archivedIds().includes("ses_arch"));
+    const reloaded7 = new TopicStore(666, FILE);
+    check("archivedIds recarga del disco", reloaded7.archivedIds().includes("ses_arch"));
+    reloaded7.setArchived("ses_arch", false);
+    check("archivedIds se vacia al levantar el archivo", !reloaded7.archivedIds().includes("ses_arch"));
   }
 }
 

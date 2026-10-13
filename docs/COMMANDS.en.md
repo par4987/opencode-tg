@@ -87,12 +87,20 @@ its section.
 
 **What it does**: Wakes an archived session — recreates its thread and reactivates the mirror.
 
-**Usage**: `/unarchive` or `/unarchive <ses_id>`
+**Usage**: `/unarchive`, `/unarchive <text>` or `/unarchive <ses_id>`
 
 **Examples**:
-- `/unarchive` at the root → recreates the archived session's thread
+- `/unarchive` at the root → opens the picker of archived sessions, most recent first
+- `/unarchive invoices` → the picker narrowed to matches (title, project or id)
+- `/unarchive ses_ed2c` → resolves the id by prefix and wakes it directly
+- `/unarchive` in a live thread → says that session is not archived
 
-**Notes**: If the thread was deleted, a new one is created with the current title.
+**Notes**:
+- Without an id there is nothing to guess: the picker lists archived sessions as buttons (title · project · activity), in pages of 8.
+- `<text>` works as a search by **project** (the folder name), by title or by id prefix.
+- An id is accepted in full or by unique prefix, case-insensitively.
+- If the thread was deleted, a new one is created with the current title.
+- In a private chat `/archive` deletes the thread, so `/unarchive` recreates it; the session on the PC is never touched.
 
 ### /delthread
 

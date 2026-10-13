@@ -86,12 +86,20 @@ en Telegram ofrece estos mismos comandos — tocás uno y recibís su sección.
 
 **Qué hace**: Despierta una sesión archivada — recrea su hilo y reactiva el espejo.
 
-**Uso**: `/unarchive` o `/unarchive <ses_id>`
+**Uso**: `/unarchive`, `/unarchive <texto>` o `/unarchive <ses_id>`
 
 **Ejemplos**:
-- `/unarchive` en la raíz → recrea el hilo de la sesión archivada
+- `/unarchive` en la raíz → abre el picker con las sesiones archivadas, la más reciente primero
+- `/unarchive facturas` → el picker con las que coinciden (título, proyecto o id)
+- `/unarchive ses_ed2c` → resuelve el id por prefijo y la despierta directo
+- `/unarchive` en un hilo vivo → avisa que esa sesión no está archivada
 
-**Notas**: Si el hilo fue borrado, se crea uno nuevo con el título actual.
+**Notas**:
+- Sin id no hace falta adivinar nada: el picker lista las archivadas con botones (título · proyecto · actividad), en páginas de a 8.
+- El `<texto>` sirve como búsqueda por **proyecto** (el nombre de la carpeta), por título o por prefijo de id.
+- Un id se acepta completo o por prefijo único, y sin distinguir mayúsculas.
+- Si el hilo fue borrado, se crea uno nuevo con el título actual.
+- En chat privado `/archive` borra el hilo, así que `/unarchive` lo recrea; la sesión en la PC nunca se toca.
 
 ### /delthread
 

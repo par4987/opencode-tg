@@ -36,7 +36,17 @@ import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
 import { fetchRuns, formatRuns, type CiRun } from "./src/ci.js";
-import { defaultProviderOf, normalizeProjectName, normalizeTitle, projectChoices, type ProjectChoice } from "./src/new-session.js";
+import {
+  archivedCandidates,
+  type ArchivedCandidate,
+  defaultProviderOf,
+  normalizeProjectName,
+  normalizeTitle,
+  projectChoices,
+  resolveSessionPrefix,
+  safeSlice,
+  type ProjectChoice,
+} from "./src/new-session.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
@@ -941,6 +951,12 @@ const pluginExport = {
     const agentCards = new MessageCards<{ target: string; items: ApiAgent[] }>();
     /** Projects behind a /projects or wizard card, freshest first. */
     const projectCards = new MessageCards<Array<{ directory: string; name: string; updated?: number }>>();
+    /** A /unarchive recovery card: the rows it drew, page by page. */
+    interface ArchivePicker {
+      rows: ArchivedCandidate[];
+      page: number;
+    }
+    const archiveCards = new MessageCards<ArchivePicker>();
     /** A /queue card: its session and its items — a button addresses only
      *  the list it was drawn from, never another thread's inbox. */
     const inboxCards = new MessageCards<{ session: string; items: Array<{ id: string; text: string }> }>();
@@ -2598,6 +2614,157 @@ const pluginExport = {
       if (sent !== null) newProjectCards.set(sent, { title, items });
     };
 
+    /**
+     * Wake one archived session: reopen its thread when THIS chat can, and
+     * rebuild it fresh when the topic is gone (a forum archive reopens; a
+     * private chat's archive deleted it, and a hand-deleted thread is gone
+     * too). Returns the acknowledgement to post where the caller heard the
+     * request — the greeting inside a rebuilt thread posts itself, so its
+     * caller adds only the short confirmation.
+     */
+    const unarchiveSession = async (
+      target: string,
+    ): Promise<
+      "unarchive_done" | "unarchive_revived" | "unarchive_revived_no_thread" | "unarchive_new_thread_ack" | "no_thread"
+    > => {
+      if (chatId === undefined || !topicStore) return "no_thread";
+      const tid = topicStore.get(target);
+      if (tid === undefined) {
+        // Archived but already unmapped (its thread was deleted by hand): the
+        // flag is the only thing still silencing it. Drop it, and the next
+        // event rebuilds the window — same promise as the recreate path.
+        if (topicStore.isArchived(target)) {
+          topicStore.setArchived(target, false);
+          return "unarchive_revived_no_thread";
+        }
+        return "no_thread";
+      }
+      try {
+        await telegram.reopenForumTopic(chatId, tid);
+        topicStore.setArchived(target, false);
+        return "unarchive_done";
+      } catch (error) {
+        log("WARN", "unarchive", safe(error));
+        topicStore.setArchived(target, false);
+        const tracked = sessions.get(target);
+        // The live title first — a woken thread must wear the name the
+        // desktop shows, not the cached one.
+        const live = await forms
+          .request<ApiSession>("GET", "/session/" + encodeURIComponent(target))
+          .then((info) => info?.title?.trim() ?? "")
+          .catch(() => "");
+        if (live && tracked && tracked.title !== live) tracked.title = live;
+        const raw = (live || tracked?.title || target.slice(0, 18)).replace(/^📦 /, "");
+        // If the old topic still lives (a forum archive, or the badge-only
+        // one), dropping the badge is the whole wake-up — a rename that
+        // lands proves the thread exists.
+        const renamed = await telegram.editForumTopic(chatId, tid, raw.slice(0, 128)).then(() => true).catch(() => false);
+        if (renamed) return "unarchive_revived";
+        // The topic is gone (deleted on the phone, or our private-chat
+        // archive removed it): rebuild the window fresh, rebind the mapping,
+        // and greet inside — the mirror continues there.
+        const fresh = await telegram.createForumTopic(chatId, raw.slice(0, 128)).catch(() => undefined);
+        if (fresh !== undefined) {
+          topicStore.set(target, fresh);
+          await telegram
+            .sendMessage(chatId, t("unarchive_new_thread"), {
+              parseMode: "HTML",
+              messageThreadId: fresh,
+            })
+            .catch(() => undefined);
+          return "unarchive_new_thread_ack";
+        }
+        return "unarchive_revived_no_thread";
+      }
+    };
+
+    /** One page of /unarchive's recovery picker. */
+    const ARCHIVE_PAGE_SIZE = 8;
+    const archivePage = (
+      rows: ArchivedCandidate[],
+      page: number,
+      /** The search phrase the list was narrowed by, "" when unfiltered. */
+      match = "",
+    ): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } => {
+      const pages = Math.max(1, Math.ceil(rows.length / ARCHIVE_PAGE_SIZE));
+      const safe = Math.min(Math.max(0, page), pages - 1);
+      const slice = rows.slice(safe * ARCHIVE_PAGE_SIZE, safe * ARCHIVE_PAGE_SIZE + ARCHIVE_PAGE_SIZE);
+      const keyboard = slice.map((row, i) => {
+        const idx = safe * ARCHIVE_PAGE_SIZE + i;
+        // Title first, then the project folder, then when it was active —
+        // the freshest conversation is the one you want one tap from the top.
+        // A session neither the server nor the disk remembers anymore keeps
+        // its id stub: it is the only identity left to pick it by.
+        const head = row.title || `${t("no_title")} ${row.id.slice(0, 18)}`;
+        const parts = [safeSlice(head, 34)];
+        if (row.project) parts.push(safeSlice(row.project, 18));
+        if (row.lastSeen > 0) parts.push(fmtAgo(row.lastSeen));
+        return [{ text: safeSlice(parts.join(" · "), 64), callback_data: `uap:${idx}` }];
+      });
+      const nav: Array<{ text: string; callback_data: string }> = [];
+      if (safe > 0) nav.push({ text: "\u25C0", callback_data: `uan:${safe - 1}` });
+      nav.push({ text: `${safe + 1}/${pages}`, callback_data: "uan:noop" });
+      if (safe < pages - 1) nav.push({ text: "\u25B6", callback_data: `uan:${safe + 1}` });
+      if (nav.length > 1) keyboard.push(nav);
+      return {
+        text: t("unarchive_pick_header", { match }) + t("unarchive_pick_hint"),
+        keyboard,
+      };
+    };
+
+    /**
+     * The recovery path for /unarchive: a picker of the chat's archived
+     * sessions, freshest first, so the one you are after sits near the top.
+     * A query narrows by title, project folder or id prefix — searching by
+     * project is typing its name. Posts where the command ran.
+     */
+    const offerArchived = async (query: string, originSession: string | undefined): Promise<void> => {
+      if (chatId === undefined || !topicStore) return;
+      const q = query.trim();
+      // The server is the source of truth for titles and projects of sessions
+      // archived long ago: their transcripts are gone from disk (measured: 2
+      // of 57 mapped ids still have a metadata file, the server lists 28 of
+      // them). The on-disk metadata is the last resort when the API is down.
+      const serverList = (await forms.connect())
+        ? (await forms
+            .request<ApiSession[]>("GET", "/session")
+            .catch((error) => {
+              log("WARN", "unarchive list", safe(error));
+              return undefined;
+            })) ?? []
+        : [];
+      const byId = new Map<string, ApiSession>(
+        (Array.isArray(serverList) ? serverList : []).map((s) => [s.id, s]),
+      );
+      const directoryOfId = (id: string): string | undefined =>
+        byId.get(id)?.location?.directory ?? readSessionMeta(id)?.directory;
+      const known = (id: string): { title?: string; directory?: string; updated?: number } | undefined => {
+        const s = byId.get(id);
+        if (s) return { title: s.title, directory: s.location?.directory, updated: s.time?.updated };
+        const meta = readSessionMeta(id);
+        return meta === undefined ? undefined : { title: meta.title, directory: meta.directory };
+      };
+      const rows = archivedCandidates(
+        [...sessions.values()].filter(mine),
+        topicStore.archivedIds().filter((id) => mine({ id, directory: directoryOfId(id) })),
+        known,
+        q,
+      );
+      if (rows.length === 0) {
+        await send(q ? t("unarchive_no_match", { query: escapeHtml(q) }) : t("unarchive_none"), originSession);
+        return;
+      }
+      const tid = originSession !== undefined ? threadOf(originSession) : undefined;
+      const match = q ? t("unarchive_pick_match", { query: escapeHtml(q) }) : "";
+      const { text, keyboard } = archivePage(rows, 0, match);
+      const sent = await telegram.sendMessage(chatId, text, {
+        parseMode: "HTML",
+        ...(tid !== undefined ? { messageThreadId: tid } : {}),
+        replyMarkup: { inline_keyboard: keyboard },
+      });
+      if (sent !== null) archiveCards.set(sent, { rows, page: 0 });
+    };
+
     const handleCommand = async (name: string, argument: string, threadSession?: string): Promise<void> => {
       // A reply belongs where the command was typed: the session's thread when
       // written there, the chat root when not. The switch talks through
@@ -3974,7 +4141,7 @@ const pluginExport = {
         }
 
         case "archive": {
-          const target = argument.trim() || threadSession;
+          const target = argument.trim() ? resolveSessionPrefix([...sessions.keys()], argument.trim()) : threadSession;
           if (!target || !topicStore || chatId === undefined) {
             await reply(t("archive_needs_thread"));
             return;
@@ -4014,56 +4181,27 @@ const pluginExport = {
         }
 
         case "unarchive": {
-          const target = argument.trim() || threadSession;
-          if (!target || !topicStore || chatId === undefined) {
+          if (!topicStore || chatId === undefined) {
             await reply(t("unarchive_needs_thread"));
             return;
           }
-          const tid = topicStore.get(target);
-          if (tid === undefined) {
-            await reply(t("no_thread"));
+          // A typed id resolves exactly or by unique prefix — the 18-character
+          // stub /sessions shows is already enough. Anything else is a SEARCH
+          // (by title, project folder or id), and no id at all is the recovery
+          // picker: the archived sessions, freshest first.
+          const arg = argument.trim();
+          const target = arg ? resolveSessionPrefix([...sessions.keys()], arg) : threadSession;
+          if (target) {
+            await send(t(await unarchiveSession(target)), threadSession);
             return;
           }
-          try {
-            await telegram.reopenForumTopic(chatId, tid);
-            topicStore.setArchived(target, false);
-            await reply(t("unarchive_done"));
-          } catch (error) {
-            log("WARN", "unarchive", safe(error));
-            topicStore.setArchived(target, false);
-            const tracked = sessions.get(target);
-            // The live title first — a woken thread must wear the name the
-            // desktop shows, not the cached one.
-            const live = await forms
-              .request<ApiSession>("GET", "/session/" + encodeURIComponent(target))
-              .then((info) => info?.title?.trim() ?? "")
-              .catch(() => "");
-            if (live && tracked && tracked.title !== live) tracked.title = live;
-            const raw = (live || tracked?.title || target.slice(0, 18)).replace(/^📦 /, "");
-            // If the old topic still lives (a forum archive, or the badge-only
-            // one), dropping the badge is the whole wake-up — a rename that
-            // lands proves the thread exists.
-            const renamed = await telegram.editForumTopic(chatId, tid, raw.slice(0, 128)).then(() => true).catch(() => false);
-            if (renamed) {
-              await reply(t("unarchive_revived"));
-              return;
-            }
-            // The topic is gone (deleted on the phone, or our private-chat
-            // archive removed it): rebuild the window fresh, rebind the
-            // mapping, and greet inside \u2014 the mirror continues there.
-            const fresh = await telegram.createForumTopic(chatId, raw.slice(0, 128)).catch(() => undefined);
-            if (fresh !== undefined) {
-              topicStore.set(target, fresh);
-              await telegram
-                .sendMessage(chatId, t("unarchive_new_thread"), {
-                  parseMode: "HTML",
-                  messageThreadId: fresh,
-                })
-                .catch(() => undefined);
-            } else {
-              await reply(t("unarchive_revived_no_thread"));
-            }
+          if (!arg && threadSession) {
+            // Written inside a live thread: that session is not archived, so
+            // there is nothing of ITS OWN to recover here.
+            await reply(t("unarchive_not_archived"));
+            return;
           }
+          await offerArchived(arg, threadSession);
           return;
         }
 
@@ -4071,7 +4209,7 @@ const pluginExport = {
           // Destructive on purpose and only on purpose: deletes the thread
           // from Telegram. The server session is untouched — only its window
           // into the chat goes away.
-          const target = argument.trim() || threadSession;
+          const target = argument.trim() ? resolveSessionPrefix([...sessions.keys()], argument.trim()) : threadSession;
           if (!target || !topicStore || chatId === undefined) {
             await reply(t("delthread_needs_thread"));
             return;
@@ -6416,6 +6554,58 @@ const pluginExport = {
                   return;
                 }
                 await ack(t("action_unknown"));
+                return;
+              }
+              if (payload.startsWith("uap:") || payload.startsWith("uan:")) {
+                // The /unarchive recovery picker: a row wakes its session, the
+                // arrows page the list. The state rides on this message only.
+                const card = archiveCards.get(cq.message?.message_id);
+                if (!card) {
+                  await ack(t("unarchive_stale"));
+                  return;
+                }
+                if (payload === "uan:noop") {
+                  // The page counter is not a button to press.
+                  await ack();
+                  return;
+                }
+                if (payload.startsWith("uan:") && cq.message) {
+                  const page = Number(payload.slice(4));
+                  card.page = Number.isFinite(page) ? page : 0;
+                  const { text, keyboard } = archivePage(card.rows, card.page);
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, text, {
+                      parseMode: "HTML",
+                      replyMarkup: { inline_keyboard: keyboard },
+                    })
+                    .catch((error) => log("WARN", "unarchive picker", safe(error)));
+                  await ack();
+                  return;
+                }
+                const row = card.rows[Number(payload.slice(4))];
+                if (!row) {
+                  await ack(t("unarchive_stale"));
+                  return;
+                }
+                const title = row.title || t("no_title");
+                // Drop BEFORE waking: a double tap must not wake it twice.
+                archiveCards.drop(cq.message?.message_id);
+                await ack(t("unarchive_waking", { title: escapeHtml(title) }));
+                if (!(await forms.connect())) {
+                  await ack(t("api_down_ack"));
+                  return;
+                }
+                const note = t(await unarchiveSession(row.id));
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(
+                      cq.message.chat.id,
+                      cq.message.message_id,
+                      t("unarchive_pick_done", { title: escapeHtml(title), note }),
+                      { parseMode: "HTML" },
+                    )
+                    .catch((error) => log("WARN", "unarchive picker", safe(error)));
+                }
                 return;
               }
               if (payload.startsWith("np:") || payload === "npn:") {
