@@ -300,7 +300,7 @@ El borrado está **acotado por ruta**: `Remove-Item` (y `rm`, `del`, `rmdir`...)
 
 **Qué hace**: Cambia el idioma del bot — el menú de `/help`, las tarjetas y todos los mensajes siguen al instante.
 
-**Uso**: `/locale` (con botones) o `/locale <es|en|pt|de|fr|it|id>`
+**Uso**: `/locale` (con botones) o `/locale <es|en|pt|de|fr|it|id|ru>`
 
 **Ejemplos**:
 - `/locale` → tarjeta con un botón por idioma (el actual con ✓)

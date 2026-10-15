@@ -300,7 +300,7 @@ La cancellazione è **limitata per percorso**: `Remove-Item` (e `rm`, `del`, `rm
 
 **Cosa fa**: Cambia la lingua del bot — il menu `/help`, le schede e tutti i messaggi seguono all'istante.
 
-**Utilizzo**: `/locale` (con pulsanti) o `/locale <es|en|pt|de|fr|it|id>`
+**Utilizzo**: `/locale` (con pulsanti) o `/locale <es|en|pt|de|fr|it|id|ru>`
 
 **Esempi**:
 - `/locale` → scheda con un pulsante per lingua (quella attiva con ✓)
