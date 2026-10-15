@@ -132,12 +132,12 @@ Opciones comunes de `stt`: `whisper` y `model` (paths locales),
 ```sh
 npm install
 npm run typecheck   # tsc con el tsconfig del proyecto — 0 errores
-npm test            # las 21 suites (514 checks) con el runner propio
+npm test            # las 24 suites (646 checks) con el runner propio
 ```
 
 GitHub Actions corre ambos en cada push (`.github/workflows/ci.yml`).
 
-Veintitrés suites (`_setupcheck` … `_cicheck`, 582 checks) cubren el pump
+Veinticuatro suites (`_setupcheck` … `_cicheck`, 646 checks) cubren el pump
 de eventos, render, tópicos, formularios, configuración, tareas, ingesta,
 elección de líder, tarjetas por mensaje, i18n, medios salientes, STT,
 salud del proveedor, CI de GitHub, topología multi-bot, permisos peligrosos
