@@ -312,7 +312,7 @@ Deletion is **path-scoped**: `Remove-Item` (and `rm`, `del`, `rmdir`...) is allo
 
 **What it does**: Switches the bot's language — the `/help` menu, cards and every message follow instantly.
 
-**Usage**: `/locale` (with buttons) or `/locale <es|en|pt|de|fr|it|id|ru|tr>`
+**Usage**: `/locale` (with buttons) or `/locale <es|en|pt|de|fr|it|id|ru|tr|zh>`
 
 **Examples**:
 - `/locale` → card with one button per language (the current one with ✓)

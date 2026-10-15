@@ -300,7 +300,7 @@ Silme **yolla sınırlıdır**: `Remove-Item` (ve `rm`, `del`, `rmdir`...) proje
 
 **Ne işe yarar**: Bot'un dilini değiştirir — `/help` menüsü, kartlar ve tüm mesajlar anında takip eder.
 
-**Kullanım**: `/locale` (butonlarla) ya da `/locale <es|en|pt|de|fr|it|id|ru|tr>`
+**Kullanım**: `/locale` (butonlarla) ya da `/locale <es|en|pt|de|fr|it|id|ru|tr|zh>`
 
 **Örnekler**:
 - `/locale` → dil başına bir buton içeren kart (geçerli olan ✓ ile)
