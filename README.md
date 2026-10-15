@@ -121,7 +121,7 @@ para el recorrido completo.
 
 ## Idiomas
 
-Español por defecto; hoy **español, English, Português, Deutsch, Français e Italiano**. Desde el bot,
+Español por defecto; hoy **español, English, Português, Deutsch, Français, Italiano e Bahasa Indonesia**. Desde el bot,
 `/locale` cambia el idioma y lo recuerda; desde el `.env`,
 `TG_LOCALE=<código>`. Los catálogos viven en `src/locale.ts` — un idioma
 nuevo es un objeto nuevo, nada más.
