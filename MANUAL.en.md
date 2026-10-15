@@ -306,7 +306,7 @@ allowed-chats list in `~/.opencode/tg/.env`.
   while the session is open on the PC; closed, they answer with the honest
   notice instead of inventing an empty history. Those same drain failures are
   what the dead-prompt watchdog now reports in the thread.
-- **Language**: Spanish by default; today **Spanish, English, Portuguese, German, French, Italian, Indonesian, Russian and Turkish and Chinese**.
+- **Language**: Spanish by default; today **Spanish, English, Portuguese, German, French, Italian, Indonesian, Russian, Turkish, Chinese and Korean**.
   `TG_LOCALE=<code>` in the `.env` sets the initial one and `/locale` switches
   it from the phone (persisted). Catalogs live in `src/locale.ts` — a new
   language is a new object, nothing else.
