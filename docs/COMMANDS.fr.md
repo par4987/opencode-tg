@@ -301,7 +301,7 @@ L'effacement est **limité par chemin**: `Remove-Item` (et `rm`, `del`, `rmdir`.
 
 **Ce que ça fait**: Change la langue du bot — le menu `/help`, les cartes et tous les messages suivent instantanément.
 
-**Utilisation**: `/locale` (avec boutons) ou `/locale <es|en|pt|de|fr>`
+**Utilisation**: `/locale` (avec boutons) ou `/locale <es|en|pt|de|fr|it>`
 
 **Exemples** :
 - `/locale` → carte avec un bouton par langue (l'actuelle avec ✓)

@@ -300,7 +300,7 @@ O apagamento é **delimitado por caminho**: `Remove-Item` (e `rm`, `del`, `rmdir
 
 **O que faz**: Muda o idioma do bot — o menu de `/help`, os cartões e todas as mensagens seguem na hora.
 
-**Uso**: `/locale` (com botões) ou `/locale <es|en|pt|de|fr>`
+**Uso**: `/locale` (com botões) ou `/locale <es|en|pt|de|fr|it>`
 
 **Exemplos**:
 - `/locale` → cartão com um botão por idioma (o atual com ✓)
