@@ -300,7 +300,7 @@
 
 **作用**:切换机器人的语言 — `/help` 菜单、卡片和所有消息会立即跟随。
 
-**用法**:`/locale`（带按钮）或 `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko>`
+**用法**:`/locale`（带按钮）或 `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko|ar>`
 
 **示例**:
 - `/locale` → 每种语言一个按钮的卡片（当前者带 ✓）

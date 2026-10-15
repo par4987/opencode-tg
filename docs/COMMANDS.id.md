@@ -301,7 +301,7 @@ Penghapusan **dibatasi per path**: `Remove-Item` (dan `rm`, `del`, `rmdir`...) d
 
 **Apa fungsinya**: Mengganti bahasa bot — menu `/help`, kartu, dan semua pesan mengikuti seketika.
 
-**Penggunaan**: `/locale` (dengan tombol) atau `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko>`
+**Penggunaan**: `/locale` (dengan tombol) atau `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko|ar>`
 
 **Contoh**:
 - `/locale` → kartu dengan satu tombol per bahasa (yang aktif dengan ✓)

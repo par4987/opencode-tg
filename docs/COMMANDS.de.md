@@ -301,7 +301,7 @@ Das Löschen ist **pfadbegrenzt**: `Remove-Item` (und `rm`, `del`, `rmdir`...) i
 
 **Was es tut**: Wechselt die Sprache des Bots — das `/help`-Menü, die Karten und alle Nachrichten folgen sofort.
 
-**Verwendung**: `/locale` (mit Buttons) oder `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko>`
+**Verwendung**: `/locale` (mit Buttons) oder `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko|ar>`
 
 **Beispiele**:
 - `/locale` → Karte mit einem Button pro Sprache (die aktuelle mit ✓)

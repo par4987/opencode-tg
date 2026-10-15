@@ -121,7 +121,7 @@ for the full walkthrough.
 
 ## Languages
 
-Spanish by default; today **Español, English, Português, Deutsch, Français, Italiano, Bahasa Indonesia, Русский, Türkçe, 中文（简体） and 한국어**. From the bot,
+Spanish by default; today **Español, English, Português, Deutsch, Français, Italiano, Bahasa Indonesia, Русский, Türkçe, 中文（简体）, 한국어 and العربية**. From the bot,
 `/locale` switches the language and remembers it; from the `.env`,
 `TG_LOCALE=<code>`. Catalogs live in `src/locale.ts` — a new language is a
 new object, nothing else.

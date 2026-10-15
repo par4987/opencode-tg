@@ -300,7 +300,7 @@
 
 **역할**: 봇의 언어를 바꿔요 — `/help` 메뉴, 카드, 모든 메시지가 즉시 따라가요.
 
-**사용**: `/locale` (버튼과 함께) 또는 `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko>`
+**사용**: `/locale` (버튼과 함께) 또는 `/locale <es|en|pt|de|fr|it|id|ru|tr|zh|ko|ar>`
 
 **예시**:
 - `/locale` → 언어마다 하나씩 버튼이 있는 카드 (현재 것은 ✓)
