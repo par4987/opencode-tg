@@ -20,7 +20,7 @@ import { join } from "node:path";
 const LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-locale-")), "locale.txt");
 process.env.TG_LOCALE_FILE = LOCALE_FILE;
 delete process.env.TG_LOCALE;
-const { catalogKeys, t, setLocale, locale, availableLocales } = await import("../src/locale.js");
+const { catalogEntries, catalogKeys, NATIVE_NAMES, t, setLocale, locale, availableLocales } = await import("../src/locale.js");
 const { commandSections } = await import("../src/help.js");
 import { fileURLToPath } from "node:url";
 
@@ -34,14 +34,44 @@ function check(label: string, ok: boolean, extra?: string): void {
 }
 
 function main(): void {
-  // 1. Parity — both directions, so neither catalog can drift.
-  const { es, en } = catalogKeys();
-  const esSet = new Set(es);
-  const enSet = new Set(en);
-  const missingEN = es.filter((k) => !enSet.has(k));
-  const missingES = en.filter((k) => !esSet.has(k));
-  check("paridad ES -> EN", missingEN.length === 0, missingEN.join(", ") || "completa");
-  check("paridad EN -> ES", missingES.length === 0, missingES.join(", ") || "completa");
+  // 1. Parity — every catalog against ES, both directions, so no language
+  //    can drift and a half-translated one fails here instead of silently
+  //    falling back to Spanish key by key at a user's phone.
+  const catalogs = catalogKeys();
+  const esSet = new Set(catalogs.es);
+  for (const [code, keys] of Object.entries(catalogs)) {
+    const set = new Set(keys);
+    const missing = catalogs.es.filter((k) => !set.has(k));
+    const extra = keys.filter((k) => !esSet.has(k));
+    check(
+      `paridad ES <> ${code}`,
+      missing.length === 0 && extra.length === 0,
+      missing.length > 0 ? `faltan ${missing.length}: ${missing.slice(0, 6).join(", ")}…` : extra.length > 0 ? `sobran ${extra.length}: ${extra.slice(0, 6).join(", ")}…` : "completa",
+    );
+  }
+
+  // 1b. Structural parity — same {placeholders}, same real HTML tags, same
+  //     newline shape. A translation that loses a {n} or a <code> renders
+  //     broken or leaks a raw {n} at a phone. Only Telegram's own tags count
+  //     here — house style also writes <comando>-style literals inside
+  //     <code>, and those translate with the sentence (clave → chave).
+  const TAGS = /<\/?(?:b|i|u|s|code|pre|a|blockquote|span|tg-spoiler)\b/g;
+  const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+  const tagsOf = (s: string) => [...s.matchAll(TAGS)].map((m) => m[0].replace(/[<>/]/g, "")).sort().join(",");
+  const esEntries = catalogEntries("es");
+  for (const code of Object.keys(catalogs)) {
+    const entries = catalogEntries(code);
+    let bad = 0;
+    const why: string[] = [];
+    for (const [k, v] of Object.entries(esEntries)) {
+      const other = entries[k];
+      if (other === undefined) continue;
+      if (placeholders(v) !== placeholders(other)) { bad++; why.push(`{…} ${k}`); }
+      if (tagsOf(v) !== tagsOf(other)) { bad++; why.push(`tag ${k}`); }
+      if ((v.match(/\n/g)?.length ?? 0) !== (other.match(/\n/g)?.length ?? 0)) { bad++; why.push(`\\n ${k}`); }
+    }
+    check(`estructura ES <> ${code}`, bad === 0, bad === 0 ? "placeholders, tags y \\n idem" : `${bad} (${why.slice(0, 5).join(" | ")}…)`);
+  }
 
   // 2. Every t() key used by the plugin exists in the catalog — index.ts
   //    AND every src module (they call t() since the orphan batch).
@@ -280,10 +310,13 @@ function main(): void {
   check("t() rellena placeholders", t("sh_done", { exit: 0 }).includes("0"));
   check("t() deja el placeholder visible si falta el valor", t("ago_min").includes("{n}"));
 
-  // 6. The runtime switch — what /locale does from the phone.
+  // 6. The runtime switch — what /lang does from the phone. The list is not
+  //    pinned here: a new language is a new CATALOGS entry, and the check is
+  //    that every available locale has a catalog AND a native name — the
+  //    two things the picker draws for it.
   check(
-    `los idiomas disponibles son los del catalogo: ${availableLocales().join(",")}`,
-    availableLocales().join(",") === "es,en",
+    `cada idioma disponible tiene catalogo y nombre nativo: ${availableLocales().join(",")}`,
+    availableLocales().every((code) => catalogKeys()[code] !== undefined && NATIVE_NAMES[code] !== undefined),
   );
   check("sin archivo ni env arranca en ES", locale() === "es");
   check("t() en ES por defecto", t("api_down").includes("La API local"));
@@ -297,13 +330,27 @@ function main(): void {
   check("t() vuelve a espanol", t("api_down").includes("La API local"));
 
   // 7. The /help sections follow the language: the parser picks
-  //    COMMANDS.<locale>.md and the brief marker is language-neutral.
-  const esBrief = commandSections().find((s) => s.name === "new")?.brief ?? "";
-  check("secciones en espanol", esBrief.startsWith("Crea"), esBrief.slice(0, 30));
+  //    COMMANDS.<locale>.md. Every language in CATALOGS must ship one —
+  //    a missing file means /help silently falls back to Spanish at a
+  //    user's phone — with the same section count and a brief that is
+  //    not the Spanish one (a stale copy is an untranslated help).
+  const esSections = commandSections();
+  const esNewBrief = esSections.find((s) => s.name === "new")?.brief ?? "";
+  check("secciones en espanol", esNewBrief.startsWith("Crea"), esNewBrief.slice(0, 30));
   setLocale("en");
   const enBrief = commandSections().find((s) => s.name === "new")?.brief ?? "";
   check("secciones en ingles tras el switch", enBrief.startsWith("Creates"), enBrief.slice(0, 30));
   check("la categoria tambien", (commandSections().find((s) => s.name === "new")?.category ?? "") === "Sessions");
+  for (const code of availableLocales().filter((c) => c !== "es" && c !== "en")) {
+    setLocale(code);
+    const sections = commandSections();
+    const brief = sections.find((s) => s.name === "new")?.brief ?? "";
+    check(
+      `COMMANDS.${code}.md sirve /help en ${code}`,
+      sections.length === esSections.length && brief.length > 0 && brief !== esNewBrief,
+      `${sections.length}/${esSections.length} secciones · brief: ${brief.slice(0, 24)}`,
+    );
+  }
   setLocale("es");
   rmSync(dirname(LOCALE_FILE), { recursive: true, force: true });
 }

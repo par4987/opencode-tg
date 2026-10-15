@@ -121,9 +121,10 @@ para el recorrido completo.
 
 ## Idiomas
 
-Español por defecto. Desde el bot, `/lang` cambia el idioma y lo recuerda;
-desde el `.env`, `TG_LOCALE=<código>`. Los catálogos viven en
-`src/locale.ts` — un idioma nuevo es un objeto nuevo, nada más.
+Español por defecto; hoy **español, English e português**. Desde el bot,
+`/locale` cambia el idioma y lo recuerda; desde el `.env`,
+`TG_LOCALE=<código>`. Los catálogos viven en `src/locale.ts` — un idioma
+nuevo es un objeto nuevo, nada más.
 
 ## Para quien lo quiera extender
 

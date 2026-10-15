@@ -151,7 +151,7 @@ All of it lands **in the session's thread**, where you are already looking.
 | `/skills` | Installed skills, with invocation buttons |
 | `/skill <id> <text>` | Invoke a skill with your text as the prompt |
 | `/compact` | Compact the session's context |
-| `/locale` | Switch the bot's language from the phone: `/locale` (tap one) or `/locale <es\|en>`. The choice persists in `~/.opencode/tg/locale.txt`; `TG_LOCALE` in `.env` becomes the initial value |
+| `/locale` | Switch the bot's language from the phone: `/locale` (tap one) or `/locale <es\|en\|pt>`. The choice persists in `~/.opencode/tg/locale.txt`; `TG_LOCALE` in `.env` becomes the initial value |
 
 ### Message queue (inbox)
 
@@ -306,8 +306,9 @@ allowed-chats list in `~/.opencode/tg/.env`.
   while the session is open on the PC; closed, they answer with the honest
   notice instead of inventing an empty history. Those same drain failures are
   what the dead-prompt watchdog now reports in the thread.
-- **Language**: Spanish by default; `TG_LOCALE=en` in the `.env` switches
-  the interface to English. Catalogs live in `src/locale.ts` — a new
+- **Language**: Spanish by default; today **Spanish, English and Portuguese**.
+  `TG_LOCALE=<code>` in the `.env` sets the initial one and `/locale` switches
+  it from the phone (persisted). Catalogs live in `src/locale.ts` — a new
   language is a new object, nothing else.
 - **Automated maintenance**: the `deps-audit` GitHub Actions workflow runs
   Mondays and Thursdays at 23:00 Argentina (UTC-3) — updates dependencies, seals

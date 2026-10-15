@@ -2448,7 +2448,7 @@ const pluginExport = {
       { command: "move", description: "Move a session to another project" },
       { command: "commands", description: "List custom commands, or /commands run <text>" },
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
-      { command: "locale", description: "Switch the bot's language: /locale <es|en>" },
+      { command: "locale", description: `Switch the bot's language: /locale <${availableLocales().join("|")}>` },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
       { command: "bots", description: "This bridge's bots and what each mirrors" },
       { command: "release", description: "Give this per-session bot back to the pool" },
