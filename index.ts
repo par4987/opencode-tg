@@ -311,6 +311,22 @@ interface SharedState {
  */
 const STARTUP_GRACE_MS = Number(process.env.TG_STARTUP_GRACE_MS ?? 60_000);
 
+/**
+ * How often the leader re-subscribes the server's event stream. A subscription
+ * replays the server's running sessions when it starts — and only then: a
+ * session born later, whether another client of this server created it or
+ * this bridge did via REST (scheduled tasks), never appears on the stream
+ * until a fresh subscription replays it. Measured 2026-10-16: three hours
+ * under one stable leader mirrored none of six sessions started mid-run,
+ * while their events flooded the server; coverage only returned when a
+ * leader hand-over re-subscribed. The refresh replays the snapshot on a slow
+ * cadence without touching the Telegram transport — no 409 conflicts, no
+ * aborted sends, no hand-over — and `firstSighting` drops the events a
+ * previous round already rendered, so nothing is delivered twice.
+ * `TG_PUMP_REFRESH_MS=0` opts out and keeps one subscription, as before.
+ */
+const PUMP_REFRESH_MS = Number(process.env.TG_PUMP_REFRESH_MS ?? 300_000);
+
 const REGISTRY_KEY = Symbol.for("opencode-tg.registry");
 const SEEN_KEY = Symbol.for("opencode-tg.seen");
 
@@ -737,54 +753,97 @@ const pluginExport = {
     const subscription = new AbortController();
     let pump: Promise<void> | undefined;
     let streamClosed = false;
+    // One controller per subscription round. `stop()` kills the whole pump
+    // through `subscription`; the refresh timer ends only the current round so
+    // the loop subscribes again. Held at closure scope because the timer must
+    // abort the round the pump is actually parked in.
+    let round: AbortController | undefined;
     const poolNotified = new Set<string>();
     const startPump = (): void => {
       if (pump) return;
       pump = (async () => {
-        try {
-          for await (const event of ctx.event.subscribe({ signal: subscription.signal })) {
-            if (!firstSighting(event as { id?: unknown; type?: unknown })) continue;
-            // Deltas fire once per token; logging those would bury the shapes we
-            // actually want to verify, so only the structural events are dumped.
-            if (config.debugEvents && DEBUG_EVENTS.has(event.type)) {
-              log("INFO", `event ${event.type}`, safe(event.data, 300));
-            }
-            const data = dataOf(event as { data?: unknown });
-            const formSession =
-              event.type.startsWith("form.")
-                ? str((data.form as { sessionID?: unknown } | undefined)?.sessionID)
-                : "";
-            const sessionID = formSession || str(data.sessionID ?? data.sessionId);
-            if (!sessionID) continue;
-            shared.observe(sessionID, event.type, data);
-            // A pool bot is only claimed when a turn is really happening:
-            // dormant sessions the server replays at startup must not drain
-            // the pool before anything live gets a chance.
-            const mayClaim = CLAIM_TRIGGERS.has(event.type);
-            if (config.bots.topology === "per-session" && mayClaim && shared.registry.exhausted(sessionID)) {
-              if (!poolNotified.has(sessionID)) {
-                poolNotified.add(sessionID);
-                void primary
-                  .send(t("bots_pool_empty", { ses: escapeHtml(sessionID.slice(0, 18)) }))
-                  .catch((error) => log("WARN", "aviso de pool", safe(error)));
+        while (!subscription.signal.aborted) {
+          try {
+            round = new AbortController();
+            const signal =
+              typeof AbortSignal.any === "function"
+                ? AbortSignal.any([subscription.signal, round.signal])
+                : subscription.signal;
+            for await (const event of ctx.event.subscribe({ signal })) {
+              if (!firstSighting(event as { id?: unknown; type?: unknown })) continue;
+              // Deltas fire once per token; logging those would bury the shapes we
+              // actually want to verify, so only the structural events are dumped.
+              if (config.debugEvents && DEBUG_EVENTS.has(event.type)) {
+                log("INFO", `event ${event.type}`, safe(event.data, 300));
               }
+              const data = dataOf(event as { data?: unknown });
+              const formSession =
+                event.type.startsWith("form.")
+                  ? str((data.form as { sessionID?: unknown } | undefined)?.sessionID)
+                  : "";
+              const sessionID = formSession || str(data.sessionID ?? data.sessionId);
+              if (!sessionID) continue;
+              shared.observe(sessionID, event.type, data);
+              // A pool bot is only claimed when a turn is really happening:
+              // dormant sessions the server replays at startup must not drain
+              // the pool before anything live gets a chance.
+              const mayClaim = CLAIM_TRIGGERS.has(event.type);
+              if (config.bots.topology === "per-session" && mayClaim && shared.registry.exhausted(sessionID)) {
+                if (!poolNotified.has(sessionID)) {
+                  poolNotified.add(sessionID);
+                  void primary
+                    .send(t("bots_pool_empty", { ses: escapeHtml(sessionID.slice(0, 18)) }))
+                    .catch((error) => log("WARN", "aviso de pool", safe(error)));
+                }
+              }
+              const ownerSpec = shared.registry.of(sessionID, mayClaim);
+              const owner = runtimes.find((r) => r.spec.name === ownerSpec.name) ?? primary;
+              owner.route(event as { type: string; data?: unknown });
             }
-            const ownerSpec = shared.registry.of(sessionID, mayClaim);
-            const owner = runtimes.find((r) => r.spec.name === ownerSpec.name) ?? primary;
-            owner.route(event as { type: string; data?: unknown });
+            // Reaching the end of the async iterator without an abort means the
+            // server closed the subscription underneath us — OpenCode dismantled
+            // this instance. Flag it so the bridge can hand leadership to a
+            // survivor instead of leaving a corpse holding the token.
+            if (!signal.aborted) {
+              streamClosed = true;
+              log("WARN", "event stream cerrado por el servidor");
+              return;
+            }
+          } catch (error) {
+            // An abort — a refresh ending the round, or stop() ending the pump —
+            // is silent. Anything else is an unexpected stream failure and ends
+            // the pump, as it did before rounds existed.
+            if (!subscription.signal.aborted && !round?.signal.aborted) {
+              log("ERROR", "event stream", safe(error));
+              return;
+            }
           }
-          // Reaching the end of the async iterator without an abort means the
-          // server closed the subscription underneath us — OpenCode dismantled
-          // this instance. Flag it so the bridge can hand leadership to a
-          // survivor instead of leaving a corpse holding the token.
-          if (!subscription.signal.aborted) {
-            streamClosed = true;
-            log("WARN", "event stream cerrado por el servidor");
-          }
-        } catch (error) {
-          if (!subscription.signal.aborted) log("ERROR", "event stream", safe(error));
+          // The round ended on the refresh: subscribe again and let the new
+          // subscription replay the server's current sessions.
         }
       })();
+    };
+    /**
+     * The slow refresh: end the pump's current round so `startPump`'s loop
+     * subscribes again. See PUMP_REFRESH_MS for the session-coverage gap this
+     * closes. Never touches the Telegram transport, so it carries none of a
+     * hand-over's costs (409 conflicts, aborted sends, seat churn).
+     */
+    let refreshTimer: ReturnType<typeof setInterval> | undefined;
+    const startRefresh = (): void => {
+      if (refreshTimer || PUMP_REFRESH_MS <= 0) return;
+      refreshTimer = setInterval(() => {
+        if (!pump || !round) return;
+        log("INFO", "event stream renovada (refresh)");
+        // The loop sees the abort, exits its for-await and subscribes again.
+        // Aborting a controller twice is a no-op, so a timer firing mid-
+        // restart hurts nothing.
+        round.abort();
+      }, PUMP_REFRESH_MS);
+    };
+    const stopRefresh = (): void => {
+      if (refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = undefined;
     };
 
     async function start(): Promise<void> {
@@ -798,6 +857,7 @@ const pluginExport = {
         await runtime.start();
       }
       startPump();
+      startRefresh();
       // "ready (dry)" stays byte-identical for the single-bot case — tests
       // and log greps key on it; the count only appears when it matters.
       log("INFO", `ready (${config.mode}${runtimes.length > 1 ? `, ${runtimes.length} bots` : ""})`);
@@ -805,6 +865,7 @@ const pluginExport = {
 
     async function stop(): Promise<void> {
       log("INFO", "cleanup");
+      stopRefresh();
       subscription.abort();
       // Await the transports first: their poll sockets outlive the abort
       // signal by a beat, and a replacement leader starting inside that

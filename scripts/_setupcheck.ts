@@ -16,6 +16,10 @@ process.env.TG_LOCALE_FILE = join(mkdtempSync(join(tmpdir(), "tg-setup-")), "loc
 // touch the real bridge's dir — without this the suite migrated the REAL
 // offset.txt into a fingerprint file during the run.
 process.env.TG_TOKEN_STATE_DIR = mkdtempSync(join(tmpdir(), "tg-setup-state-"));
+// The pump's refresh cadence: the leader re-subscribes the event stream this
+// often (production: 5 minutes). Small here so the round test below runs in
+// milliseconds instead of minutes.
+process.env.TG_PUMP_REFRESH_MS = "120";
 delete process.env.TG_LOCALE;
 const plugin = (await import("../index.js")).default;
 
@@ -26,6 +30,20 @@ function check(name: string, condition: boolean, detail = ""): void {
 }
 
 const SID = "ses_setupcheck";
+// A session the pump's FIRST subscription never sees: it is created after
+// the stream opened, and only a FRESH subscription replays it. That replay
+// is what the pump refresh (PUMP_REFRESH_MS) exists to trigger.
+const SID_LATER = "ses_refreshpick";
+
+function* bornLater(): Generator<{ type: string; data: Record<string, unknown> }> {
+  const mid = { sessionID: SID_LATER, assistantMessageID: "asstL" };
+  yield { type: "session.created", data: { sessionID: SID_LATER, location: { directory: "C:/Users/user/projects/demo" } } };
+  yield { type: "session.renamed", data: { sessionID: SID_LATER, title: "Nacida a mitad de suscripcion" } };
+
+  yield { type: "session.text.started", data: { ...mid, ordinal: 0 } };
+  yield { type: "session.text.delta", data: { ...mid, ordinal: 0, delta: "Texto #REFRESHED#" } };
+  yield { type: "session.text.ended", data: { ...mid, ordinal: 0 } };
+}
 
 function* events(): Generator<{ type: string; data: Record<string, unknown> }> {
   const mid = { sessionID: SID, assistantMessageID: "asst1" };
@@ -64,11 +82,23 @@ function* events(): Generator<{ type: string; data: Record<string, unknown> }> {
   yield { type: "session.idle", data: { sessionID: SID } };
 }
 
+let subscriptions = 0;
 const ctx = {
   event: {
-    subscribe: (_options?: unknown) => (async function* () {
-      yield* events();
-    })(),
+    // A signal-aware server: each subscription replays what the server's
+    // snapshot holds at that moment, then holds the stream open until the
+    // subscriber ends it. Round 1 knows only SID; SID_LATER is born after
+    // the stream opened and appears on round 2 — the pump's blind spot the
+    // refresh exists to close.
+    subscribe: (options?: { signal?: AbortSignal }) => {
+      subscriptions += 1;
+      const signal = options?.signal;
+      return (async function* () {
+        if (subscriptions === 1) yield* events();
+        if (subscriptions === 2) yield* bornLater();
+        while (!signal?.aborted) await new Promise((resolve) => setTimeout(resolve, 5));
+      })();
+    },
   },
   skill: {
     list: async () => [{ id: "experto-ewm", description: "SAP EWM con base canonica" }],
@@ -142,6 +172,15 @@ check("segundo bloque de texto es mensaje aparte", (text.match(/SEND [\s\S]*?\u2
 check("cada mensaje lleva la etiqueta de su sesion", (text.match(/SEND [\s\S]*?<b>Demo de arranque<\/b>/g) ?? []).length >= 2);
 check("notifica el fallo de ejecucion", /boom simulado/.test(text));
 check("notifica el permiso pendiente", /pide permiso/.test(text));
+
+// The pump refresh: a stable leader re-subscribes the stream on a slow
+// cadence, because a subscription only replays the sessions the server held
+// when it opened — sessions born later are invisible to it. Measured
+// 2026-10-16: three hours of stable leadership mirrored nothing of six
+// sessions started mid-run, until a hand-over re-subscribed.
+check("el pump renueva la suscripcion (refresh)", subscriptions >= 2, `${subscriptions} suscripciones`);
+check("una sesion nacida a mitad de suscripcion se rutea tras el refresh", /Texto #REFRESHED#/.test(text));
+check("la sesion nacida a mitad se trackea y titula en vivo", /EDIT 🟤 <b>Nacida a mitad de suscripcion<\/b>/.test(text));
 
 // Every SEND/EDIT payload must be balanced HTML. Log lines carry a timestamp
 // and a "[tg]" prefix before the marker, and a payload may span several lines.
