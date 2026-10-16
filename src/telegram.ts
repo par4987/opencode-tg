@@ -609,12 +609,8 @@ export class Telegram {
    * not a forum", which is the signal to fall back to a single chat.
    */
   async hasTopics(): Promise<boolean> {
-    try {
-      const me = await this.call<{ has_topics_enabled?: boolean }>("getMe", {});
-      return me?.has_topics_enabled === true;
-    } catch {
-      return false;
-    }
+    const me = await this.call<{ has_topics_enabled?: boolean }>("getMe", {});
+    return me?.has_topics_enabled === true;
   }
 
   /**
@@ -624,10 +620,15 @@ export class Telegram {
    */
   async createForumTopic(chatId: number, name: string): Promise<number | undefined> {
     // Probe once per process: topic mode is a BotFather setting, not something
-    // that changes while we are running.
+    // that changes while we are running. The probe throws when it cannot
+    // answer (a call aborted mid-hand-over, a network blip): "no answer" is
+    // not "no" — marking the bridge single-chat from a failed probe left it
+    // there for the rest of the run (measured 2026-10-16). Only a definitive
+    // answer sticks; a failed one fails THIS creation as transient and the
+    // next event probes again.
     if (!this.topicsChecked) {
-      this.topicsChecked = true;
       const enabled = await this.hasTopics();
+      this.topicsChecked = true;
       if (!enabled) this.topicsBroken = true;
     }
     if (this.topicsBroken) return undefined;

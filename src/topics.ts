@@ -217,11 +217,17 @@ export class TopicResolver {
       else if (this.onUnavailable) this.onUnavailable();
       return threadId;
     } catch (error) {
-      // The transport is responsible for classifying the "not a forum" error
-      // and returning undefined; a throw here is an unexpected failure. Report
-      // it and do not retry, so one bad call cannot loop forever.
-      if (this.onUnavailable) this.onUnavailable();
-      void error;
+      // A throw is NOT "topics are unavailable". The transport classifies the
+      // genuine "this chat has no topic mode" refusal itself and answers
+      // `undefined` for it, rethrowing everything else — most often an
+      // abort, because a leadership hand-over cancels in-flight calls
+      // mid-start. Treating those as unavailable logged a lie on every
+      // hand-over while the chat supported topics all along (measured
+      // 2026-10-16: three aborted creations during one hand-over, each
+      // claiming topics broken). Drop only THIS creation: with the pending
+      // task gone, the next event schedules a fresh one through a settled
+      // transport, so nothing is lost.
+      log("WARN", `topics: creación de hilo fallida (transitorio) — se reintenta en el próximo evento: ${safe(error)}`);
       return undefined;
     } finally {
       this.pending.delete(sessionId);

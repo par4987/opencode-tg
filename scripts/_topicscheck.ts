@@ -65,23 +65,66 @@ async function main(): Promise<void> {
   check("el topico se nombra con el titulo", calls[0]?.name === "Mi sesion");
   check("una segunda sesion no se mezcla", resolver.get("ses_y") === undefined);
 
-  // 3. Fallback: Telegram rejects topic creation -> the run degrades to the
-  //    single chat and no later event throws or retries.
-  const broken = {
+  // 3. Fallback: only the transport's own verdict — `createForumTopic`
+  //    resolving `undefined`, "this chat has no topic mode" — degrades the
+  //    run. A thrown failure must not: the transport classifies a genuine
+  //    refusal itself and returns undefined for it, rethrowing everything
+  //    else — most often a creation aborted mid-hand-over. Treating those
+  //    as unavailable logged a lie on every hand-over while the chat
+  //    supported topics all along (measured 2026-10-16).
+  const aborted = {
     async createForumTopic(): Promise<number | undefined> {
-      throw new Error("Bad Request: can't create forum topics in a non-forum chat");
+      throw new Error("The operation was aborted");
     },
   };
   const store3 = new TopicStore(333, FILE);
   let downgraded = 0;
-  const resolver3 = new TopicResolver(store3, 333, broken, () => "Otra", () => {
+  const resolver3 = new TopicResolver(store3, 333, aborted, () => "Otra", () => {
     downgraded++;
   });
   resolver3.get("ses_z");
   resolver3.get("ses_z");
   await new Promise((resolve) => setTimeout(resolve, 30));
-  check("se notifica la baja (una vez)", downgraded === 1, `${downgraded} bajas`);
-  check("sin hilo tras la baja", resolver3.get("ses_z") === undefined);
+  check("un abort NO decreta el modo hilo", downgraded === 0, `${downgraded} bajas`);
+  check("sin hilo tras el abort", resolver3.get("ses_z") === undefined);
+
+  // 3b. The genuine verdict: the transport itself says topic mode is off.
+  //     One notification, no thread, the run degrades to the single chat.
+  const noTopics = {
+    async createForumTopic(): Promise<number | undefined> {
+      return undefined;
+    },
+  };
+  const store3b = new TopicStore(336, FILE);
+  let downgraded3b = 0;
+  const resolver3b = new TopicResolver(store3b, 336, noTopics, () => "Simple", () => {
+    downgraded3b++;
+  });
+  resolver3b.get("ses_d");
+  resolver3b.get("ses_d");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  check("la baja real se notifica (una vez)", downgraded3b === 1, `${downgraded3b} bajas`);
+  check("sin hilo en la baja real", resolver3b.get("ses_d") === undefined);
+
+  // 3c. A transient failure retries: the failed creation's pending task goes
+  //     away, the next event schedules a fresh one, and through a settled
+  //     transport the thread lands. Nothing is lost.
+  let flakyCalls = 0;
+  const flaky = {
+    async createForumTopic(): Promise<number | undefined> {
+      flakyCalls += 1;
+      if (flakyCalls === 1) throw new Error("The operation was aborted");
+      return 929;
+    },
+  };
+  const store3c = new TopicStore(337, FILE);
+  const resolver3c = new TopicResolver(store3c, 337, flaky, () => "Reintento", () => undefined);
+  resolver3c.get("ses_r");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  check("el fallo transitorio no mapea", store3c.get("ses_r") === undefined);
+  resolver3c.get("ses_r"); // the next event's lookup reschedules the creation
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  check("el reintento crea el hilo", store3c.get("ses_r") === 929, `${flakyCalls} intentos`);
 
   // 4. Async titleOf: a topic (re)born must await the LIVE title — the
   //    server's current name, not a cached copy (the drift incident: a

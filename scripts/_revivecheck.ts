@@ -73,6 +73,29 @@ async function main(): Promise<void> {
     await tg.stop();
     check("limpieza final: pollAlive false", tg.pollAlive() === false);
     void poll;
+
+    // 5. The topic probe (hasTopics) is the gate on createForumTopic: only
+    //    a DEFINITIVE answer ("this bot has topic mode on/off") may be
+    //    cached. A probe that fails — aborted mid-hand-over, or a network
+    //    blip — must throw, not answer false: concluding "no topic mode"
+    //    from a failed probe demoted the bridge to a single chat for the
+    //    rest of the run (measured 2026-10-16).
+    const probeAborted = messageOf(await tg.hasTopics().catch((e) => e));
+    check("sondeo abortado: falla, no responde 'sin modo foro'", /aborted/.test(probeAborted), probeAborted.slice(0, 50));
+    check("un sondeo abortado no marca topicsBroken", tg.topicsEnabled() === true);
+    const createAborted = messageOf(await tg.createForumTopic(1, "Hilo").catch((e) => e));
+    check("createForumTopic con sondeo abortado: lanza (transitorio)", /aborted/.test(createAborted), createAborted.slice(0, 50));
+    check("topicsEnabled sigue true: ningun sonrego definitivo", tg.topicsEnabled() === true);
+    // A live transport that cannot reach Telegram answers the same way —
+    // the connection error, never "false".
+    const dead = new Telegram({
+      token: "0:dummynotoken",
+      baseUrl: "http://127.0.0.1:59994",
+      offsetPath: join(dir, "offset-dead.txt"),
+    });
+    const probeDead = messageOf(await dead.hasTopics().catch((e) => e));
+    check("sondeo sin red: falla por conexion, no por 'sin modo foro'", /fetch failed|ECONNREFUSED|connect/i.test(probeDead), probeDead.slice(0, 60));
+    check("topicsEnabled sigue true sin respuesta definitiva", dead.topicsEnabled() === true);
   } finally {
     await tg.stop();
     rmSync(dir, { recursive: true, force: true });
