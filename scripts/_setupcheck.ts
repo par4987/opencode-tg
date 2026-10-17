@@ -5,7 +5,8 @@
  * Proves: the plain-object export is accepted, the event pump routes every
  * event kind, and the rendered transcript comes out in order.
  */
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // Pin ES for this suite: the operator's /locale choice must not leak into
@@ -21,6 +22,49 @@ process.env.TG_TOKEN_STATE_DIR = mkdtempSync(join(tmpdir(), "tg-setup-state-"));
 // milliseconds instead of minutes.
 process.env.TG_PUMP_REFRESH_MS = "120";
 delete process.env.TG_LOCALE;
+
+// The REST event pump discovers the local API from service.json — XDG_CONFIG_HOME
+// is read first, so point it at a throwaway file — and then reads `/event` from
+// THIS pid's server. A miniature API on an ephemeral port lets the plugin's
+// FormClient find us: /api/info answers with our pid (the discovery pid-match)
+// and /api/event is the SSE stream the two pumps share. The shared batches get
+// the SAME ids as the SDK ctx below, so `firstSighting` dedupes them — the
+// suite proves both the coverage (a session only the REST path sees renders)
+// and the dedupe (the shared content does not render twice).
+const PASSWORD = "opencode-tg-test-service-password";
+const xdg = mkdtempSync(join(tmpdir(), "tg-setup-xdg-"));
+mkdirSync(join(xdg, "opencode"), { recursive: true });
+writeFileSync(join(xdg, "opencode", "service.json"), JSON.stringify({ password: PASSWORD }));
+process.env.XDG_CONFIG_HOME = xdg;
+
+const http = createServer((req, res) => {
+  const url = req.url ?? "";
+  if (url === "/api/info") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ pid: process.pid }));
+    return;
+  }
+  if (url === "/api/event") {
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    const send = (event: { id?: unknown; type: string; data?: unknown }): void => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+    for (const event of withIds(events, "evt_base")) send(event);
+    for (const event of withIds(bornLater, "evt_late")) send(event);
+    for (const event of withIds(sseOnly, "sse_only")) send(event);
+    const ping = setInterval(() => res.write(":\n\n"), 300);
+    req.on("close", () => clearInterval(ping));
+    return;
+  }
+  res.writeHead(404, { "content-type": "application/json" });
+  res.end("{}");
+});
+http.listen(0);
+
 const plugin = (await import("../index.js")).default;
 
 let failures = 0;
@@ -34,6 +78,28 @@ const SID = "ses_setupcheck";
 // the stream opened, and only a FRESH subscription replays it. That replay
 // is what the pump refresh (PUMP_REFRESH_MS) exists to trigger.
 const SID_LATER = "ses_refreshpick";
+// A session only the REST /event stream carries — the SDK stream of this
+// instance's client never sees it (the blind spot the REST pump closes).
+const SID_SSE = "ses_crossclient";
+
+/** Tag a generator's events with stable ids, so both pumps dedupe them. */
+function* withIds(gen: () => Generator<{ type: string; data: Record<string, unknown> }>, prefix: string): Generator<{ id: string; type: string; data: Record<string, unknown> }> {
+  let n = 0;
+  for (const event of gen()) {
+    n += 1;
+    yield { id: `${prefix}_${n}`, type: event.type, data: event.data };
+  }
+}
+
+function* sseOnly(): Generator<{ type: string; data: Record<string, unknown> }> {
+  const mid = { sessionID: SID_SSE, assistantMessageID: "asstX" };
+  yield { type: "session.created", data: { sessionID: SID_SSE, location: { directory: "C:/Users/user/projects/demo" } } };
+  yield { type: "session.renamed", data: { sessionID: SID_SSE, title: "Solo por REST" } };
+
+  yield { type: "session.text.started", data: { ...mid, ordinal: 0 } };
+  yield { type: "session.text.delta", data: { ...mid, ordinal: 0, delta: "Texto #SOLO-REST#" } };
+  yield { type: "session.text.ended", data: { ...mid, ordinal: 0 } };
+}
 
 function* bornLater(): Generator<{ type: string; data: Record<string, unknown> }> {
   const mid = { sessionID: SID_LATER, assistantMessageID: "asstL" };
@@ -94,8 +160,8 @@ const ctx = {
       subscriptions += 1;
       const signal = options?.signal;
       return (async function* () {
-        if (subscriptions === 1) yield* events();
-        if (subscriptions === 2) yield* bornLater();
+        if (subscriptions === 1) yield* withIds(events, "evt_base");
+        if (subscriptions === 2) yield* withIds(bornLater, "evt_late");
         while (!signal?.aborted) await new Promise((resolve) => setTimeout(resolve, 5));
       })();
     },
@@ -149,6 +215,7 @@ try {
   console.warn = originalWarn;
   console.error = originalError;
   writeFileSync(CONFIG, backup);
+  http.close();
 }
 
 const text = captured.join("\n");
@@ -181,6 +248,15 @@ check("notifica el permiso pendiente", /pide permiso/.test(text));
 check("el pump renueva la suscripcion (refresh)", subscriptions >= 2, `${subscriptions} suscripciones`);
 check("una sesion nacida a mitad de suscripcion se rutea tras el refresh", /Texto #REFRESHED#/.test(text));
 check("la sesion nacida a mitad se trackea y titula en vivo", /EDIT 🟤 <b>Nacida a mitad de suscripcion<\/b>/.test(text));
+// The REST pump: a session only the /event stream carries (created by another
+// client of the same server) must reach the renderer — the SDK stream would
+// never see it (measured 2026-10-17: a whole batch relaunched from the desktop
+// app stayed invisible for hours).
+check("una sesion solo visible por REST se rutea y renderiza", /Texto #SOLO-REST#/.test(text));
+check("la sesion solo-REST se titula en vivo", /Solo por REST<\/b>/.test(text));
+// Both streams deliver the shared batches; the stable ids let firstSighting
+// drop the second copy — the shared content renders once, not twice.
+check("ambos streams deduplican por id", /evento duplicado del servidor/.test(text));
 
 // Every SEND/EDIT payload must be balanced HTML. Log lines carry a timestamp
 // and a "[tg]" prefix before the marker, and a payload may span several lines.

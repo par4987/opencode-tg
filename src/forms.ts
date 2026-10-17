@@ -24,7 +24,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { log } from "./log.js";
+import { log, safe } from "./log.js";
 import { t } from "./locale.js";
 
 export interface FormOption {
@@ -403,6 +403,83 @@ export class FormClient {
   async request<T = unknown>(method: "GET" | "POST" | "DELETE" | "PATCH" | "PUT", path: string, body?: unknown): Promise<T | undefined> {
     return (await this.call(method, path, body)) as T | undefined;
   }
+
+  /**
+   * The server's COMPLETE event stream, over the REST API. The SDK's
+   * `ctx.event` stream carries the sessions tied to this plugin instance's
+   * client; sessions created by OTHER clients of the same server never
+   * appear on it, and no re-subscription replays them (measured 2026-10-17:
+   * a whole batch relaunched from the desktop app stayed invisible for
+   * hours). `/event` carries every session on this server whatever client
+   * owns it — that is what makes it the pump's authoritative source.
+   *
+   * The generator reconnects with backoff: a closed stream (server restart,
+   * idle timeout) is not the end of the bridge. Events carry stable ids, so
+   * the pump's `firstSighting` drops whatever the SDK stream already
+   * delivered and a session visible on both renders exactly once.
+   */
+  async *events(
+    signal: AbortSignal,
+  ): AsyncGenerator<{ id?: unknown; type: string; data?: unknown }, void, unknown> {
+    if (!this.ready && !(await this.connect())) return;
+    let attempt = 0;
+    while (!signal.aborted) {
+      try {
+        const response = await fetch(`${this.base}/event`, {
+          headers: { Authorization: this.auth, accept: "text/event-stream" },
+          signal,
+        });
+        if (!response.ok || !response.body) throw new Error(`/event → ${response.status}`);
+        attempt = 0;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let cut = buffer.indexOf("\n\n");
+          while (cut !== -1) {
+            const raw = buffer.slice(0, cut).replace(/\r\n/g, "\n");
+            buffer = buffer.slice(cut + 2);
+            cut = buffer.indexOf("\n\n");
+            // Standard SSE: a `data:` field per line, joined with \n when it
+            // spans several. Chunks without one are keep-alives — skip them.
+            const data = raw
+              .split("\n")
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.slice(5).trim());
+            if (!data.length) continue;
+            try {
+              const parsed = JSON.parse(data.join("\n")) as { type?: unknown };
+              if (parsed && typeof parsed.type === "string") {
+                yield parsed as { id?: unknown; type: string; data?: unknown };
+              }
+            } catch {
+              /* a malformed line does not end the stream */
+            }
+          }
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        attempt += 1;
+        const backoffMs = Math.min(30_000, 500 * 2 ** Math.min(attempt - 1, 6));
+        log("WARN", `forms: stream de eventos /event caído (intento ${attempt}) — reconexión en ${Math.round(backoffMs / 1000)}s: ${safe(error)}`);
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, backoffMs);
+          signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+      }
+    }
+  }
+
 
   /**
    * Answer a form.

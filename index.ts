@@ -749,9 +749,10 @@ const pluginExport = {
       return owner.permissionCard(params);
     };
 
-    // ── the single event pump: route each event to its owning bot ────────────
+    // ── the event pumps: route each event to its owning bot ───────────────────
     const subscription = new AbortController();
     let pump: Promise<void> | undefined;
+    let ssePump: Promise<void> | undefined;
     let streamClosed = false;
     // One controller per subscription round. `stop()` kills the whole pump
     // through `subscription`; the refresh timer ends only the current round so
@@ -759,6 +760,41 @@ const pluginExport = {
     // abort the round the pump is actually parked in.
     let round: AbortController | undefined;
     const poolNotified = new Set<string>();
+    /**
+     * The shared delivery path both pumps feed. `firstSighting` dedupes by
+     * event id, so a session the SDK stream and the REST stream both carry
+     * renders exactly once.
+     */
+    const routeEvent = (event: { id?: unknown; type: string; data?: unknown }): void => {
+      if (!firstSighting(event as { id?: unknown; type?: unknown })) return;
+      // Deltas fire once per token; logging those would bury the shapes we
+      // actually want to verify, so only the structural events are dumped.
+      if (config.debugEvents && DEBUG_EVENTS.has(event.type)) {
+        log("INFO", `event ${event.type}`, safe(event.data, 300));
+      }
+      const data = dataOf(event as { data?: unknown });
+      const formSession = event.type.startsWith("form.")
+        ? str((data.form as { sessionID?: unknown } | undefined)?.sessionID)
+        : "";
+      const sessionID = formSession || str(data.sessionID ?? data.sessionId);
+      if (!sessionID) return;
+      shared.observe(sessionID, event.type, data);
+      // A pool bot is only claimed when a turn is really happening: dormant
+      // sessions the server replays at startup must not drain the pool before
+      // anything live gets a chance.
+      const mayClaim = CLAIM_TRIGGERS.has(event.type);
+      if (config.bots.topology === "per-session" && mayClaim && shared.registry.exhausted(sessionID)) {
+        if (!poolNotified.has(sessionID)) {
+          poolNotified.add(sessionID);
+          void primary
+            .send(t("bots_pool_empty", { ses: escapeHtml(sessionID.slice(0, 18)) }))
+            .catch((error) => log("WARN", "aviso de pool", safe(error)));
+        }
+      }
+      const ownerSpec = shared.registry.of(sessionID, mayClaim);
+      const owner = runtimes.find((r) => r.spec.name === ownerSpec.name) ?? primary;
+      owner.route(event as { type: string; data?: unknown });
+    };
     const startPump = (): void => {
       if (pump) return;
       pump = (async () => {
@@ -770,35 +806,7 @@ const pluginExport = {
                 ? AbortSignal.any([subscription.signal, round.signal])
                 : subscription.signal;
             for await (const event of ctx.event.subscribe({ signal })) {
-              if (!firstSighting(event as { id?: unknown; type?: unknown })) continue;
-              // Deltas fire once per token; logging those would bury the shapes we
-              // actually want to verify, so only the structural events are dumped.
-              if (config.debugEvents && DEBUG_EVENTS.has(event.type)) {
-                log("INFO", `event ${event.type}`, safe(event.data, 300));
-              }
-              const data = dataOf(event as { data?: unknown });
-              const formSession =
-                event.type.startsWith("form.")
-                  ? str((data.form as { sessionID?: unknown } | undefined)?.sessionID)
-                  : "";
-              const sessionID = formSession || str(data.sessionID ?? data.sessionId);
-              if (!sessionID) continue;
-              shared.observe(sessionID, event.type, data);
-              // A pool bot is only claimed when a turn is really happening:
-              // dormant sessions the server replays at startup must not drain
-              // the pool before anything live gets a chance.
-              const mayClaim = CLAIM_TRIGGERS.has(event.type);
-              if (config.bots.topology === "per-session" && mayClaim && shared.registry.exhausted(sessionID)) {
-                if (!poolNotified.has(sessionID)) {
-                  poolNotified.add(sessionID);
-                  void primary
-                    .send(t("bots_pool_empty", { ses: escapeHtml(sessionID.slice(0, 18)) }))
-                    .catch((error) => log("WARN", "aviso de pool", safe(error)));
-                }
-              }
-              const ownerSpec = shared.registry.of(sessionID, mayClaim);
-              const owner = runtimes.find((r) => r.spec.name === ownerSpec.name) ?? primary;
-              owner.route(event as { type: string; data?: unknown });
+              routeEvent(event as { id?: unknown; type: string; data?: unknown });
             }
             // Reaching the end of the async iterator without an abort means the
             // server closed the subscription underneath us — OpenCode dismantled
@@ -820,6 +828,34 @@ const pluginExport = {
           }
           // The round ended on the refresh: subscribe again and let the new
           // subscription replay the server's current sessions.
+        }
+      })();
+    };
+    /**
+     * The REST pump: `/event` carries every session on this server, whatever
+     * client owns it. The SDK stream scopes its events to this instance's
+     * client — sessions created by other clients of the same server never
+     * appear on it, and no re-subscription replays them (measured 2026-10-17:
+     * a whole batch relaunched from the desktop app stayed invisible for
+     * hours). The REST stream sees them all, so the leader routes it through
+     * the same delivery path; `firstSighting` drops the events both streams
+     * delivered, so a session visible on both renders exactly once.
+     */
+    const startSsePump = (): void => {
+      if (ssePump) return;
+      ssePump = (async () => {
+        while (!subscription.signal.aborted) {
+          try {
+            for await (const event of shared.forms.events(subscription.signal)) {
+              routeEvent(event as { id?: unknown; type: string; data?: unknown });
+            }
+          } catch (error) {
+            if (!subscription.signal.aborted) log("ERROR", "pump REST", safe(error));
+          }
+          // `forms.events` reconnects on its own and only ends on abort — a
+          // fall-through here means the connection just closed; breathe and
+          // let a fresh `events()` take over.
+          if (!subscription.signal.aborted) await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       })();
     };
@@ -857,6 +893,7 @@ const pluginExport = {
         await runtime.start();
       }
       startPump();
+      startSsePump();
       startRefresh();
       // "ready (dry)" stays byte-identical for the single-bot case — tests
       // and log greps key on it; the count only appears when it matters.
@@ -874,6 +911,8 @@ const pluginExport = {
       await shared.acp.stop();
       await pump;
       pump = undefined;
+      await ssePump?.catch(() => undefined);
+      ssePump = undefined;
     }
 
     const seat = await joinBridge(
