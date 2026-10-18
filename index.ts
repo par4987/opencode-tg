@@ -327,6 +327,20 @@ const STARTUP_GRACE_MS = Number(process.env.TG_STARTUP_GRACE_MS ?? 60_000);
  */
 const PUMP_REFRESH_MS = Number(process.env.TG_PUMP_REFRESH_MS ?? 300_000);
 
+/**
+ * Pure decision for the coverage self-heal: is the mirror blind? A leader that
+ * has delivered nothing for `minIdleMs` while the server holds active sessions
+ * it never tracked is blind — the event stream silently stopped fanning out
+ * foreign sessions (measured 2026-10-18: eight sessions worked through the
+ * afternoon, only one left a trace). The hand-over that follows is the only
+ * recovery that has worked in three days of production.
+ */
+export function blindCoverage(activeIds: readonly string[], trackedIds: ReadonlySet<string>, lastDeliveryMs: number, now: number, minIdleMs = 120_000): boolean {
+  if (activeIds.length === 0) return false;
+  if (now - lastDeliveryMs < minIdleMs) return false;
+  return activeIds.some((id) => !trackedIds.has(id));
+}
+
 const REGISTRY_KEY = Symbol.for("opencode-tg.registry");
 const SEEN_KEY = Symbol.for("opencode-tg.seen");
 
@@ -760,6 +774,9 @@ const pluginExport = {
     // abort the round the pump is actually parked in.
     let round: AbortController | undefined;
     const poolNotified = new Set<string>();
+    const trackedSessions = new Set<string>();
+    let lastDeliveryAt = Date.now();
+    let lastRecoveryAt = 0;
     /**
      * The shared delivery path both pumps feed. `firstSighting` dedupes by
      * event id, so a session the SDK stream and the REST stream both carry
@@ -794,6 +811,10 @@ const pluginExport = {
       const ownerSpec = shared.registry.of(sessionID, mayClaim);
       const owner = runtimes.find((r) => r.spec.name === ownerSpec.name) ?? primary;
       owner.route(event as { type: string; data?: unknown });
+      // Track that THIS session has reached the mirror: the blind-coverage
+      // watchdog (below) compares this against the server's active list.
+      trackedSessions.add(sessionID);
+      lastDeliveryAt = Date.now();
     };
     const startPump = (): void => {
       if (pump) return;
@@ -882,6 +903,48 @@ const pluginExport = {
       refreshTimer = undefined;
     };
 
+    /**
+     * Coverage self-heal: a leader that has delivered nothing for a while
+     * while the server holds sessions it never tracked is blind — the event
+     * stream silently stopped fanning out foreign sessions (measured
+     * 2026-10-18: eight sessions worked through the afternoon, only one left
+     * a trace). Releasing the lock lets the leader's tick hand the seat to
+     * a fresh instance, whose first subscription replays the snapshot — the
+     * only recovery that has worked in three days. The cooldown keeps it
+     * from thrashing during a genuine outage.
+     */
+    const BLIND_CHECK_MS = Number(process.env.TG_BLIND_CHECK_MS ?? 60_000);
+    let blindTimer: ReturnType<typeof setInterval> | undefined;
+    const startBlindWatch = (): void => {
+      if (blindTimer || BLIND_CHECK_MS <= 0) return;
+      blindTimer = setInterval(async () => {
+        if (Date.now() - lastDeliveryAt < 120_000) return;
+        if (!shared.forms.ready) return;
+        let activeIds: string[] = [];
+        try {
+          const r = await shared.forms.request<{ data?: Record<string, unknown> }>("GET", "/session/active");
+          activeIds = Object.keys(r?.data ?? {});
+        } catch {
+          return;
+        }
+        if (!blindCoverage(activeIds, trackedSessions, lastDeliveryAt, Date.now())) return;
+        if (Date.now() - lastRecoveryAt < 300_000) return;
+        lastRecoveryAt = Date.now();
+        log("WARN", `cobertura: ${activeIds.filter((id) => !trackedSessions.has(id)).length} sesión(es) activa(s) sin entregar — relevando el liderazgo`);
+        if (config.mode === "live") {
+          try {
+            releaseLock(lockFile);
+          } catch {
+            /* best effort */
+          }
+        }
+      }, BLIND_CHECK_MS);
+    };
+    const stopBlindWatch = (): void => {
+      if (blindTimer) clearInterval(blindTimer);
+      blindTimer = undefined;
+    };
+
     async function start(): Promise<void> {
       // A hand-over is starting a fresh leader: pull the freshest persisted
       // cursor (the bootstrap may have just migrated a legacy file) into
@@ -895,6 +958,7 @@ const pluginExport = {
       startPump();
       startSsePump();
       startRefresh();
+      startBlindWatch();
       // "ready (dry)" stays byte-identical for the single-bot case — tests
       // and log greps key on it; the count only appears when it matters.
       log("INFO", `ready (${config.mode}${runtimes.length > 1 ? `, ${runtimes.length} bots` : ""})`);
@@ -903,6 +967,7 @@ const pluginExport = {
     async function stop(): Promise<void> {
       log("INFO", "cleanup");
       stopRefresh();
+      stopBlindWatch();
       subscription.abort();
       // Await the transports first: their poll sockets outlive the abort
       // signal by a beat, and a replacement leader starting inside that

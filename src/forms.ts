@@ -431,6 +431,7 @@ export class FormClient {
         });
         if (!response.ok || !response.body) throw new Error(`/event → ${response.status}`);
         attempt = 0;
+        log("INFO", "forms: stream /event conectado");
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
