@@ -335,10 +335,18 @@ const PUMP_REFRESH_MS = Number(process.env.TG_PUMP_REFRESH_MS ?? 300_000);
  * afternoon, only one left a trace). The hand-over that follows is the only
  * recovery that has worked in three days of production.
  */
-export function blindCoverage(activeIds: readonly string[], trackedIds: ReadonlySet<string>, lastDeliveryMs: number, now: number, minIdleMs = 120_000): boolean {
+export function blindCoverage(activeIds: readonly string[], trackedIds: ReadonlySet<string>, lastDeliveryMs: number, now: number, fastIdleMs = 120_000, slowIdleMs = 600_000): boolean {
   if (activeIds.length === 0) return false;
-  if (now - lastDeliveryMs < minIdleMs) return false;
-  return activeIds.some((id) => !trackedIds.has(id));
+  const idle = now - lastDeliveryMs;
+  // Prolonged silence with anything running: the stream went quiet even for
+  // sessions it used to deliver (the 2026-10-18 failure — a session tracked
+  // during the catch-up stayed silent for 84 minutes while the watchdog
+  // never fired, because "tracked" was sticky).
+  if (idle >= slowIdleMs) return true;
+  // A session the mirror never tracked at all: fire as soon as the grace
+  // window passes — the seat changed underneath us mid-run.
+  if (idle >= fastIdleMs) return activeIds.some((id) => !trackedIds.has(id));
+  return false;
 }
 
 const REGISTRY_KEY = Symbol.for("opencode-tg.registry");
@@ -773,10 +781,12 @@ const pluginExport = {
     // the loop subscribes again. Held at closure scope because the timer must
     // abort the round the pump is actually parked in.
     let round: AbortController | undefined;
+    let sseRound: AbortController | undefined;
     const poolNotified = new Set<string>();
     const trackedSessions = new Set<string>();
     let lastDeliveryAt = Date.now();
     let lastRecoveryAt = 0;
+    let recoveryBackoff = 300_000;
     /**
      * The shared delivery path both pumps feed. `firstSighting` dedupes by
      * event id, so a session the SDK stream and the REST stream both carry
@@ -867,11 +877,21 @@ const pluginExport = {
       ssePump = (async () => {
         while (!subscription.signal.aborted) {
           try {
-            for await (const event of shared.forms.events(subscription.signal)) {
+            // A round controller, same trick as the SDK pump: an /event
+            // connection that stays open slowly stops receiving foreign
+            // sessions (measured 2026-10-18: connected 19:53, silent by
+            // 21:39), while a FRESH connection re-arms the fan-out. The
+            // refresh timer aborts this round so the loop opens a new one.
+            sseRound = new AbortController();
+            const signal =
+              typeof AbortSignal.any === "function"
+                ? AbortSignal.any([subscription.signal, sseRound.signal])
+                : subscription.signal;
+            for await (const event of shared.forms.events(signal)) {
               routeEvent(event as { id?: unknown; type: string; data?: unknown });
             }
           } catch (error) {
-            if (!subscription.signal.aborted) log("ERROR", "pump REST", safe(error));
+            if (!subscription.signal.aborted && !sseRound?.signal.aborted) log("ERROR", "pump REST", safe(error));
           }
           // `forms.events` reconnects on its own and only ends on abort — a
           // fall-through here means the connection just closed; breathe and
@@ -890,12 +910,14 @@ const pluginExport = {
     const startRefresh = (): void => {
       if (refreshTimer || PUMP_REFRESH_MS <= 0) return;
       refreshTimer = setInterval(() => {
-        if (!pump || !round) return;
+        if (!pump) return;
         log("INFO", "event stream renovada (refresh)");
-        // The loop sees the abort, exits its for-await and subscribes again.
-        // Aborting a controller twice is a no-op, so a timer firing mid-
-        // restart hurts nothing.
-        round.abort();
+        // The loops see the abort, exit their for-await and subscribe again —
+        // the SDK stream and the /event connection alike. Aborting a
+        // controller twice is a no-op, so a timer firing mid-restart hurts
+        // nothing.
+        round?.abort();
+        sseRound?.abort();
       }, PUMP_REFRESH_MS);
     };
     const stopRefresh = (): void => {
@@ -928,7 +950,13 @@ const pluginExport = {
           return;
         }
         if (!blindCoverage(activeIds, trackedSessions, lastDeliveryAt, Date.now())) return;
-        if (Date.now() - lastRecoveryAt < 300_000) return;
+        if (Date.now() - lastRecoveryAt < recoveryBackoff) return;
+        // Nothing delivered since the previous recovery? Back off, so a
+        // "running" session that produces no events can't thrash the seat.
+        recoveryBackoff =
+          lastRecoveryAt > 0 && lastDeliveryAt <= lastRecoveryAt
+            ? Math.min(recoveryBackoff * 2, 2_400_000)
+            : 300_000;
         lastRecoveryAt = Date.now();
         log("WARN", `cobertura: ${activeIds.filter((id) => !trackedSessions.has(id)).length} sesión(es) activa(s) sin entregar — relevando el liderazgo`);
         if (config.mode === "live") {

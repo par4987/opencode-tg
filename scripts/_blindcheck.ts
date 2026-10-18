@@ -1,11 +1,13 @@
 /**
  * Coverage watchdog: the pure decision `blindCoverage`.
  *
- * A leader that has delivered nothing for a while while the server holds
- * active sessions it never tracked is blind — the event stream silently
- * stopped fanning out foreign sessions (measured 2026-10-18: eight sessions
- * worked through the afternoon, only one left a trace). The helper is pure so
- * the self-heal trigger can be unit-tested without a live server.
+ * Two ways to be blind, both must trip:
+ *  - FAST: a session the mirror has never tracked is active past the grace
+ *    window (the seat changed mid-run).
+ *  - SLOW: the mirror has delivered nothing for a long while even though a
+ *    session is running — the stream went quiet for sessions it USED to
+ *    deliver (the 2026-10-18 failure: silent for 84 minutes with no trigger,
+ *    because "tracked" was sticky).
  */
 import { blindCoverage } from "../index.js";
 
@@ -19,24 +21,28 @@ function main(): void {
   const now = 10_000;
   const tracked = new Set<string>(["ses_a", "ses_b"]);
 
-  // Freshly started: never fire, even with untracked active sessions.
-  check("recien arrancado no se releva", !blindCoverage(["ses_x"], tracked, now - 1_000, now), "90 s de gracia");
+  // Grace: freshly started leader, never fire.
+  check("recien arrancado no se releva", !blindCoverage(["ses_x"], tracked, now - 90_000, now), "90 s");
 
-  // Recent delivery: healthy, no self-heal.
-  check("entrega reciente no se releva", !blindCoverage(["ses_x"], tracked, now - 30_000, now), "30 s sin entrega");
+  // Recent delivery: healthy.
+  check("entrega reciente no se releva", !blindCoverage(["ses_x"], tracked, now - 30_000, now), "30 s");
 
-  // Blind: idle long enough AND an active session never tracked.
-  check("ciego: entrega vieja + sesion activa sin trackear", blindCoverage(["ses_x"], tracked, now - 200_000, now));
+  // Fast path: past the grace with a never-tracked active session.
+  check("rapida: sesion activa sin trackear", blindCoverage(["ses_x"], tracked, now - 200_000, now), "3 min 20 s");
 
-  // All active sessions already tracked: nothing missing -> healthy.
-  check("todas las activas trackeadas: no se releva", !blindCoverage(["ses_a", "ses_b"], tracked, now - 200_000, now));
+  // Fast path but every active session is tracked: wait for the slow path.
+  check("rapida: todo trackeado no se releva", !blindCoverage(["ses_a"], tracked, now - 200_000, now), "3 min 20 s");
 
-  // No active sessions at all: the bridge is simply idle.
-  check("sin sesiones activas: no se releva", !blindCoverage([], tracked, now - 200_000, now));
+  // Slow path: prolonged silence even for sessions already tracked.
+  check("lenta: 10 min+ de silencio aunque este trackeada", blindCoverage(["ses_a"], tracked, now - 610_000, now));
+  check("lenta: 9 min 50 s no alcanza", !blindCoverage(["ses_a"], tracked, now - 590_000, now));
 
-  // Custom threshold: a longer minIdleMs.
-  check("umbral largo: 90 s no alcanza con minIdleMs 300s", !blindCoverage(["ses_x"], tracked, now - 90_000, now, 300_000));
-  check("umbral largo: 5 min sí", blindCoverage(["ses_x"], tracked, now - 310_000, now, 300_000));
+  // Bridge simply idle: nothing running, nothing to mirror.
+  check("sin sesiones activas: no se releva", !blindCoverage([], tracked, now - 610_000, now));
+
+  // Custom slow threshold.
+  check("umbral lento custom (15 min): 15 min 10 s si", blindCoverage(["ses_a"], tracked, now - 910_000, now, 120_000, 900_000));
+  check("umbral lento custom (15 min): 14 min 50 s no", !blindCoverage(["ses_a"], tracked, now - 890_000, now, 120_000, 900_000));
 
   console.log(`\n${failures === 0 ? "BLINDCHECK OK" : `${failures} FALLOS`}`);
   process.exit(failures === 0 ? 0 : 1);
