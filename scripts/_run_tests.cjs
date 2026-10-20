@@ -10,6 +10,7 @@ const path = require("node:path");
 const suites = [
   "_setupcheck",
   "_blindcheck",
+  "_transportcheck",
   "_acpcheck",
   "_metacheck",
   "_topicscheck",

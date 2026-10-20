@@ -8,6 +8,8 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 
 import { log } from "./log.js";
 import { t } from "./locale.js";
@@ -276,6 +278,84 @@ export class Telegram {
     }
   }
 
+  /**
+   * One request, one socket — the Bot API client deliberately sidesteps the
+   * global fetch dispatcher (undici's shared connection pool). A network
+   * blip leaves half-dead keep-alive sockets in that pool, undici keeps
+   * dispatching new requests onto them, and every request from the whole
+   * process hangs forever while a fresh process on the same machine works
+   * fine (measured live 2026-10-20: 82 zombie sockets to api.telegram.org,
+   * 100+ leadership hand-overs in two hours, each aborting ~30 in-flight
+   * sends — the bridge stayed intermittent until the process itself died).
+   * `agent: false` gives every request a one-shot socket that is destroyed
+   * when it settles, so there is no pool to poison and no sockets to
+   * accumulate. grinev/opencode-telegram-bot does the same with its own
+   * https.Agent; a mirror makes a handful of calls a second at most, so the
+   * extra TCP+TLS handshake costs nothing next to a message that never
+   * arrives.
+   */
+  private apiRequest(
+    url: string,
+    body: Buffer | null,
+    contentType: string,
+    timeoutMs: number,
+  ): Promise<{ status: number; body: Buffer }> {
+    const target = new URL(url);
+    const isHttps = target.protocol === "https:";
+    // Capture the signal once: revive() swaps the controller, and a request
+    // belongs to the controller that was current when it was issued.
+    const signal = this.signal;
+    const headers: Record<string, string> = {};
+    if (body !== null) {
+      headers["content-type"] = contentType;
+      headers["content-length"] = String(body.length);
+    }
+    return new Promise((resolve, reject) => {
+      const destroy = (reason: string): void => {
+        req.destroy(new Error(reason));
+      };
+      const timer = setTimeout(() => destroy("request timeout"), timeoutMs);
+      const onAbort = (): void => destroy("aborted");
+      const req = (isHttps ? httpsRequest : httpRequest)(
+        {
+          hostname: target.hostname,
+          port: target.port || (isHttps ? 443 : 80),
+          path: `${target.pathname}${target.search}`,
+          method: body === null ? "GET" : "POST",
+          headers,
+          agent: false,
+          timeout: timeoutMs,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", onAbort);
+            resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) });
+          });
+          res.on("error", (error: Error) => {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", onAbort);
+            reject(error);
+          });
+        },
+      );
+      req.on("error", (error: Error) => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      });
+      req.on("timeout", () => destroy("request timeout"));
+      if (signal.aborted) {
+        destroy("aborted");
+      } else {
+        signal.addEventListener("abort", onAbort);
+      }
+      req.end(body ?? undefined);
+    });
+  }
+
   async call<T = unknown>(method: string, body: Record<string, unknown>, attempt = 0): Promise<T> {
     const longPoll = method === "getUpdates";
     await this.gate(longPoll);
@@ -287,29 +367,17 @@ export class Telegram {
     // a corpse (NAT dropped it, the socket died mid-answer) and aborting
     // it is what keeps the poller turning.
     const timeoutMs = (longPoll ? (this.pollTimeout + 15) * 1000 : 15_000) + attempt * 5_000;
-    const signal =
-      typeof AbortSignal.any === "function"
-        ? AbortSignal.any([this.signal, AbortSignal.timeout(timeoutMs)])
-        : this.signal;
-    // The socket promise: resolves with the Response, rejects on network
-    // error. Tracked in `inflight` so `stop()` awaits the socket actually
-    // closing — aborting cancels locally, but Telegram keeps the connection
-    // open a beat, and a replacement leader starting in that window gets
-    // HTTP 409 forever (measured, 2026-10-08).
-    const socket = fetch(`${this.base}/${method}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    });
-    // Tracked inline so `stop()` can await the socket actually closing —
-    // aborting cancels locally, but Telegram keeps the connection open a
-    // beat, and a replacement leader starting in that window gets HTTP 409
-    // forever (measured, 2026-10-08). Inlined deliberately: a helper method
-    // left the file reloadable into a state where the call site existed and
-    // the helper did not, and the poll died on a TypeError instead of
-    // degrading.
-    const tracked: Promise<void> = socket.then(
+    const pending = this.apiRequest(
+      `${this.base}/${method}`,
+      Buffer.from(JSON.stringify(body), "utf8"),
+      "application/json",
+      timeoutMs,
+    );
+    // Tracked so `stop()` awaits the request actually settling — a destroyed
+    // request's socket frees at the OS level a beat later, and a replacement
+    // leader starting in that window collides with it at Telegram (HTTP 409
+    // forever, measured 2026-10-08).
+    const tracked: Promise<void> = pending.then(
       () => undefined,
       () => undefined,
     );
@@ -317,11 +385,16 @@ export class Telegram {
     void tracked.finally(() => {
       this.inflight.delete(tracked);
     });
-    let response: Response;
+    let response: { status: number; body: Buffer };
     try {
-      response = await socket;
+      response = await pending;
     } catch (error) {
       if (this.aborted) throw new TelegramError({ method, description: "aborted" });
+      // A retrying long poll is a live loop, not a stuck one: keep the poll's
+      // heartbeat fresh so a network outage rides out on THIS seat instead of
+      // handing over to a replacement that shares the same dead network.
+      // Only silence — a call that neither returns nor retries — is a wedge.
+      if (method === "getUpdates") this.lastPollAt = Date.now();
       // Network hiccup — Telegram clients are expected to retry.
       if (attempt < 2) {
         await delay(500 * (attempt + 1), () => this.aborted, (cancel) => this.delays.add(cancel));
@@ -332,7 +405,7 @@ export class Telegram {
 
     let payload: ApiResult<T>;
     try {
-      payload = (await response.json()) as ApiResult<T>;
+      payload = JSON.parse(response.body.toString("utf8")) as ApiResult<T>;
     } catch {
       throw new TelegramError({ method, code: response.status, description: `HTTP ${response.status}` });
     }
@@ -474,17 +547,13 @@ export class Telegram {
       );
       parts.push(buffer, Buffer.from(`\r\n--${boundary}--\r\n`));
       const body = Buffer.concat(parts);
-      const signal =
-        typeof AbortSignal.any === "function"
-          ? AbortSignal.any([this.signal, AbortSignal.timeout(30_000)])
-          : this.signal;
-      const response = await fetch(`${this.base}/sendPhoto`, {
-        method: "POST",
-        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      const response = await this.apiRequest(
+        `${this.base}/sendPhoto`,
         body,
-        signal,
-      });
-      return (await response.json()) as ApiResult<{ message_id: number }>;
+        `multipart/form-data; boundary=${boundary}`,
+        30_000,
+      );
+      return JSON.parse(response.body.toString("utf8")) as ApiResult<{ message_id: number }>;
     };
     let payload = await sendOnce(options.messageThreadId);
     if (
@@ -523,17 +592,13 @@ export class Telegram {
       );
       parts.push(buffer, Buffer.from(`\r\n--${boundary}--\r\n`));
       const body = Buffer.concat(parts);
-      const signal =
-        typeof AbortSignal.any === "function"
-          ? AbortSignal.any([this.signal, AbortSignal.timeout(30_000)])
-          : this.signal;
-      const response = await fetch(`${this.base}/sendDocument`, {
-        method: "POST",
-        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      const response = await this.apiRequest(
+        `${this.base}/sendDocument`,
         body,
-        signal,
-      });
-      return (await response.json()) as ApiResult<{ message_id: number }>;
+        `multipart/form-data; boundary=${boundary}`,
+        30_000,
+      );
+      return JSON.parse(response.body.toString("utf8")) as ApiResult<{ message_id: number }>;
     };
     let payload = await sendOnce(options.messageThreadId);
     if (
@@ -696,13 +761,16 @@ export class Telegram {
    * so it bypasses `call` but keeps the same per-request timeout discipline.
    */
   async downloadFile(filePath: string): Promise<Buffer> {
-    const signal =
-      typeof AbortSignal.any === "function"
-        ? AbortSignal.any([this.signal, AbortSignal.timeout(30_000)])
-        : this.signal;
-    const response = await fetch(`${this.base.replace("/bot", "/file/bot")}/${filePath}`, { signal });
-    if (!response.ok) throw new TelegramError({ method: "file download", code: response.status, description: `HTTP ${response.status}` });
-    return Buffer.from(await response.arrayBuffer());
+    const response = await this.apiRequest(
+      `${this.base.replace("/bot", "/file/bot")}/${filePath}`,
+      null,
+      "",
+      30_000,
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw new TelegramError({ method: "file download", code: response.status, description: `HTTP ${response.status}` });
+    }
+    return response.body;
   }
 
   /**
