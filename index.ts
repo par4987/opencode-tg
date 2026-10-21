@@ -1295,7 +1295,38 @@ const pluginExport = {
     /** Pending permission.asked requests, keyed by the server's real requestID. */
     const permissionRequests = new Map<string, { sessionID: string }>();
     /** Armed by a /skills tap: the next text becomes that skill's prompt. */
-    let skillArmed: { id: string; name: string } | undefined;
+    interface SkillChoice {
+      id: string;
+      name: string;
+    }
+    interface SkillPick {
+      chosen: Map<number, SkillChoice>;
+      armedAt: number;
+      threadId?: number;
+    }
+    /** Open skill pickers, keyed by their Telegram message id (like modelCards). */
+    const skillPicks = new Map<number, SkillPick>();
+    /** Armed by a confirmed /skills selection: the next text in that thread becomes the prompt for those skills. */
+    let skillPick: SkillPick | undefined;
+    /** Render a skill picker card: toggle buttons, then confirm/cancel. */
+    const skillRenderer = (state: SkillPick): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } => {
+      const rows = skillItems.map((s, i) => [
+        {
+          text: (state.chosen.has(i) ? "✓ " : "▢ ") + s.name.slice(0, 60),
+          callback_data: "skl:" + i,
+        },
+      ]);
+      rows.push([
+        { text: t("skills_confirm_btn"), callback_data: "skc:ok" },
+        { text: t("skills_cancel_btn"), callback_data: "skc:cancel" },
+      ]);
+      const picked = [...state.chosen.values()].map((c) => c.name);
+      const summary = picked.length > 0 ? ` (${picked.join(", ")})` : "";
+      return {
+        text: t("skills_header", { n: skillItems.length }) + "\n" + t("skills_pick") + summary,
+        keyboard: rows,
+      };
+    };
     /** Armed by a /tasks "✏️ Prompt" tap: the next text in that thread becomes that task's new prompt. */
     let taskPromptEdit: { id: string; name: string; threadId: number | undefined; armedAt: number } | undefined;
     /** Armed by /new without a title: the next text in that thread names the session. */
@@ -4982,14 +5013,17 @@ const pluginExport = {
               return { id: str(item.id) || str(item.name) || "?", name: str(item.name) || str(item.id) || "?" };
             });
             if (chatId === undefined) return;
-            const keyboard = skillItems.map((s, i) => [
-              { text: s.name.slice(0, 64), callback_data: "skl:" + i },
-            ]);
-            await telegram.sendMessage(
+            const pick: SkillPick = {
+              chosen: new Map(),
+              armedAt: Date.now(),
+              threadId: threadOf(threadSession),
+            };
+            const msg = await telegram.sendMessage(
               chatId,
-              t("skills_header", { n: rows.length, lines: lines.join("\n") }),
-              { parseMode: "HTML", messageThreadId: threadOf(threadSession), replyMarkup: { inline_keyboard: keyboard } },
+              t("skills_header", { n: rows.length }) + "\n" + t("skills_pick"),
+              { parseMode: "HTML", messageThreadId: threadOf(threadSession), replyMarkup: { inline_keyboard: skillRenderer(pick).keyboard } },
             );
+            if (msg !== null) skillPicks.set(msg, pick);
           } catch (error) {
             log("WARN", "skill.list failed", safe(error));
             await reply(t("skills_list_fail", { detail: escapeHtml(String(error)) }));
@@ -5443,12 +5477,20 @@ const pluginExport = {
               const byThread = message.message_thread_id !== undefined
                 ? topicStore?.sessionOf(message.message_thread_id)
                 : undefined;
-              // A skill is armed: this text becomes that skill's prompt.
-              if (skillArmed && text && !text.startsWith("/")) {
-                const armed = skillArmed;
-                skillArmed = undefined;
-                await sendPrompt(text, byThread, undefined, [{ id: armed.id }]);
-                return;
+              // A confirmed skill selection is armed: the next text in that
+              // thread becomes the prompt for the chosen skills.
+              if (skillPick && text && !text.startsWith("/")) {
+                const pick = skillPick;
+                if (pick.threadId === undefined || message.message_thread_id === pick.threadId) {
+                  skillPick = undefined;
+                  await sendPrompt(
+                    text,
+                    byThread,
+                    undefined,
+                    [...pick.chosen.values()].map((c) => ({ id: c.id })),
+                  );
+                  return;
+                }
               }
               // A task-prompt edit is armed: this text replaces that task's
               // prompt. Stale (10 min) or written in another thread, it just
@@ -6413,13 +6455,62 @@ const pluginExport = {
                 return;
               }
               if (payload.startsWith("skl:")) {
-                const chosen = skillItems[Number(payload.slice(4))];
-                if (!chosen) {
+                const index = Number(payload.slice(4));
+                const item = skillItems[index];
+                const state = cq.message ? skillPicks.get(cq.message.message_id) : undefined;
+                if (!item || !state) {
                   await ack(t("skills_stale"));
                   return;
                 }
-                skillArmed = chosen;
-                await ack(t("skill_chosen", { name: chosen.name }));
+                const wasOn = state.chosen.has(index);
+                if (wasOn) state.chosen.delete(index);
+                else state.chosen.set(index, item);
+                state.armedAt = Date.now();
+                if (cq.message && state.chosen.size <= 60) {
+                  const { text, keyboard } = skillRenderer(state);
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, text, {
+                      parseMode: "HTML",
+                      replyMarkup: { inline_keyboard: keyboard },
+                    })
+                    .catch(() => undefined);
+                }
+                await ack(wasOn ? t("skill_toggled_off", { name: item.name }) : t("skill_toggled_on", { name: item.name }));
+                return;
+              }
+              if (payload === "skc:ok") {
+                const state = cq.message ? skillPicks.get(cq.message.message_id) : undefined;
+                if (!state) {
+                  await ack(t("skills_stale"));
+                  return;
+                }
+                if (state.chosen.size === 0) {
+                  await ack(t("skills_confirm_none"));
+                  return;
+                }
+                skillPicks.delete(cq.message!.message_id);
+                skillPick = { chosen: state.chosen, armedAt: Date.now(), threadId: state.threadId };
+                const names = [...state.chosen.values()].map((c) => c.name).join(", ");
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, t("skills_confirmed", { n: state.chosen.size, names }), {
+                      parseMode: "HTML",
+                    })
+                    .catch(() => undefined);
+                }
+                await ack();
+                return;
+              }
+              if (payload === "skc:cancel") {
+                if (cq.message) skillPicks.delete(cq.message.message_id);
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, t("skills_cancelled"), {
+                      parseMode: "HTML",
+                    })
+                    .catch(() => undefined);
+                }
+                await ack();
                 return;
               }
               if (payload.startsWith("task:")) {
