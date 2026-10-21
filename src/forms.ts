@@ -209,7 +209,9 @@ function ownPorts(): number[] {
     // Introspection is a nicety; netstat below covers its absence.
   }
   if (ports.size > 0) return [...ports];
-  return netstatPorts();
+  const fromNetstat = netstatPorts();
+  if (fromNetstat.length > 0) return fromNetstat;
+  return ssPorts();
 }
 
 /** Ports listening under this pid, via `netstat -ano` (Windows). */
@@ -224,6 +226,29 @@ function netstatPorts(): number[] {
       // cols: proto, local, foreign, state, pid
       if (cols.length < 5 || cols[cols.length - 1] !== pid) continue;
       const port = Number(cols[1]?.split(":").pop());
+      if (Number.isFinite(port)) ports.add(port);
+    }
+    return [...ports];
+  } catch {
+    return [];
+  }
+}
+
+/** Ports listening under this pid, via `ss -ltnp` (Linux). */
+function ssPorts(): number[] {
+  try {
+    const out = execFileSync("ss", ["-ltnp"], { encoding: "utf8", timeout: 5000 });
+    const ports = new Set<number>();
+    const pid = String(process.pid);
+    for (const line of out.split(/\r?\n/)) {
+      if (!line.includes("LISTEN")) continue;
+      // ss -ltnp prints lines such as:
+      //   LISTEN 0 128 0.0.0.0:45278 0.0.0.0:* users:(("node",pid=79848,fd=12))
+      const pidMatch = line.match(/users:\(\s*"[^"]*",\s*pid=(\d+)/);
+      if (!pidMatch || pidMatch[1] !== pid) continue;
+      const local = line.trim().split(/\s+/).find((c) => /:\d+$/.test(c));
+      if (!local) continue;
+      const port = Number(local.split(":").pop());
       if (Number.isFinite(port)) ports.add(port);
     }
     return [...ports];
