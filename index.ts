@@ -1157,6 +1157,17 @@ const pluginExport = {
     const suggestCards = new MessageCards<{ session: string; options: string[] }>();
     /** The /new project picker: the pending title plus the rows behind its buttons. */
     const newProjectCards = new MessageCards<{ title: string; items: ProjectChoice[] }>();
+    /** Destination folder for /subir uploads, keyed by "chatId:threadId". */
+    const uploadDestino = new Map<string, string>();
+    /** Folder picker state, keyed by message id. */
+    interface UploadPicker {
+      cwd: string;
+      items: Array<{ name: string; isDir: boolean }>;
+    }
+    const uploadCards = new MessageCards<UploadPicker>();
+    /** uploadKeys maps a short key → absolute folder path (like lsKeys). */
+    const uploadKeys = new Map<string, string>();
+    let uploadKeySeq = 0;
     /** Armed by the edit button: the next message replaces that inbox item. */
     let inboxEdit: { id: string; text: string; session: string } | undefined;
     /**
@@ -1764,6 +1775,51 @@ const pluginExport = {
           replyMarkup: { inline_keyboard: rows },
         })
         .catch((error) => log("WARN", "ls send", safe(error)));
+    };
+
+    /** /subir folder picker: draw the current directory with toggle buttons. */
+    const uploadBrowse = async (cwd: string, rel: string, sessionID?: string): Promise<void> => {
+      if (chatId === undefined) return;
+      const full = safeResolve(cwd, rel);
+      if (!full) {
+        await send(t("upload_not_selected"), sessionID);
+        return;
+      }
+      const fs = await import("node:fs");
+      let entries: Array<{ name: string; isDir: boolean }>;
+      try {
+        entries = fs
+          .readdirSync(full, { withFileTypes: true })
+          .filter((e) => !LS_HIDDEN.has(e.name) && e.isDirectory())
+          .map((e) => ({ name: e.name, isDir: true }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      } catch {
+        await send(t("ls_dir_read_fail"), sessionID);
+        return;
+      }
+      const cleanRel = rel.replace(/\\/g, "/");
+      const key = (++uploadKeySeq).toString(36);
+      uploadKeys.set(key, full);
+      const parentKey = cleanRel ? (++uploadKeySeq).toString(36) : "";
+      if (parentKey) uploadKeys.set(parentKey, full.split(/[\\/]/).slice(0, -1).join("/"));
+      const picker: UploadPicker = { cwd: full, items: entries };
+      const msg = await telegram.sendMessage(
+        chatId,
+        t("upload_title") + "\n" + t("upload_pick_folder") + "\n\n" + t("upload_folder_selected", { path: escapeHtml(full) }),
+        {
+          parseMode: "HTML",
+          messageThreadId: threadOf(sessionID) ?? undefined,
+          replyMarkup: {
+            inline_keyboard: [
+              ...entries.map((e) => [{ text: t("upload_btn_cd", { name: e.name.slice(0, 50)}), callback_data: `up:cd:${key}:${e.name}` }]),
+              cleanRel ? [{ text: t("upload_btn_up"), callback_data: `up:cd:${parentKey}:..` }] : [],
+              [{ text: t("upload_btn_select"), callback_data: `up:sel:${key}` }],
+              [{ text: t("upload_btn_cancel"), callback_data: "up:cancel" }],
+            ].filter((row) => row.length > 0),
+          },
+        },
+      );
+      if (msg !== null) uploadCards.set(msg, picker);
     };
 
     /** Replace the form's message with a receipt, and forget it. */
@@ -2645,6 +2701,7 @@ const pluginExport = {
       { command: "watch", description: "Watch a session: /watch <id|all|off>" },
       { command: "send", description: "Send a prompt: /send <id> <text>" },
       { command: "txt", description: "Free-text answer to the open question" },
+      { command: "subir", description: "Upload files: pick a project folder first" },
       { command: "menu", description: "Command menu with buttons" },
       { command: "running", description: "Sessions running right now" },
       { command: "usage", description: "Tokens and cost of a session" },
@@ -3033,6 +3090,16 @@ const pluginExport = {
           if (!(await answerFreeForm(threadSession, argument))) {
             await reply(t("txt_no_open"));
           }
+          return;
+        }
+
+        case "subir": {
+          // /subir — pick a project folder as the upload destination, then the
+          // next document you send lands there and the agent is told about it.
+          if (chatId === undefined) return;
+          const target = threadSession || targetSession();
+          const root = target ? (await directoryOf(target)) ?? process.cwd() : process.cwd();
+          await uploadBrowse(root, "", target);
           return;
         }
 
@@ -5660,7 +5727,9 @@ const pluginExport = {
               if (message.document?.file_id) {
                 // A document that is not an image: inline it when it is text
                 // (code, config, data — the agent reads it right away), or
-                // park the binary on disk and hand over the path.
+                // park the binary on disk and hand over the path. If the user
+                // picked a destination folder with /subir, the binary lands
+                // there instead of ~/.opencode/tg/downloads.
                 try {
                   const doc = await telegram.getFile(message.document.file_id);
                   if (!doc.file_path) throw new Error(t("err_no_file_path"));
@@ -5668,8 +5737,8 @@ const pluginExport = {
                   const name = message.document.file_name ?? t("fallback_file_name");
                   const mime = message.document.mime_type ?? "";
                   const caption = ((message.caption ?? "").trim()) || "";
-                  if (buffer.length > 20 * 1024 * 1024) {
-                    await send(t("doc_too_big"), byThread);
+                  if (buffer.length > 500 * 1024 * 1024) {
+                    await send(t("upload_file_too_big", { max: 500 }), byThread);
                     return;
                   }
                   if (isTextLike(name, mime, buffer)) {
@@ -5680,12 +5749,17 @@ const pluginExport = {
                       : t("doc_content_sent", { name }) + content + truncated + "\n```";
                     await sendPrompt(body, byThread);
                   } else {
-                    const saved = saveBinary(name, buffer);
+                    const chatKey = String(chatId);
+                    const uploadDir = uploadDestino.get(chatKey) || undefined;
+                    const saved = saveBinary(name, buffer, uploadDir);
                     const size = (buffer.length / 1024 / 1024).toFixed(2);
                     const body = caption
                       ? caption + "\n\n" + t("doc_binary_sent", { name, mime, size, saved })
                       : t("doc_binary_sent", { name, mime, size, saved }) + t("doc_binary_hint");
                     await sendPrompt(body, byThread);
+                    if (uploadDir) {
+                      await send(t("upload_file_saved", { path: escapeHtml(saved) }), byThread);
+                    }
                   }
                 } catch (error) {
                   log("WARN", "document ingest", safe(error));
@@ -6511,6 +6585,52 @@ const pluginExport = {
                     .catch(() => undefined);
                 }
                 await ack();
+                return;
+              }
+              if (payload.startsWith("up:cd:")) {
+                // up:cd:<key>:<name> — enter a subfolder, or ".." to go up.
+                const [, key, name] = payload.split(":");
+                const cwd = uploadKeys.get(key);
+                if (!cwd) {
+                  await ack(t("skills_stale"));
+                  return;
+                }
+                const next = name === ".." ? "" : name;
+                uploadCards.drop(cq.message!.message_id);
+                await uploadBrowse(cwd, next);
+                await ack();
+                return;
+              }
+              if (payload === "up:cancel") {
+                uploadCards.drop(cq.message!.message_id);
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, t("upload_cancelled"), {
+                      parseMode: "HTML",
+                    })
+                    .catch(() => undefined);
+                }
+                await ack();
+                return;
+              }
+              if (payload.startsWith("up:sel:")) {
+                const [, key] = payload.split(":");
+                const cwd = uploadKeys.get(key);
+                if (!cwd) {
+                  await ack(t("skills_stale"));
+                  return;
+                }
+                const chatKey = String(cq.message?.chat.id);
+                uploadDestino.set(chatKey, cwd);
+                uploadCards.drop(cq.message!.message_id);
+                if (cq.message) {
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, t("upload_folder_selected", { path: escapeHtml(cwd) }), {
+                      parseMode: "HTML",
+                    })
+                    .catch(() => undefined);
+                }
+                await ack(t("upload_cancelled"));
                 return;
               }
               if (payload.startsWith("task:")) {
