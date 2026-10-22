@@ -6589,13 +6589,14 @@ const pluginExport = {
               }
               if (payload.startsWith("up:cd:")) {
                 // up:cd:<key>:<name> — enter a subfolder, or ".." to go up.
-                const [, key, name] = payload.split(":");
+                const [, key, ...nameParts] = payload.split(":");
                 const cwd = uploadKeys.get(key);
-                if (!cwd) {
-                  await ack(t("skills_stale"));
+                const state = cq.message ? uploadCards.get(cq.message.message_id) : undefined;
+                if (!cwd || !state) {
+                  await ack(t("upload_stale"));
                   return;
                 }
-                const next = name === ".." ? "" : name;
+                const next = nameParts.join(":") === ".." ? "" : nameParts.join(":");
                 uploadCards.drop(cq.message!.message_id);
                 await uploadBrowse(cwd, next);
                 await ack();
@@ -6616,8 +6617,9 @@ const pluginExport = {
               if (payload.startsWith("up:sel:")) {
                 const [, key] = payload.split(":");
                 const cwd = uploadKeys.get(key);
-                if (!cwd) {
-                  await ack(t("skills_stale"));
+                const state = cq.message ? uploadCards.get(cq.message.message_id) : undefined;
+                if (!cwd || !state) {
+                  await ack(t("upload_stale"));
                   return;
                 }
                 const chatKey = String(cq.message?.chat.id);
@@ -6630,7 +6632,7 @@ const pluginExport = {
                     })
                     .catch(() => undefined);
                 }
-                await ack(t("upload_cancelled"));
+                await ack(t("upload_confirmed"));
                 return;
               }
               if (payload.startsWith("task:")) {
