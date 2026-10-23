@@ -6591,8 +6591,7 @@ const pluginExport = {
                 // up:cd:<key>:<name> — enter a subfolder, or ".." to go up.
                 const [, key, ...nameParts] = payload.split(":");
                 const cwd = uploadKeys.get(key);
-                const state = cq.message ? uploadCards.get(cq.message.message_id) : undefined;
-                if (!cwd || !state) {
+                if (!cwd) {
                   await ack(t("upload_stale"));
                   return;
                 }
@@ -6617,8 +6616,7 @@ const pluginExport = {
               if (payload.startsWith("up:sel:")) {
                 const [, key] = payload.split(":");
                 const cwd = uploadKeys.get(key);
-                const state = cq.message ? uploadCards.get(cq.message.message_id) : undefined;
-                if (!cwd || !state) {
+                if (!cwd) {
                   await ack(t("upload_stale"));
                   return;
                 }
