@@ -6589,13 +6589,14 @@ const pluginExport = {
               }
               if (payload.startsWith("up:cd:")) {
                 // up:cd:<key>:<name> — enter a subfolder, or ".." to go up.
-                const [, key, ...nameParts] = payload.split(":");
+                const parts = payload.split(":");
+                const key = parts[2];
                 const cwd = uploadKeys.get(key);
                 if (!cwd) {
                   await ack(t("upload_stale"));
                   return;
                 }
-                const next = nameParts.join(":") === ".." ? "" : nameParts.join(":");
+                const next = parts.slice(3).join(":") === ".." ? "" : parts.slice(3).join(":");
                 uploadCards.drop(cq.message!.message_id);
                 await uploadBrowse(cwd, next);
                 await ack();
@@ -6614,7 +6615,8 @@ const pluginExport = {
                 return;
               }
               if (payload.startsWith("up:sel:")) {
-                const [, key] = payload.split(":");
+                const parts = payload.split(":");
+                const key = parts[2];
                 const cwd = uploadKeys.get(key);
                 if (!cwd) {
                   await ack(t("upload_stale"));
