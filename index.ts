@@ -1168,6 +1168,9 @@ const pluginExport = {
     /** uploadKeys maps a short key → absolute folder path (like lsKeys). */
     const uploadKeys = new Map<string, string>();
     let uploadKeySeq = 0;
+    /** Message id of the current /subir picker, so we can edit it in place
+     *  instead of spawning a new message on every navigation. */
+    let uploadCurrentMessageId: number | undefined;
     /** Armed by the edit button: the next message replaces that inbox item. */
     let inboxEdit: { id: string; text: string; session: string } | undefined;
     /**
@@ -1777,8 +1780,11 @@ const pluginExport = {
         .catch((error) => log("WARN", "ls send", safe(error)));
     };
 
-    /** /subir folder picker: draw the current directory with toggle buttons. */
-    const uploadBrowse = async (cwd: string, rel: string, sessionID?: string): Promise<void> => {
+    /** /subir folder picker: draw the current directory with toggle buttons.
+     *  Edits the existing picker message in place when messageId is given,
+     *  so navigation never spawns a new message and the user never loses
+     *  the seat. */
+    const uploadBrowse = async (cwd: string, rel: string, sessionID?: string, messageId?: number): Promise<void> => {
       if (chatId === undefined) return;
       const full = safeResolve(cwd, rel);
       if (!full) {
@@ -1803,23 +1809,33 @@ const pluginExport = {
       const parentKey = cleanRel ? (++uploadKeySeq).toString(36) : "";
       if (parentKey) uploadKeys.set(parentKey, full.split(/[\\/]/).slice(0, -1).join("/"));
       const picker: UploadPicker = { cwd: full, items: entries };
-      const msg = await telegram.sendMessage(
-        chatId,
-        t("upload_title") + "\n" + t("upload_pick_folder") + "\n\n" + t("upload_folder_selected", { path: escapeHtml(full) }),
-        {
-          parseMode: "HTML",
-          messageThreadId: threadOf(sessionID) ?? undefined,
-          replyMarkup: {
-            inline_keyboard: [
-              ...entries.map((e) => [{ text: t("upload_btn_cd", { name: e.name.slice(0, 50)}), callback_data: `up:cd:${key}:${e.name}` }]),
-              cleanRel ? [{ text: t("upload_btn_up"), callback_data: `up:cd:${parentKey}:..` }] : [],
-              [{ text: t("upload_btn_select"), callback_data: `up:sel:${key}` }],
-              [{ text: t("upload_btn_cancel"), callback_data: "up:cancel" }],
-            ].filter((row) => row.length > 0),
-          },
-        },
-      );
-      if (msg !== null) uploadCards.set(msg, picker);
+
+      const text = t("upload_title") + "\n" + t("upload_pick_folder") + "\n\n" + t("upload_folder_selected", { path: escapeHtml(full) });
+      const keyboard = {
+        inline_keyboard: [
+          ...entries.map((e) => [{ text: t("upload_btn_cd", { name: e.name.slice(0, 50)}), callback_data: `up:cd:${key}:${e.name}` }]),
+          cleanRel ? [{ text: t("upload_btn_up"), callback_data: `up:cd:${parentKey}:..` }] : [],
+          [{ text: t("upload_btn_select"), callback_data: `up:sel:${key}` }],
+          [{ text: t("upload_btn_cancel"), callback_data: "up:cancel" }],
+        ].filter((row) => row.length > 0),
+      };
+
+      let msg;
+      if (messageId !== undefined) {
+        try {
+          msg = await telegram.editMessageText(chatId, messageId, text, { parseMode: "HTML", replyMarkup: keyboard });
+        } catch {
+          // Edit failed (message too old, deleted, etc.): fall back to send.
+          msg = await telegram.sendMessage(chatId, text, { parseMode: "HTML", messageThreadId: threadOf(sessionID) ?? undefined, replyMarkup: keyboard });
+        }
+      } else {
+        msg = await telegram.sendMessage(chatId, text, { parseMode: "HTML", messageThreadId: threadOf(sessionID) ?? undefined, replyMarkup: keyboard });
+      }
+
+      if (typeof msg === "number") {
+        uploadCards.set(msg, picker);
+        uploadCurrentMessageId = msg;
+      }
     };
 
     /** Replace the form's message with a receipt, and forget it. */
