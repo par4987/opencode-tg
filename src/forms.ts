@@ -241,15 +241,16 @@ function ssPorts(): number[] {
     const ports = new Set<number>();
     const pid = String(process.pid);
     for (const line of out.split(/\r?\n/)) {
-      if (!line.includes("LISTEN")) continue;
+      if (!line.startsWith("LISTEN")) continue;
       // ss -ltnp prints lines such as:
       //   LISTEN 0 128 0.0.0.0:45278 0.0.0.0:* users:(("node",pid=79848,fd=12))
-      const pidMatch = line.match(/users:\(\s*"[^"]*",\s*pid=(\d+)/);
-      if (!pidMatch || pidMatch[1] !== pid) continue;
-      const local = line.trim().split(/\s+/).find((c) => /:\d+$/.test(c));
-      if (!local) continue;
-      const port = Number(local.split(":").pop());
-      if (Number.isFinite(port)) ports.add(port);
+      // The process column has doubled parentheses (`users:((`), so match the
+      // pid anywhere in the line instead of anchoring on the exact shape.
+      const pids = [...line.matchAll(/pid=(\d+)/g)].map((m) => m[1]);
+      if (!pids.includes(pid)) continue;
+      const local = line.trim().split(/\s+/)[3] ?? "";
+      const port = Number(local.slice(local.lastIndexOf(":") + 1));
+      if (Number.isFinite(port) && port > 0) ports.add(port);
     }
     return [...ports];
   } catch {
