@@ -2595,7 +2595,16 @@ const pluginExport = {
       // variants — show its levels instead of the model list.
       if (state.pendingVariant) {
         const model = state.pendingVariant;
-        const variants = (model.variants ?? []).length > 0 ? model.variants! : ["low", "medium", "high"];
+        const variants = model.variants ?? [];
+        if (variants.length === 0) {
+          // The model exposes no reasoning levels on the server — never invent
+          // them (a fabricated low/medium/high would be a lie: the desktop
+          // shows only what the provider actually supports).
+          return {
+            text: t("models_reasoning_none", { label: escapeHtml(model.name ?? model.id) }),
+            keyboard: [[{ text: t("btn_back"), callback_data: "mpb:0" }]],
+          };
+        }
         const keyboard = variants.map((v) => [
           {
             text: (v === state.currentVariant ? "\u2705 " : "") + v.slice(0, 64),
@@ -2706,25 +2715,41 @@ const pluginExport = {
       for (const key of showKeys) {
         const known = byProviderKey.get(key);
         if (known) {
-          // The API returns variants as objects ({id, settings} / {id, body}),
-          // but the picker and the POST only need the id string. Normalise
-          // here so ApiModel.variants is always string[] (none, minimal, low,
-          // medium, high, xhigh, max, thinking, …).
-          if (Array.isArray(known.variants)) {
-            known.variants = known.variants
-              .map((v) => (typeof v === "string" ? v : (v as { id?: string }).id))
-              .filter((v): v is string => typeof v === "string" && v.length > 0);
-          }
           items.push(known);
         } else {
           const [pid, modelID] = key.split("\u0000");
           if (!modelID) continue;
-          items.push({
-            id: `${pid}/${modelID}`,
-            modelID,
-            providerID: pid,
-            name: curatedNames.get(key),
-          });
+          // The desktop toggle key may not match the API's exact key format;
+          // look the model up by provider + id so we still carry its real
+          // variants (and name) instead of a variant-less stub.
+          let full: ApiModel | undefined;
+          for (const [, candidate] of byProviderKey) {
+            if (candidate.providerID === pid && (candidate.modelID === modelID || candidate.id === `${pid}/${modelID}`)) {
+              full = candidate;
+              break;
+            }
+          }
+          if (full) {
+            items.push(full);
+          } else {
+            items.push({
+              id: `${pid}/${modelID}`,
+              modelID,
+              providerID: pid,
+              name: curatedNames.get(key),
+            });
+          }
+        }
+      }
+      // The API returns variants as objects ({id, settings} / {id, body}),
+      // but the picker and the POST only need the id string. Normalise every
+      // item so ApiModel.variants is always string[] (none, minimal, low,
+      // medium, high, xhigh, max, thinking, …).
+      for (const m of items) {
+        if (Array.isArray(m.variants)) {
+          m.variants = m.variants
+            .map((v) => (typeof v === "string" ? v : (v as { id?: string }).id))
+            .filter((v): v is string => typeof v === "string" && v.length > 0);
         }
       }
       items.sort((a, b) => a.id.localeCompare(b.id));
