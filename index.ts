@@ -201,6 +201,8 @@ interface ApiModel {
   /** The catalogue also carries disabled/deprecated entries; they stay out. */
   enabled?: boolean;
   status?: string;
+  /** Reasoning-effort levels the model supports, e.g. low/medium/high. */
+  variants?: string[];
 }
 interface ApiAgent {
   id: string;
@@ -1138,6 +1140,11 @@ const pluginExport = {
       label?: string;
       /** The project's default model, drawn ✅ on its button. */
       currentModelID?: string;
+      /** When set, the picker shows that model's reasoning-effort levels and
+       *  the next tap applies model+variant. */
+      pendingVariant?: ApiModel;
+      /** Current session variant, echoed on the reasoning step. */
+      currentVariant?: string;
     }
     /** One card per message, for every index-addressed picker. */
     const modelCards = new MessageCards<ModelPicker>();
@@ -2584,6 +2591,23 @@ const pluginExport = {
       const scoped = state.items
         .map((m, idx) => ({ m, idx }))
         .filter(({ m }) => (state.chosen ? m.providerID === state.chosen : true));
+      // Reasoning-effort step: a model was just tapped and it supports
+      // variants — show its levels instead of the model list.
+      if (state.pendingVariant) {
+        const model = state.pendingVariant;
+        const variants = (model.variants ?? []).length > 0 ? model.variants! : ["low", "medium", "high"];
+        const keyboard = variants.map((v) => [
+          {
+            text: (v === state.currentVariant ? "\u2705 " : "") + v.slice(0, 64),
+            callback_data: `mpr:${v}`,
+          },
+        ]);
+        keyboard.push([{ text: t("btn_back"), callback_data: "mpb:0" }]);
+        return {
+          text: t("models_reasoning_header", { label: escapeHtml(model.name ?? model.id) }),
+          keyboard,
+        };
+      }
       const pages = Math.max(1, Math.ceil(scoped.length / MODEL_PAGE_SIZE));
       const safe = Math.min(Math.max(0, page), pages - 1);
       const slice = scoped.slice(safe * MODEL_PAGE_SIZE, safe * MODEL_PAGE_SIZE + MODEL_PAGE_SIZE);
@@ -2723,6 +2747,7 @@ const pluginExport = {
       { command: "usage", description: "Tokens and cost of a session" },
       { command: "mcp", description: "MCP servers status" },
       { command: "models", description: "Change a session's model (active providers only)" },
+      { command: "reasoning", description: "Change a session's reasoning level (low/medium/high)" },
       { command: "agents", description: "Change a session's agent" },
       { command: "projects", description: "Open a new session in a project" },
       { command: "tasks", description: "Scheduled tasks" },
@@ -3359,6 +3384,58 @@ const pluginExport = {
           if (chatId === undefined) return;
           const chosenPage = chosen || search;
           const { text, keyboard } = chosenPage ? modelPickerPage(state, 0) : modelProviderPage(state);
+          const sent = await telegram.sendMessage(chatId, text, {
+            parseMode: "HTML",
+            messageThreadId: threadOf(threadSession),
+            replyMarkup: { inline_keyboard: keyboard },
+          });
+          if (sent !== null) modelCards.set(sent, state);
+          return;
+        }
+
+        case "reasoning": {
+          // /reasoning — change only the reasoning-effort level of the
+          // session's current model. Reuses the variant step of the model
+          // picker (state.pendingVariant = current model).
+          const target = threadSession || targetSession();
+          if (!target) {
+            await reply(t("reasoning_needs_session"));
+            return;
+          }
+          if (!(await forms.connect())) {
+            await reply(t("api_down"));
+            return;
+          }
+          const current = await forms
+            .request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`)
+            .catch(() => undefined);
+          const currentModel = current?.model;
+          if (!currentModel?.id) {
+            await reply(t("model_needs_session"));
+            return;
+          }
+          const dir = current?.location?.directory ?? (await directoryOf(target));
+          const catalog = await modelCatalog(dir);
+          if (!catalog) {
+            await reply(t("model_none"));
+            return;
+          }
+          const model = catalog.items.find((m) => m.id === currentModel.id || (m.providerID === currentModel.providerID && m.modelID === currentModel.id));
+          if (!model) {
+            await reply(t("model_none"));
+            return;
+          }
+          const state: ModelPicker = {
+            target,
+            items: catalog.items,
+            providers: catalog.providers,
+            chosen: model.providerID,
+            search: "",
+            pendingVariant: model,
+            currentVariant: currentModel.variant,
+          };
+          if (chatId === undefined) return;
+          const { text, keyboard } = modelPickerPage(state, 0);
           const sent = await telegram.sendMessage(chatId, text, {
             parseMode: "HTML",
             messageThreadId: threadOf(threadSession),
@@ -6461,6 +6538,7 @@ const pluginExport = {
                 }
                 state.chosen = undefined;
                 state.search = "";
+                state.pendingVariant = undefined;
                 if (cq.message) {
                   const { text, keyboard } = modelProviderPage(state);
                   await telegram
@@ -6516,6 +6594,22 @@ const pluginExport = {
                   await ack(t("models_stale"));
                   return;
                 }
+                // If the model supports reasoning-effort levels, route to the
+                // variant step first (the model is applied only after a variant
+                // is tapped; a model without variants applies directly).
+                if ((chosen.variants ?? []).length > 0 && cq.message) {
+                  state.pendingVariant = chosen;
+                  state.currentVariant = state.currentVariant;
+                  const { text, keyboard } = modelPickerPage(state, 0);
+                  await telegram
+                    .editMessageText(cq.message.chat.id, cq.message.message_id, text, {
+                      parseMode: "HTML",
+                      replyMarkup: { inline_keyboard: keyboard },
+                    })
+                    .catch((error) => log("WARN", "model reasoning picker", safe(error)));
+                  await ack();
+                  return;
+                }
                 if (!(await forms.connect())) {
                   await ack(t("api_down_ack"));
                   return;
@@ -6540,6 +6634,42 @@ const pluginExport = {
                   modelCards.drop(cq.message?.message_id);
                 } catch (error) {
                   log("WARN", "model set", safe(error));
+                  await ack(t("models_change_fail"));
+                }
+                return;
+              }
+              if (payload.startsWith("mpr:")) {
+                // mpr:<variant> — apply the pending model with its variant.
+                const state = modelCards.get(cq.message?.message_id);
+                const model = state?.pendingVariant;
+                const target = state?.target;
+                const variant = payload.slice(4);
+                if (!model || !target || !variant) {
+                  await ack(t("models_stale"));
+                  return;
+                }
+                if (!(await forms.connect())) {
+                  await ack(t("api_down_ack"));
+                  return;
+                }
+                try {
+                  await forms.request("POST", `/session/${encodeURIComponent(target)}/model`, {
+                    model: { id: model.id, providerID: model.providerID, variant },
+                  });
+                  if (cq.message) {
+                    await telegram
+                      .editMessageText(
+                        cq.message.chat.id,
+                        cq.message.message_id,
+                        t("model_set_named", { name: escapeHtml(model.name ?? model.id), id: escapeHtml(model.id) + ` (${escapeHtml(variant)})` }),
+                        { parseMode: "HTML" },
+                      )
+                      .catch(() => undefined);
+                  }
+                  await ack(t("models_changed"));
+                  modelCards.drop(cq.message?.message_id);
+                } catch (error) {
+                  log("WARN", "model variant set", safe(error));
                   await ack(t("models_change_fail"));
                 }
                 return;
