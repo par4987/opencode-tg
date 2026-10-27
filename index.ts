@@ -6614,7 +6614,7 @@ const pluginExport = {
                 }
                 const next = parts.slice(3).join(":") === ".." ? "" : parts.slice(3).join(":");
                 uploadCards.drop(cq.message!.message_id);
-                await uploadBrowse(cwd, next);
+                await uploadBrowse(cwd, next, undefined, cq.message!.message_id);
                 await ack();
                 return;
               }
