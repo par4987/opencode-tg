@@ -2706,6 +2706,15 @@ const pluginExport = {
       for (const key of showKeys) {
         const known = byProviderKey.get(key);
         if (known) {
+          // The API returns variants as objects ({id, settings} / {id, body}),
+          // but the picker and the POST only need the id string. Normalise
+          // here so ApiModel.variants is always string[] (none, minimal, low,
+          // medium, high, xhigh, max, thinking, …).
+          if (Array.isArray(known.variants)) {
+            known.variants = known.variants
+              .map((v) => (typeof v === "string" ? v : (v as { id?: string }).id))
+              .filter((v): v is string => typeof v === "string" && v.length > 0);
+          }
           items.push(known);
         } else {
           const [pid, modelID] = key.split("\u0000");
