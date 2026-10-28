@@ -2711,35 +2711,29 @@ const pluginExport = {
           for (const m of models) showKeys.add(`${pid}\u0000${m.key}`);
         }
       }
+      // Only models the server actually publishes right now. A desktop toggle
+      // (or a config entry) for a model the catalogue no longer lists is
+      // skipped — a variant-less stub would be a door the picker shows but
+      // neither the reasoning step nor the POST can act on.
       const items: ApiModel[] = [];
+      const seen = new Set<string>();
       for (const key of showKeys) {
-        const known = byProviderKey.get(key);
-        if (known) {
-          items.push(known);
-        } else {
+        // Exact key match, else a provider+id lookup for the toggles whose
+        // modelID carries a path the API keeps under `id` instead.
+        let model = byProviderKey.get(key);
+        if (!model) {
           const [pid, modelID] = key.split("\u0000");
-          if (!modelID) continue;
-          // The desktop toggle key may not match the API's exact key format;
-          // look the model up by provider + id so we still carry its real
-          // variants (and name) instead of a variant-less stub.
-          let full: ApiModel | undefined;
+          if (!pid || !modelID) continue;
           for (const [, candidate] of byProviderKey) {
             if (candidate.providerID === pid && (candidate.modelID === modelID || candidate.id === `${pid}/${modelID}`)) {
-              full = candidate;
+              model = candidate;
               break;
             }
           }
-          if (full) {
-            items.push(full);
-          } else {
-            items.push({
-              id: `${pid}/${modelID}`,
-              modelID,
-              providerID: pid,
-              name: curatedNames.get(key),
-            });
-          }
         }
+        if (!model || seen.has(model.id)) continue;
+        seen.add(model.id);
+        items.push(model);
       }
       // The API returns variants as objects ({id, settings} / {id, body}),
       // but the picker and the POST only need the id string. Normalise every
