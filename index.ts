@@ -1178,6 +1178,14 @@ const pluginExport = {
     /** Message id of the current /subir picker, so we can edit it in place
      *  instead of spawning a new message on every navigation. */
     let uploadCurrentMessageId: number | undefined;
+    /**
+     * Sessions opened by scheduled tasks: sessionID → task id. A task's
+     * `lastStatus` used to be set to "ok" the moment its prompt was POSTed,
+     * which hid every failure that happened later (measured 2026-10-29: the
+     * default model hit end-of-life, the turn exploded, and the task still
+     * reported "ok" for a week). Now the turn's real outcome lands here.
+     */
+    const taskSessions = new Map<string, string>();
     /** Armed by the edit button: the next message replaces that inbox item. */
     let inboxEdit: { id: string; text: string; session: string } | undefined;
     /**
@@ -2444,6 +2452,9 @@ const pluginExport = {
         ...(task.model ? { model: { id: task.model.id, providerID: task.model.providerID } } : {}),
       });
       if (!created?.id) throw new Error(t("err_no_session_id"));
+      // Remember the pair so the turn's REAL outcome (idle or failure)
+      // lands in this task's lastStatus, instead of "ok" on POST alone.
+      taskSessions.set(created.id, task.id);
       await forms.request("POST", "/session/" + encodeURIComponent(created.id) + "/prompt", { text: task.prompt });
     };
 
@@ -2466,14 +2477,12 @@ const pluginExport = {
         task.lastRun = Date.now();
         task.nextRun = nextRunOf(task.schedule, Date.now() + 1000);
         if (task.schedule.type === "once") task.enabled = false;
+        // "en curso" until the turn reports back: a POST that resolves tells
+        // nothing about the turn actually working.
+        task.lastStatus = "en curso";
         dirty = true;
         const id = task.id;
         runTaskNow(task)
-          .then(() => {
-            const tasks = readTasks();
-            const x = tasks.find((y) => y.id === id);
-            if (x) { x.lastStatus = "ok"; writeTasks(tasks); }
-          })
           .catch((error) => {
             const tasks = readTasks();
             const x = tasks.find((y) => y.id === id);
@@ -2776,6 +2785,7 @@ const pluginExport = {
       { command: "mcp", description: "MCP servers status" },
       { command: "models", description: "Change a session's model (active providers only)" },
       { command: "reasoning", description: "Change a session's reasoning level (low/medium/high)" },
+      { command: "taskmodel", description: "A scheduled task's model: /taskmodel <id> <provider/model>" },
       { command: "agents", description: "Change a session's agent" },
       { command: "projects", description: "Open a new session in a project" },
       { command: "tasks", description: "Scheduled tasks" },
@@ -3470,6 +3480,78 @@ const pluginExport = {
             replyMarkup: { inline_keyboard: keyboard },
           });
           if (sent !== null) modelCards.set(sent, state);
+          return;
+        }
+
+        case "taskmodel": {
+          // /taskmodel — a scheduled task's model, readable and changeable
+          // from the phone. A task without its own model inherits the
+          // project's default, and that default can go end-of-life without
+          // anybody noticing: measured 2026-10-29, a week of "ok" over a
+          // model the provider no longer serves.
+          const parts = argument.trim().split(/\s+/).filter(Boolean);
+          const all = readTasks();
+          if (all.length === 0) {
+            await reply(t("tasks_none"));
+            return;
+          }
+          if (parts.length === 0) {
+            const lines = [t("taskmodel_header")];
+            for (const item of all) {
+              lines.push(
+                t("taskmodel_row", {
+                  name: escapeHtml(item.name),
+                  id: item.id,
+                  model: item.model ? `${item.model.providerID}/${item.model.id}` : t("taskmodel_inherits"),
+                }),
+              );
+            }
+            lines.push(t("taskmodel_hint"));
+            await reply(lines.join("\n"));
+            return;
+          }
+          const idArg = parts[0];
+          const byId = all.filter((x) => x.id === idArg || x.id.startsWith(idArg));
+          const byName = all.filter((x) => x.name.toLowerCase().includes(idArg.toLowerCase()));
+          const task = byId.length === 1 ? byId[0] : byName.length === 1 ? byName[0] : undefined;
+          if (!task) {
+            await reply(t("taskmodel_unknown_task", { wanted: escapeHtml(idArg) }));
+            return;
+          }
+          if (parts.length < 2) {
+            await reply(
+              t("taskmodel_current", {
+                name: escapeHtml(task.name),
+                model: task.model ? `${task.model.providerID}/${task.model.id}` : t("taskmodel_inherits"),
+              }) + "\n" + t("taskmodel_usage"),
+            );
+            return;
+          }
+          const wanted = parts.slice(1).join(" ").trim();
+          if (!(await forms.connect())) {
+            await reply(t("api_down"));
+            return;
+          }
+          const catalog = await modelCatalog(task.directory);
+          if (!catalog) {
+            await reply(t("model_none"));
+            return;
+          }
+          // Accept the id exactly as the picker shows it, or its tail.
+          const model = catalog.items.find((m) => m.id === wanted) ?? catalog.items.find((m) => m.id.endsWith(`/${wanted}`));
+          if (!model) {
+            await reply(t("taskmodel_unknown", { wanted: escapeHtml(wanted) }));
+            return;
+          }
+          const fresh = readTasks();
+          const x = fresh.find((y) => y.id === task.id);
+          if (!x) {
+            await reply(t("tasks_none"));
+            return;
+          }
+          x.model = { id: model.id, providerID: model.providerID };
+          writeTasks(fresh);
+          await reply(t("taskmodel_set", { name: escapeHtml(x.name), model: escapeHtml(model.id) }));
           return;
         }
 
@@ -5507,6 +5589,20 @@ const pluginExport = {
           renderer.finalize(sessionID);
           flushTurnImages(sessionID);
           flushCoalesced(sessionID);
+          // A scheduled task's turn: the only honest "ok" — the turn ran to
+          // the end. Before, "ok" was written on POST alone and hid weeks of
+          // failures (2026-10-29: an end-of-life model ran "ok" for a week).
+          const taskId = taskSessions.get(sessionID);
+          if (taskId) {
+            taskSessions.delete(sessionID);
+            const all = readTasks();
+            const x = all.find((y) => y.id === taskId);
+            if (x) {
+              x.lastStatus = "ok";
+              writeTasks(all);
+              log("INFO", `tarea ${x.name} — turno completado`);
+            }
+          }
           // A finished subagent archives its own topic: the forum stays clean
           // and the parent keeps the spotlight. Marking the store keeps the
           // revive logic consistent (a revived subagent reopens on first sight).
@@ -5559,6 +5655,19 @@ const pluginExport = {
           const now = Date.now();
           if (now - (lastFailCardAt.get(sessionID) ?? 0) < 5_000) return;
           lastFailCardAt.set(sessionID, now);
+          // A scheduled task's turn that failed: the honest failure. Before
+          // this, the task still read "ok" — a week of silent rot (2026-10-29).
+          const taskId = taskSessions.get(sessionID);
+          if (taskId) {
+            taskSessions.delete(sessionID);
+            const all = readTasks();
+            const x = all.find((y) => y.id === taskId);
+            if (x) {
+              x.lastStatus = "fallo: " + detail.slice(0, 160);
+              writeTasks(all);
+              log("WARN", `tarea ${x.name} — turno fallido: ${detail.slice(0, 120)}`);
+            }
+          }
           stopTyping(sessionID);
           // No idle follows a failed turn — without this the last cards stay
           // pinned to "running" forever, which is half of the dead feeling.
@@ -6986,9 +7095,14 @@ const pluginExport = {
                     await runTaskNow(task);
                     const all = readTasks();
                     const x = all.find((t) => t.id === task.id);
-                    if (x) { x.lastRun = Date.now(); x.lastStatus = "ok (manual)"; writeTasks(all); }
+                    // "en curso" here too: the turn's real outcome arrives via
+                    // the session.idle / session.execution.failed handlers.
+                    if (x) { x.lastRun = Date.now(); x.lastStatus = "en curso"; writeTasks(all); }
                   } catch (error) {
                     log("WARN", "task run", safe(error));
+                    const all = readTasks();
+                    const x = all.find((t) => t.id === task.id);
+                    if (x) { x.lastStatus = String(error).slice(0, 200); writeTasks(all); }
                     await ack(t("newtask_run_fail"));
                   }
                   return;
