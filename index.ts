@@ -3537,8 +3537,14 @@ const pluginExport = {
             await reply(t("model_none"));
             return;
           }
-          // Accept the id exactly as the picker shows it, or its tail.
-          const model = catalog.items.find((m) => m.id === wanted) ?? catalog.items.find((m) => m.id.endsWith(`/${wanted}`));
+          // Accept either the bare modelID ("stepfun-ai/step-5-preview") or
+          // the full display form ("nvidia/stepfun-ai/step-5-preview") — the
+          // API's `id` is inconsistent: some carry the provider prefix and
+          // some don't, so both spellings must resolve.
+          const model =
+            catalog.items.find((m) => m.id === wanted) ??
+            catalog.items.find((m) => `${m.providerID}/${m.id}` === wanted) ??
+            catalog.items.find((m) => m.id === wanted.split("/").slice(1).join("/"));
           if (!model) {
             await reply(t("taskmodel_unknown", { wanted: escapeHtml(wanted) }));
             return;
