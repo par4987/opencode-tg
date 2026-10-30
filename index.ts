@@ -3543,13 +3543,17 @@ const pluginExport = {
             await reply(t("taskmodel_unknown", { wanted: escapeHtml(wanted) }));
             return;
           }
+          // Store the model WITHOUT the provider prefix: `providerID` travels
+          // on its own, and keeping both would render as nvidia/nvidia/… in
+          // every listing. The API's `modelID` already is the bare tail.
+          const modelID = model.modelID ?? (model.id.startsWith(`${model.providerID}/`) ? model.id.slice(model.providerID.length + 1) : model.id);
           const fresh = readTasks();
           const x = fresh.find((y) => y.id === task.id);
           if (!x) {
             await reply(t("tasks_none"));
             return;
           }
-          x.model = { id: model.id, providerID: model.providerID };
+          x.model = { id: modelID, providerID: model.providerID };
           writeTasks(fresh);
           await reply(t("taskmodel_set", { name: escapeHtml(x.name), model: escapeHtml(model.id) }));
           return;
@@ -6714,7 +6718,12 @@ const pluginExport = {
                 // Wizard mode: the pick becomes the task's model, not a switch.
                 if (state?.taskMode && taskWizard && chosen) {
                   const tsession = cq.message?.message_thread_id !== undefined ? topicStore?.sessionOf(cq.message.message_thread_id) : undefined;
-                  taskWizard.model = { id: chosen.id, providerID: chosen.providerID };
+                  // Bare modelID, no provider prefix: `providerID` already
+                  // travels beside it and a double prefix would render as
+                  // "nvidia/nvidia/…" everywhere the task is listed.
+                  const bareID =
+                    chosen.modelID ?? (chosen.id.startsWith(`${chosen.providerID}/`) ? chosen.id.slice(chosen.providerID.length + 1) : chosen.id);
+                  taskWizard.model = { id: bareID, providerID: chosen.providerID };
                   taskWizard.step = "type";
                   writeDraft(taskWizard);
                   modelCards.drop(cq.message?.message_id);
