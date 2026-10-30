@@ -682,6 +682,15 @@ const pluginExport = {
       "INFO",
       `setup mode=${config.mode} mirror=${config.mirror} allowed=${config.allowedUsers.length} debug=${config.debugEvents} topology=${config.bots.topology} bots=${specs.length}`,
     );
+    // Diagnostics for /models: the picker mirrors the desktop's own toggles,
+    // and that state lives in a per-OS path. A zero here means the database
+    // was not found (or the runtime has no SQLite binding) and the picker
+    // will fall back to the config, then to the whole published catalogue.
+    void desktopVisibleModels()
+      .then((toggles) =>
+        log("INFO", `models: ${toggles.length} toggles del desktop (${toggles.filter((t) => t.visible).length} visibles)`),
+      )
+      .catch(() => undefined);
 
     if (config.mode === "off") return;
     if (!config.token) {
@@ -2720,6 +2729,14 @@ const pluginExport = {
           for (const m of models) showKeys.add(`${pid}\u0000${m.key}`);
         }
       }
+      // Last resort: neither the desktop state nor the config declares
+      // anything (a machine without the desktop app, a fresh profile). Every
+      // model the server publishes is enabled server-side, so offer those
+      // instead of an empty picker.
+      if (toggles.length === 0 && enabledKeys.length === 0 && Array.isArray(all)) {
+        for (const m of all) showKeys.add(`${m.providerID}\u0000${m.modelID ?? m.id}`);
+        log("INFO", "models: sin estado del desktop ni providers en config — muestro los publicados");
+      }
       // Only models the server actually publishes right now. A desktop toggle
       // (or a config entry) for a model the catalogue no longer lists is
       // skipped — a variant-less stub would be a door the picker shows but
@@ -2756,6 +2773,10 @@ const pluginExport = {
         }
       }
       items.sort((a, b) => a.id.localeCompare(b.id));
+      log(
+        "INFO",
+        `models: ${items.length} publicados (${toggles.length > 0 ? `estado del desktop, ${toggles.filter((t) => t.visible).length} visibles` : "config"})`,
+      );
       const provList = [...new Set(items.map((m) => m.providerID))]
         .map((pid) => ({ id: pid, name: provNames.get(pid) ?? pid }))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -6983,6 +7004,11 @@ const pluginExport = {
                       for (const p of configProviders()) {
                         for (const m of p.models) if (!m.disabled) showKeys.add(p.id + "\u0000" + m.key);
                       }
+                    }
+                    // Same last resort as /models: without desktop state and
+                    // without config providers, offer what the server publishes.
+                    if (showKeys.size === 0 && Array.isArray(all)) {
+                      for (const x of all) showKeys.add(x.providerID + "\u0000" + (x.modelID ?? x.id));
                     }
                     const byKey = new Map((Array.isArray(all) ? all : []).map((x) => [x.providerID + "\u0000" + (x.modelID ?? x.id), x]));
                     const items: Array<{ id: string; modelID?: string; providerID: string; name?: string; enabled?: boolean; status?: string }> = [];

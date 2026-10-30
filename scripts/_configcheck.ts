@@ -132,7 +132,19 @@ const realToggles = await desktopVisibleModels();
 if (realToggles.length > 0) {
   const zaiShow = realToggles.filter((t) => t.providerID === "zai" && t.visible).map((t) => t.modelID);
   console.log(`  -- desktop real: ${realToggles.length} toggles; zai show (${zaiShow.length}): ${zaiShow.join(", ")}`);
-  check("desktop real: zai tiene exactamente 3 show", zaiShow.length === 3);
+  // Portable invariant: whatever this machine's desktop has switched on, the
+  // rows must be well formed (the old check hardcoded the author's Windows
+  // profile — 3 zai models — and failed on any other machine now that the
+  // state is found on Linux and macOS too).
+  check(
+    "desktop real: toggles bien formados",
+    realToggles.every((t) => t.providerID.length > 0 && t.modelID.length > 0 && typeof t.visible === "boolean"),
+  );
+  if (realToggles.some((t) => t.providerID === "zai")) {
+    check("desktop real: zai tiene exactamente 3 show", zaiShow.length === 3);
+  } else {
+    console.log("  -- desktop real: sin toggles de zai en esta máquina — skipped");
+  }
 } else {
   console.log("  -- desktop real: sin drafts.sqlite (CI) \u2014 skipped");
 }
