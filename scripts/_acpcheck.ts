@@ -163,9 +163,12 @@ async function main(): Promise<void> {
     process.env.XDG_DATA_HOME = process.env.TEMP ?? process.env.TMPDIR ?? "/tmp";
     const sessionsDir = `${process.env.XDG_DATA_HOME}/opencode/sessions`;
     const fs = await import("node:fs");
-    fs.mkdirSync(sessionsDir.replace(/\//g, "\\"), { recursive: true });
+    // The backslash dance only makes sense on Windows; elsewhere it creates a
+    // literal file named `\tmp\opencode\...` in the working directory.
+    const sep = process.platform === "win32" ? "\\" : "/";
+    fs.mkdirSync(sessionsDir.replace(/\//g, sep), { recursive: true });
     fs.writeFileSync(
-      `${sessionsDir}/ses_retry.json`.replace(/\//g, "\\"),
+      `${sessionsDir}/ses_retry.json`.replace(/\//g, sep),
       JSON.stringify({ directory: "C:/correct", title: "Retry" }),
     );
     try {
@@ -173,7 +176,7 @@ async function main(): Promise<void> {
       check("loadSession reintenta con el cwd del .json", loads.includes("C:/correct"), JSON.stringify(loads));
     } finally {
       try {
-        fs.unlinkSync(`${sessionsDir}/ses_retry.json`);
+        fs.unlinkSync(`${sessionsDir}/ses_retry.json`.replace(/\//g, sep));
       } catch {
         /* already gone */
       }
