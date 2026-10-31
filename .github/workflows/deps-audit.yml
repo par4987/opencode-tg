@@ -63,6 +63,21 @@ jobs:
           git commit -m "chore(deps): revisión semiautomática — update + audit fix (deps-audit)"
           git push
 
+      - name: Close the failure issue once the proof is green
+        if: ${{ success() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The failure issue used to stay open forever: a green run after it
+          # proved nothing to GitHub, and the stale red badge outlived the bug
+          # (issue #1, opened 2026-10-27, still open after the 2026-10-30 pass).
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 50 --json number,title \
+            --jq '.[] | select(.title | startswith("deps-audit: la actualización falló las pruebas")) | .number' |
+          while read -r number; do
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" \
+              --comment "Cerrado automáticamente: la corrida de deps-audit volvió a pasar (typecheck + 26 suites verdes)."
+          done
+
       - name: Flag what could not be sealed
         if: ${{ success() && env.AUDIT_FINDINGS == '1' }}
         run: |

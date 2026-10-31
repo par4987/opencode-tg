@@ -208,7 +208,24 @@ try {
   const { setup } = plugin as { setup: (c: unknown) => unknown };
   const result = await setup(ctx);
   cleanup = typeof result === "function" ? (result as () => Promise<void>) : undefined;
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  // A fixed sleep raced the REST pump on a slow CI runner (deps-audit
+  // 2026-10-27: the local API was discovered at 49.09 s and cleanup ran at
+  // 49.15 s — /api/event never got a chance, so the three REST checks failed
+  // and the workflow opened an issue). Wait for the evidence the suite
+  // asserts instead of guessing a delay; the timeout is only a cap.
+  const until = async (predicate: () => boolean, timeoutMs: number): Promise<void> => {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  };
+  await until(
+    () =>
+      subscriptions >= 2 &&
+      captured.some((line) => line.includes("Texto #SOLO-REST#")) &&
+      captured.some((line) => line.includes("evento duplicado del servidor")),
+    8000,
+  );
   if (cleanup) await cleanup();
 } finally {
   console.log = originalLog;
