@@ -588,3 +588,21 @@ Penghapusan **dibatasi per path**: `Remove-Item` (dan `rm`, `del`, `rmdir`...) d
 - Memakai `POST /location/reload`, rebuild location milik server.
 - Pertanyaan dan izin yang tertunda dibatalkan; sesi yang berjalan lanjut pada langkah berikutnya.
 - Jika plugin mulai ulang saat memuat ulang, konfirmasi datang setelahnya.
+
+## Dashboard
+
+### /dashboard
+
+**Qué hace**: Memasang pesan ringkasan (judul, model, token, biaya, status) di topik sesi aktif dan memperbaruinya pada setiap peristiwa.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → memasang dashboard di topik saat ini
+- `/dashboard off` → membatalkan pemasangan dan menghapus
+- `/dashboard refresh` → menggambar ulang sekarang
+
+**Notas**:
+- Hanya berfungsi di topik sesi, bukan di root obrolan.
+- Panel diperbarui hanya saat konten berubah, menghindari edit konstan.
+- Tetap bertahan setelah /reload: state tersimpan dan dashboard dilanjutkan saat boot.

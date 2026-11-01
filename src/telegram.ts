@@ -733,6 +733,29 @@ export class Telegram {
     }).catch(() => undefined);
   }
 
+  /** Fija un mensaje en el chat (o en su hilo cuando se pasa messageThreadId en opciones). */
+  async pinChatMessage(chatId: number, messageId: number): Promise<boolean> {
+    try {
+      await this.call("pinChatMessage", { chat_id: chatId, message_id: messageId });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Desfija un mensaje del chat. Sin messageId desfija el más reciente del chat. */
+  async unpinChatMessage(chatId: number, messageId?: number): Promise<boolean> {
+    try {
+      await this.call("unpinChatMessage", {
+        chat_id: chatId,
+        ...(messageId ? { message_id: messageId } : {}),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Publish our command list. Telegram caches menus **per scope** and the
    * narrower scope wins — the previous bot wrote a `{type:"chat"}` list that

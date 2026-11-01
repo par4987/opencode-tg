@@ -35,6 +35,13 @@ import { NATIVE_NAMES, availableLocales, locale, setLocale, t } from "./src/loca
 import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { setRedactionSecrets } from "./src/redact.js";
 import { clearReloadNotice, readFreshReloadNotice, writeReloadNotice } from "./src/reload-notice.js";
+import {
+  readDashboardState,
+  writeDashboardState,
+  setDashboardEntry,
+  removeDashboardEntry,
+  type DashboardEntry,
+} from "./src/dashboard-state.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
 import { fetchRuns, formatRuns, type CiRun } from "./src/ci.js";
@@ -1519,6 +1526,11 @@ const pluginExport = {
         titleSyncAt.set(id, Date.now());
         void syncSessionTitle(id);
       }
+      // El dashboard fijado se mantiene al día con los eventos de la sesión.
+      const tid = topicStore?.get(id);
+      if (tid !== undefined && dashboardState.has(tid) && chatId !== undefined) {
+        void scheduleDashboardRefresh(id);
+      }
       return session;
     };
     /**
@@ -1586,6 +1598,90 @@ const pluginExport = {
         parseMode: "HTML",
         ...(session ? { messageThreadId: threadOf(session) } : {}),
       });
+    };
+
+    // ── dashboard fijado por hilo ────────────────────────────────────────────
+    // Un mensaje anclado en el hilo de una sesión que resume su estado y se
+    // mantiene al día con cada evento. Se activa a petición con /dashboard.
+    const dashboardState = readDashboardState();
+    /** Último texto renderizado por hilo: evita re-pinear cuando no cambió. */
+    const dashboardLast = new Map<string, string>();
+    const dashboardPending = new Map<string, ReturnType<typeof setTimeout>>();
+
+    const scheduleDashboardRefresh = (sessionID: string): void => {
+      const prev = dashboardPending.get(sessionID);
+      if (prev) clearTimeout(prev);
+      dashboardPending.set(
+        sessionID,
+        setTimeout(() => {
+          dashboardPending.delete(sessionID);
+          void refreshDashboard(sessionID);
+        }, 1_500),
+      );
+    };
+
+    /** Contenido del dashboard: huella de la sesión (título, modelo, tokens, coste, estado). */
+    const buildDashboardText = async (sessionID: string): Promise<string> => {
+      let info: ApiSession | undefined;
+      try {
+        info = await forms
+          .request<ApiSession>("GET", "/session/" + encodeURIComponent(sessionID))
+          .catch(() => undefined);
+      } catch {
+        info = undefined;
+      }
+      if (!info) return t("dashboard_no_session", { id: escapeHtml(sessionID.slice(0, 18)) });
+      const identity = (await sessionIdentityOf(sessionID, info)) ?? { model: info.model, agent: info.agent };
+      const tracked = sessions.get(sessionID);
+      const lines = [
+        t("dashboard_title", { title: escapeHtml(tracked?.title ?? info.title ?? "?") }),
+        t("dashboard_model", {
+          model: `${escapeHtml(identity.model?.providerID ?? "?")}/${escapeHtml(identity.model?.id ?? "?")}`,
+        }),
+      ];
+      const toks = info.tokens;
+      if (toks) {
+        lines.push(
+          t("dashboard_tokens", {
+            input: fmtTokens((toks.input ?? 0) + (toks.reasoning ?? 0) + (toks.cache?.read ?? 0)),
+            output: fmtTokens(toks.output ?? 0),
+          }),
+        );
+      }
+      if (info.cost !== undefined) lines.push(t("dashboard_cost", { cost: fmtCost(info.cost) }));
+      lines.push(tracked?.idle ? t("dashboard_idle") : t("dashboard_active"));
+      return lines.join("\n");
+    };
+
+    /** (Re)ancla el dashboard del hilo de una sesión, solo si el contenido cambió. */
+    const refreshDashboard = async (sessionID: string): Promise<void> => {
+      if (chatId === undefined) return;
+      const session = sessions.get(sessionID);
+      const tid = session ? topicStore?.get(sessionID) : undefined;
+      if (tid === undefined) return;
+      const entry = dashboardState.get(tid);
+      if (entry === undefined) return;
+      const text = await buildDashboardText(sessionID);
+      const key = `${tid}:${sessionID}`;
+      if (dashboardLast.get(key) === text) return;
+      dashboardLast.set(key, text);
+      let msgId = entry.messageId;
+      let edited = false;
+      if (msgId) {
+        edited = await telegram
+          .editMessageText(chatId, msgId, text, { parseMode: "HTML", messageThreadId: tid })
+          .catch(() => false);
+      }
+      if (!edited) {
+        const msg = await telegram.sendMessage(chatId, text, {
+          parseMode: "HTML",
+          messageThreadId: tid,
+        });
+        if (msg === null) return;
+        msgId = msg;
+        await telegram.pinChatMessage(chatId, msgId).catch(() => undefined);
+      }
+      setDashboardEntry(dashboardState, tid, { chatId, messageId: msgId, sessionID });
     };
 
     // ── typing indicator: the thread's "typing…" while a turn runs ───────────
@@ -2813,6 +2909,7 @@ const pluginExport = {
       { command: "export", description: "Download a session's transcript as JSON" },
       { command: "config", description: "Project config: /config model <provider/model>" },
       { command: "reload", description: "Reload config, models, agents, MCP and skills" },
+      { command: "dashboard", description: "Session dashboard: /dashboard on|off|refresh" },
       { command: "use", description: "Where prompts go: /use <id>" },
       { command: "watch", description: "Watch a session: /watch <id|all|off>" },
       { command: "send", description: "Send a prompt: /send <id> <text>" },
@@ -3838,6 +3935,46 @@ const pluginExport = {
               },
             )
             .catch((error) => log("WARN", "reload ask", safe(error)));
+          return;
+        }
+
+        case "dashboard": {
+          // /dashboard [on|off|refresh] — ancla un resumen vivo de la sesión
+          // en curso en su hilo y lo mantiene actualizado con cada evento.
+          const target = threadSession || targetSession();
+          if (!target) {
+            await reply(t("dashboard_needs_session"));
+            return;
+          }
+          const sub = (argument.split(/\s+/)[0] ?? "").toLowerCase();
+          const tid = threadOf(target);
+          if (sub === "off") {
+            if (tid !== undefined) {
+              const entry = dashboardState.get(tid);
+              if (entry && entry.messageId) {
+                await telegram.unpinChatMessage(entry.chatId, entry.messageId).catch(() => undefined);
+              }
+              removeDashboardEntry(dashboardState, tid);
+            }
+            await reply(t("dashboard_off"));
+            return;
+          }
+          if (sub === "refresh") {
+            if (tid === undefined) {
+              await reply(t("dashboard_no_thread"));
+              return;
+            }
+            await refreshDashboard(target);
+            await reply(t("dashboard_refreshed"));
+            return;
+          }
+          // on (por defecto): activar dashboard para este hilo y anclar el resumen.
+          if (tid === undefined) {
+            await reply(t("dashboard_no_thread"));
+            return;
+          }
+          await refreshDashboard(target);
+          await reply(t("dashboard_on"));
           return;
         }
 

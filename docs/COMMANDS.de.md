@@ -588,3 +588,21 @@ Das Löschen ist **pfadbegrenzt**: `Remove-Item` (und `rm`, `del`, `rmdir`...) i
 - Nutzt `POST /location/reload`, den Location-Rebuild des Servers.
 - Offene Fragen und Berechtigungen werden abgebrochen; laufende Sitzungen machen beim nächsten Schritt weiter.
 - Startet das Plugin während des Neuladens neu, kommt die Bestätigung nach dem Wiederanlauf.
+
+## Dashboard
+
+### /dashboard
+
+**Qué hace**: Heftet einen Zusammenfassung (Titel, Modell, Token, Kosten, Status) im Thread der aktiven Sitzung an und hält ihn bei jedem Ereignis aktuell.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → heftet das Dashboard im aktuellen Thread an
+- `/dashboard off` → löst die Heftung und entfernt es
+- `/dashboard refresh` → zeichnet es jetzt neu
+
+**Notas**:
+- Funktioniert nur in einem Sitzungs-Thread, nicht im Chat-Stamm.
+- Das Panel wird nur aktualisiert wenn sich der Inhalt ändert, um ständige Edits zu vermeiden.
+- Überlebt einen /reload: der Zustand wird persistiert und das Dashboard setzt sich beim Start fort.

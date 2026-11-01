@@ -371,3 +371,21 @@ Deletion is **path-scoped**: `Remove-Item` (and `rm`, `del`, `rmdir`...) is allo
 - Uses `POST /location/reload`, the server's own location rebuild.
 - Pending questions and permissions are cancelled; running sessions continue at the next step.
 - If the plugin restarts during the reload, the receipt arrives when it comes back.
+
+## Dashboard
+
+### /dashboard
+
+**Qué hace**: Pins a summary message (title, model, tokens, cost, status) in the active session's thread and keeps it up to date on every event.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → pins the dashboard in the current thread
+- `/dashboard off` → unpins and removes it
+- `/dashboard refresh` → redraws it now
+
+**Notas**:
+- Only works in a session thread, not at chat root.
+- The panel is updated only when its content changes, to avoid constant edits.
+- Survives a /reload: state is persisted and the dashboard resumes on boot.

@@ -587,3 +587,21 @@ La cancellazione è **limitata per percorso**: `Remove-Item` (e `rm`, `del`, `rm
 - Usa `POST /location/reload`, il rebuild delle location del server.
 - Domande e permessi in sospeso vengono annullati; le sessioni in corso proseguono al passo successivo.
 - Se il plugin si riavvia durante il ricaricamento, la conferma arriva al ritorno.
+
+## Bacheca
+
+### /dashboard
+
+**Qué hace**: Fissa un messaggio di riepilogo (titolo, modello, token, costo, stato) nel thread della sessione attiva e lo mantiene aggiornato a ogni evento.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → fissa la bacheca nel thread corrente
+- `/dashboard off` → la rimuove
+- `/dashboard refresh` → la ridisegna ora
+
+**Notas**:
+- Funziona solo in un thread di sessione, non alla radice della chat.
+- La bacheca viene aggiornata solo quando il contenuto cambia, per evitare modifiche costanti.
+- Sopravvive a un /reload: lo stato viene persistito e la bacheca riprende all'avvio.

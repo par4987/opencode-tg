@@ -19,6 +19,20 @@ type Catalog = Record<string, string>;
 
 const ES: Catalog = {
 
+  // /dashboard — resumen fijado (es)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Modelo: {model}",
+  dashboard_tokens: "Tokens: entrada {input} · salida {output}",
+  dashboard_cost: "Coste: {cost}",
+  dashboard_active: "Estado: activo",
+  dashboard_idle: "Estado: inactivo",
+  dashboard_no_session: "No hay sesión para este hilo.",
+  dashboard_no_thread: "Esta conversación no tiene un hilo de sessão.",
+  dashboard_needs_session: "Necesito una sesión activa en este hilo.",
+  dashboard_on: "📊 Dashboard anclado en este hilo.",
+  dashboard_off: "📊 Dashboard desanclado.",
+  dashboard_refreshed: "📊 Dashboard actualizado.",
+
   // /reload — recarga forzada (es)
   reload_started: "♻️ Recargando config, providers, modelos, agentes, MCP, skills y plugins…",
   reload_ok: "✅ Configuración recargada en {secs}s.\nSe releyeron config, providers, modelos, agentes, MCP, skills y plugins.\nLas sesiones en curso siguen en el próximo paso.",
@@ -425,7 +439,7 @@ const ES: Catalog = {
   bots_pool_empty: "⚠️ Pool de bots agotado — la sesión <code>{ses}</code> se espeja acá (hub). Sumá otro bot con <code>TELEGRAM_BOT_TOKEN_<NOMBRE></code> en el .env.",
   bots_released: "🧹 <b>{name}</b> liberado — su sesión vuelve al hub.",
   bots_released_archived: "🧹 <b>{name}</b> vuelve al pool — la sesión archivada ya no lo necesita.",
-  bots_release_only: "Sólo se libera un bot de sesión (topología <code>per-session</code>), desde su propio chat.",
+  bots_release_only: "Sólo se libera un bot de sessão (topología <code>per-session</code>), desde su propio chat.",
   bots_release_none: "Este bot no tiene una sesión reclamada que liberar.",
   // ── /ci: the repo's Actions runs from the phone ───────────────────────
   ci_header: "🔨 <b>CI</b> — <code>{repo}</code>",
@@ -796,6 +810,20 @@ const ES: Catalog = {
 };
 
 const EN: Catalog = {
+
+  // /dashboard — resumen fijado (en)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Model: {model}",
+  dashboard_tokens: "Tokens: in {input} · out {output}",
+  dashboard_cost: "Cost: {cost}",
+  dashboard_active: "Status: active",
+  dashboard_idle: "Status: idle",
+  dashboard_no_session: "No session for this thread.",
+  dashboard_no_thread: "This conversation has no session thread.",
+  dashboard_needs_session: "I need an active session in this thread.",
+  dashboard_on: "📊 Dashboard pinned in this thread.",
+  dashboard_off: "📊 Dashboard unpinned.",
+  dashboard_refreshed: "📊 Dashboard refreshed.",
 
   // /reload — recarga forzada (en)
   reload_started: "♻️ Reloading config, providers, models, agents, MCP, skills and plugins…",
@@ -1562,6 +1590,20 @@ const EN: Catalog = {
  */
 const PT: Catalog = {
 
+  // /dashboard — resumen fijado (pt)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Modelo: {model}",
+  dashboard_tokens: "Tokens: entrada {input} · saída {output}",
+  dashboard_cost: "Custo: {cost}",
+  dashboard_active: "Estado: ativo",
+  dashboard_idle: "Estado: inativo",
+  dashboard_no_session: "Não há sessão para este tópico.",
+  dashboard_no_thread: "Esta conversa não tem um tópico de sessão.",
+  dashboard_needs_session: "Preciso de uma sessão ativa neste tópico.",
+  dashboard_on: "📊 Painel fixado neste tópico.",
+  dashboard_off: "📊 Painel desfixado.",
+  dashboard_refreshed: "📊 Painel atualizado.",
+
   // /reload — recarga forzada (pt)
   reload_started: "♻️ Recarregando config, providers, modelos, agentes, MCP, skills e plugins…",
   reload_ok: "✅ Configuração recarregada em {secs}s.\nRelidos: config, providers, modelos, agentes, MCP, skills e plugins.\nAs sessões em curso continuam no próximo passo.",
@@ -2302,6 +2344,20 @@ const PT: Catalog = {
  * Sprachen parallel läuft; Platzhalter und HTML sind unantastbar.
  */
 const DE: Catalog = {
+
+  // /dashboard — resumen fijado (de)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Modell: {model}",
+  dashboard_tokens: "Tokens: ein {input} · aus {output}",
+  dashboard_cost: "Kosten: {cost}",
+  dashboard_active: "Status: aktiv",
+  dashboard_idle: "Status: inaktiv",
+  dashboard_no_session: "Keine Sitzung für diesen Thread.",
+  dashboard_no_thread: "Diese Unterhaltung hat keinen Sitzungs-Thread.",
+  dashboard_needs_session: "Ich brauche eine aktive Sitzung in diesem Thread.",
+  dashboard_on: "📊 Dashboard in diesem Thread angeheftet.",
+  dashboard_off: "📊 Dashboard entfernt.",
+  dashboard_refreshed: "📊 Dashboard aktualisiert.",
 
   // /reload — recarga forzada (de)
   reload_started: "♻️ Konfiguration, Provider, Modelle, Agenten, MCP, Skills und Plugins werden neu geladen…",
@@ -3044,6 +3100,20 @@ const DE: Catalog = {
  */
 const FR: Catalog = {
 
+  // /dashboard — resumen fijado (fr)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Modèle: {model}",
+  dashboard_tokens: "Jetons: entrée {input} · sortie {output}",
+  dashboard_cost: "Coût: {cost}",
+  dashboard_active: "État: actif",
+  dashboard_idle: "État: inactif",
+  dashboard_no_session: "Aucune session pour ce fil.",
+  dashboard_no_thread: "Cette conversation n'a pas de fil de session.",
+  dashboard_needs_session: "J'ai besoin d'une session active dans ce fil.",
+  dashboard_on: "📊 Tableau de bord épinglé dans ce fil.",
+  dashboard_off: "📊 Tableau de bord désépinglé.",
+  dashboard_refreshed: "📊 Tableau de bord actualisé.",
+
   // /reload — recarga forzada (fr)
   reload_started: "♻️ Rechargement de la config, des providers, modèles, agents, MCP, skills et plugins…",
   reload_ok: "✅ Configuration rechargée en {secs}s.\nRechargés : config, providers, modèles, agents, MCP, skills et plugins.\nLes sessions en cours continuent à l'étape suivante.",
@@ -3784,6 +3854,20 @@ const FR: Catalog = {
  * lingue viaggia in parallelo; placeholder e HTML sono intoccabili.
  */
 const IT: Catalog = {
+
+  // /dashboard — resumen fijado (it)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Modello: {model}",
+  dashboard_tokens: "Token: entrata {input} · uscita {output}",
+  dashboard_cost: "Costo: {cost}",
+  dashboard_active: "Stato: attivo",
+  dashboard_idle: "Stato: inattivo",
+  dashboard_no_session: "Nessuna sessione per questo thread.",
+  dashboard_no_thread: "Questa conversazione non ha un thread di sessione.",
+  dashboard_needs_session: "Mi serve una sessione attiva in questo thread.",
+  dashboard_on: "📊 Bacheca fissata in questo thread.",
+  dashboard_off: "📊 Bacheca rimossa.",
+  dashboard_refreshed: "📊 Bacheca aggiornata.",
 
   // /reload — recarga forzada (it)
   reload_started: "♻️ Ricaricamento di config, provider, modelli, agenti, MCP, skill e plugin…",
@@ -4526,6 +4610,20 @@ const IT: Catalog = {
  */
 const ID: Catalog = {
 
+  // /dashboard — resumen fijado (id)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Model: {model}",
+  dashboard_tokens: "Token: masuk {input} · keluar {output}",
+  dashboard_cost: "Biaya: {cost}",
+  dashboard_active: "Status: aktif",
+  dashboard_idle: "Status: idle",
+  dashboard_no_session: "Tidak ada sesi untuk topik ini.",
+  dashboard_no_thread: "Percakapan ini tidak memiliki topik sesi.",
+  dashboard_needs_session: "Saya butuh sesi aktif di topik ini.",
+  dashboard_on: "📊 Dashboard dipasang di topik ini.",
+  dashboard_off: "📊 Dashboard dilepas.",
+  dashboard_refreshed: "📊 Dashboard diperbarui.",
+
   // /reload — recarga forzada (id)
   reload_started: "♻️ Memuat ulang config, provider, model, agen, MCP, skill, dan plugin…",
   reload_ok: "✅ Konfigurasi dimuat ulang dalam {secs}d.\nDimuat ulang: config, provider, model, agen, MCP, skill, dan plugin.\nSesi yang berjalan lanjut pada langkah berikutnya.",
@@ -5267,6 +5365,20 @@ const ID: Catalog = {
  */
 const RU: Catalog = {
 
+  // /dashboard — resumen fijado (ru)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Модель: {model}",
+  dashboard_tokens: "Токены: входящие {input} · исходящие {output}",
+  dashboard_cost: "Стоимость: {cost}",
+  dashboard_active: "Статус: активно",
+  dashboard_idle: "Статус: бездействует",
+  dashboard_no_session: "Нет сессии для этой ветки.",
+  dashboard_no_thread: "В этом чате нет ветки сессии.",
+  dashboard_needs_session: "Мне нужна активная сессия в этой ветке.",
+  dashboard_on: "📊 Панель закреплена в этой ветке.",
+  dashboard_off: "📊 Панель откреплена.",
+  dashboard_refreshed: "📊 Панель обновлена.",
+
   // /reload — recarga forzada (ru)
   reload_started: "♻️ Перезагружаю конфигурацию, провайдеров, модели, агентов, MCP, навыки и плагины…",
   reload_ok: "✅ Конфигурация перезагружена за {secs}с.\nПеречитаны: конфигурация, провайдеры, модели, агенты, MCP, навыки и плагины.\nТекущие сессии продолжатся на следующем шаге.",
@@ -6007,6 +6119,20 @@ const RU: Catalog = {
  * yürür; yer tutucular ve HTML dokunulmaz.
  */
 const TR: Catalog = {
+
+  // /dashboard — resumen fijado (tr)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "Model: {model}",
+  dashboard_tokens: "Jeton: giriş {input} · çıkış {output}",
+  dashboard_cost: "Maliyet: {cost}",
+  dashboard_active: "Durum: aktif",
+  dashboard_idle: "Durum: pasif",
+  dashboard_no_session: "Bu konu için oturum yok.",
+  dashboard_no_thread: "Bu konuşmanın oturum konusu yok.",
+  dashboard_needs_session: "Bu konuda etkin bir oturum gerekiyor.",
+  dashboard_on: "📊 Kontrol paneli bu konuda sabitlendi.",
+  dashboard_off: "📊 Kontrol paneli sabidi kaldırıldı.",
+  dashboard_refreshed: "📊 Kontrol paneli güncellendi.",
 
   // /reload — recarga forzada (tr)
   reload_started: "♻️ Yapılandırma, sağlayıcılar, modeller, ajanlar, MCP, beceriler ve eklentiler yeniden yükleniyor…",
@@ -6751,6 +6877,20 @@ const TR: Catalog = {
  */
 const ZH: Catalog = {
 
+  // /dashboard — resumen fijado (zh)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "模型: {model}",
+  dashboard_tokens: "令牌: 输入 {input} · 输出 {output}",
+  dashboard_cost: "费用: {cost}",
+  dashboard_active: "状态: 活跃",
+  dashboard_idle: "状态: 空闲",
+  dashboard_no_session: "此话题无会话。",
+  dashboard_no_thread: "此对话没有会话话题。",
+  dashboard_needs_session: "此话题需要一个活跃会话。",
+  dashboard_on: "📊 信息面板已在此话题固定。",
+  dashboard_off: "📊 信息面板已取消固定。",
+  dashboard_refreshed: "📊 信息面板已更新。",
+
   // /reload — recarga forzada (zh)
   reload_started: "♻️ 正在重新加载配置、提供商、模型、代理、MCP、技能和插件…",
   reload_ok: "✅ 配置已在 {secs} 秒内重新加载。\n已重新读取：配置、提供商、模型、代理、MCP、技能和插件。\n进行中的会话将在下一步继续。",
@@ -7492,6 +7632,20 @@ const ZH: Catalog = {
  */
 const KO: Catalog = {
 
+  // /dashboard — resumen fijado (ko)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "모델: {model}",
+  dashboard_tokens: "토큰: 입력 {input} · 출력 {output}",
+  dashboard_cost: "비용: {cost}",
+  dashboard_active: "상태: 활성",
+  dashboard_idle: "상태: 유휴",
+  dashboard_no_session: "이 스레드에 세션이 없습니다.",
+  dashboard_no_thread: "이 대화에는 세션 스레드가 없습니다.",
+  dashboard_needs_session: "이 스레드에 활성 세션이 필요합니다.",
+  dashboard_on: "📊 대시보드가 이 스레드에 고정되었습니다.",
+  dashboard_off: "📊 대시보드 고정이 해제되었습니다.",
+  dashboard_refreshed: "📊 대시보드가 업데이트되었습니다.",
+
   // /reload — recarga forzada (ko)
   reload_started: "♻️ 구성, 공급자, 모델, 에이전트, MCP, 스킬, 플러그인을 다시 불러오는 중…",
   reload_ok: "✅ 구성을 {secs}초 만에 다시 불러왔습니다.\n다시 읽음: 구성, 공급자, 모델, 에이전트, MCP, 스킬, 플러그인.\n진행 중인 세션은 다음 단계에서 계속됩니다.",
@@ -8232,6 +8386,20 @@ const KO: Catalog = {
  * مع الحفاظ على العناصر النائبة ووسوم HTML كما هي.
  */
 const AR: Catalog = {
+
+  // /dashboard — resumen fijado (ar)
+  dashboard_title: "📊 <b>{title}</b>",
+  dashboard_model: "النموذج: {model}",
+  dashboard_tokens: "رموز: وارد {input} · صادر {output}",
+  dashboard_cost: "التكلفة: {cost}",
+  dashboard_active: "الحالة: نشط",
+  dashboard_idle: "الحالة: غير نشط",
+  dashboard_no_session: "لا توجد جلسة لهذا الموضوع.",
+  dashboard_no_thread: "هذه المحادثة ليس لديها موضوع جلسة.",
+  dashboard_needs_session: "أحتاج جلسة نشطة في هذا الموضوع.",
+  dashboard_on: "📊 لوحة المعلومات مثبتة في هذا الموضوع.",
+  dashboard_off: "📊 لوحة المعلومات ملغاة التثبيت.",
+  dashboard_refreshed: "📊 لوحة المعلومات محدثة.",
 
   // /reload — recarga forzada (ar)
   reload_started: "♻️ إعادة تحميل الإعدادات والمزوّدين والنماذج والوكلاء وMCP والمهارات والإضافات…",

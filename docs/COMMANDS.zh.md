@@ -587,3 +587,21 @@
 - 使用 `POST /location/reload`，即服务器自身的 location 重建。
 - 未回答的问题和待处理权限会被取消；进行中的会话将在下一步继续。
 - 如果插件在重新加载期间重启，确认消息会在恢复后送达。
+
+## 信息面板
+
+### /dashboard
+
+**Qué hace**: 在活跃会话的话题中固定一条包含摘要（标题、模型、令牌、费用、状态）的消息，并随每个事件保持更新。
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → 在当前话题固定信息面板
+- `/dashboard off` → 取消固定并删除
+- `/dashboard refresh` → 立即重新绘制
+
+**Notas**:
+- 仅适用于会话话题，不适用于聊天根目录。
+- 面板仅在内容变化时更新，避免频繁编辑。
+- 重新加载后仍然有效：状态会被持久化，启动时面板会恢复。

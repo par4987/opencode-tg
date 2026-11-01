@@ -587,3 +587,21 @@ El borrado está **acotado por ruta**: `Remove-Item` (y `rm`, `del`, `rmdir`...)
 - Usa `POST /location/reload`, el rebuild de locations del propio servidor.
 - Las preguntas y permisos pendientes se cancelan; las sesiones en curso siguen en el próximo paso.
 - Si el plugin se reinicia durante la recarga, el aviso de confirmación llega al volver.
+
+## Panel de control
+
+### /dashboard
+
+**Qué hace**: Ancla en el hilo de la sesión activa un mensaje con su resumen (título, modelo, tokens, coste y estado) y lo mantiene actualizado con cada evento.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → ancla el panel en el hilo actual
+- `/dashboard off` → lo desancla y lo elimina
+- `/dashboard refresh` → lo vuelve a dibujar ahora
+
+**Notas**:
+- Solo funciona en un hilo de sesión (no en la raíz del chat).
+- El panel se actualiza solo cuando el contenido cambia, para no molestar con editos constantes.
+- Sobrevive a un /reload: el estado se persiste y el dashboard se reanuda al arrancar.

@@ -587,3 +587,21 @@ O apagamento é **delimitado por caminho**: `Remove-Item` (e `rm`, `del`, `rmdir
 - Usa `POST /location/reload`, o rebuild de locations do próprio servidor.
 - Perguntas e permissões pendentes são canceladas; as sessões em curso continuam no próximo passo.
 - Se o plugin reiniciar durante a recarga, o aviso chega quando ele voltar.
+
+## Painel de controle
+
+### /dashboard
+
+**Qué hace**: Fixa no tópico da sessão ativa uma mensagem com seu resumo (título, modelo, tokens, custo e estado) e mantém atualizado a cada evento.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → fixa o painel no tópico atual
+- `/dashboard off` → desfica e remove
+- `/dashboard refresh` → redesenha agora
+
+**Notas**:
+- Funciona apenas em um tópico de sessão, não na raiz do chat.
+- O painel é atualizado apenas quando o conteúdo muda, evitando edições constantes.
+- Sobrevive a um /reload: o estado é persistido e o painel retoma no arranque.

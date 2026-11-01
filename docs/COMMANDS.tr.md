@@ -587,3 +587,21 @@ Silme **yolla sınırlıdır**: `Remove-Item` (ve `rm`, `del`, `rmdir`...) proje
 - Sunucunun kendi location rebuild'i olan `POST /location/reload` kullanılır.
 - Bekleyen sorular ve izinler iptal edilir; süren oturumlar sonraki adımda devam eder.
 - Eklenti yeniden yükleme sırasında yeniden başlarsa onay dönüşte gelir.
+
+## Kontrol Paneli
+
+### /dashboard
+
+**Qué hace**: Aktif oturumun konusunda özet (başlık, model, jeton, maliyet, durum) içeren bir mesaj sabitler ve her olayda güncel tutar.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → paneli şu anki konuya sabitler
+- `/dashboard off` → sabitlemeyi kaldırır ve siler
+- `/dashboard refresh` → şimdi yeniden çizer
+
+**Notas**:
+- Yalnızca bir oturum konusunda çalışır, sohbet kökünde değil.
+- Panel yalnızca içerik değiştiğinde güncellenir, sürekli düzenlenmemesi için.
+- /reload'dan sonra devam eder: durum kalıcıdır ve panel başlangıçta devam eder.

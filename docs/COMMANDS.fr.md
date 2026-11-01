@@ -588,3 +588,21 @@ L'effacement est **limité par chemin**: `Remove-Item` (et `rm`, `del`, `rmdir`.
 - Utilise `POST /location/reload`, le rebuild de locations du serveur.
 - Les questions et permissions en attente sont annulées ; les sessions en cours continuent à l'étape suivante.
 - Si le plugin redémarre pendant le rechargement, la confirmation arrive à son retour.
+
+## Tableau de bord
+
+### /dashboard
+
+**Qué hace**: Épingle un message récapitulatif (titre, modèle, jetons, coût, statut) dans le fil de la session active et le tient à jour à chaque événement.
+
+**Uso**: `/dashboard on` | `/dashboard off` | `/dashboard refresh`
+
+**Ejemplos**:
+- `/dashboard on` → épingle le tableau de bord dans le fil actuel
+- `/dashboard off` → désépingle et supprime
+- `/dashboard refresh` → le redessine maintenant
+
+**Notas**:
+- Fonctionne uniquement dans un fil de session, pas à la racine du chat.
+- Le panneau est mis à jour seulement quand son contenu change, pour éviter les modifications constantes.
+- Survit à un /reload : l'état est persistant et le tableau de bord reprend au démarrage.
