@@ -13,6 +13,7 @@ import { request as httpsRequest } from "node:https";
 
 import { log } from "./log.js";
 import { t } from "./locale.js";
+import { redactSecrets } from "./redact.js";
 
 export interface TelegramConfig {
   token: string;
@@ -436,6 +437,10 @@ export class Telegram {
   }
 
   async sendMessage(chatId: number, text: string, options: SendMessageOptions = {}): Promise<number | null> {
+    // Redaction lives here, at the single point where text leaves for
+    // Telegram, so every caller — renderer, cards, receipts, error tails —
+    // gets it without remembering to ask (src/redact.ts).
+    text = redactSecrets(text);
     if (!text) return null;
     const body: Record<string, unknown> = {
       chat_id: chatId,
@@ -479,6 +484,7 @@ export class Telegram {
 
   /** Returns null when the message vanished or the content was identical. */
   async editMessageText(chatId: number, messageId: number, text: string, options: SendMessageOptions = {}): Promise<boolean> {
+    text = redactSecrets(text);
     if (!text) return false;
     const body: Record<string, unknown> = {
       chat_id: chatId,
@@ -539,7 +545,7 @@ export class Telegram {
         parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
       };
       push("chat_id", String(chatId));
-      if (options.caption) push("caption", options.caption.slice(0, 1024));
+      if (options.caption) push("caption", redactSecrets(options.caption).slice(0, 1024));
       if (tid) push("message_thread_id", String(tid));
       const name = filePath.split(/[\\/]/).pop() ?? "photo.png";
       parts.push(
@@ -584,7 +590,7 @@ export class Telegram {
         parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
       };
       push("chat_id", String(chatId));
-      if (options.caption) push("caption", options.caption.slice(0, 1024));
+      if (options.caption) push("caption", redactSecrets(options.caption).slice(0, 1024));
       if (tid) push("message_thread_id", String(tid));
       const name = filePath.split(/[\\/]/).pop() ?? t("fallback_file_name") + ".bin";
       parts.push(
@@ -723,7 +729,7 @@ export class Telegram {
 
   async answerCallbackQuery(id: string, text?: string, showAlert = false): Promise<void> {    await this.call("answerCallbackQuery", {
       callback_query_id: id,
-      ...(text ? { text, show_alert: showAlert } : {}),
+      ...(text ? { text: redactSecrets(text), show_alert: showAlert } : {}),
     }).catch(() => undefined);
   }
 

@@ -11,6 +11,7 @@ const suites = [
   "_setupcheck",
   "_blindcheck",
   "_transportcheck",
+  "_redactcheck",
   "_acpcheck",
   "_metacheck",
   "_topicscheck",

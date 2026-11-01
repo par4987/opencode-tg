@@ -33,6 +33,7 @@ import { readSessionMeta } from "./src/session-meta.js";
 import { MessageCards } from "./src/message-cards.js";
 import { NATIVE_NAMES, availableLocales, locale, setLocale, t } from "./src/locale.js";
 import { dangerousCommand, explainCommand } from "./src/dangerous.js";
+import { setRedactionSecrets } from "./src/redact.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
 import { fetchRuns, formatRuns, type CiRun } from "./src/ci.js";
@@ -49,7 +50,7 @@ import {
 } from "./src/new-session.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
-import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
+import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, servicePassword, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
 
 type Context = Plugin.Context;
@@ -1048,6 +1049,21 @@ const pluginExport = {
     const topology = config.bots.topology;
     const dry = config.mode === "dry";
     const chatId = spec.chatId ?? config.allowedUsers[0];
+
+    // Secrets this process holds verbatim: any of them appearing in a reply
+    // is a leak, whether the agent printed it or an error body echoed it.
+    // Registered before the transport exists so the first message is covered.
+    {
+      const service = servicePassword();
+      setRedactionSecrets([
+        spec.token,
+        config.token,
+        config.ci.token,
+        service,
+        service ? Buffer.from(`opencode:${service}`, "utf8").toString("base64") : undefined,
+        ...shared.specs.map((s) => s.token),
+      ]);
+    }
 
     // ── transport ────────────────────────────────────────────────────────────
     const telegram: Telegram = dry
