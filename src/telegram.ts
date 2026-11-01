@@ -547,7 +547,7 @@ export class Telegram {
       push("chat_id", String(chatId));
       if (options.caption) push("caption", redactSecrets(options.caption).slice(0, 1024));
       if (tid) push("message_thread_id", String(tid));
-      const name = filePath.split(/[\\/]/).pop() ?? "photo.png";
+      const name = redactSecrets(filePath.split(/[\\/]/).pop() ?? "photo.png");
       parts.push(
         Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
       );
@@ -592,7 +592,7 @@ export class Telegram {
       push("chat_id", String(chatId));
       if (options.caption) push("caption", redactSecrets(options.caption).slice(0, 1024));
       if (tid) push("message_thread_id", String(tid));
-      const name = filePath.split(/[\\/]/).pop() ?? t("fallback_file_name") + ".bin";
+      const name = redactSecrets(filePath.split(/[\\/]/).pop() ?? t("fallback_file_name") + ".bin");
       parts.push(
         Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
       );

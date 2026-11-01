@@ -34,6 +34,14 @@ server. `@opencode/plugin` as types only — **zero runtime dependencies**.
   project's model marked ✅), `/usagestats` with tokens, cost and streak,
   scheduled tasks (`/newtask`, `/tasks`), and the server inbox with
   reordering and fast-tracking (`/queue`, `/flush`).
+- **Hot reload**: `/reload` (and `/reload force`) asks the server to re-read
+  config, providers, models, agents, MCP, skills and plugins without
+  restarting the process. If there are pending questions or permissions it
+  asks for confirmation with buttons.
+- **Live dashboard per topic**: `/dashboard on` pins a summary in the
+  session's topic — title, model, tokens, cost and status — and keeps it
+  up to date on every event; `/dashboard refresh` redraws it and
+  `/dashboard off` unpins it. Survives a `/reload`.
 - **When the provider fails, you hear about it**: if the model never starts
   the turn (credits used up, rate limited, a retired model), a watchdog
   tells you the real cause at the 90s mark — not a mute timeout that

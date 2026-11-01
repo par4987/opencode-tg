@@ -49,10 +49,19 @@ export function clearReloadNotice(): void {
 
 /** A marker for this chat that is still worth announcing, if any. */
 export function readFreshReloadNotice(chatId: number, maxAgeMs = 180_000): ReloadNotice | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(reloadNoticePath(), "utf8");
+  } catch {
+    return undefined;
+  }
   let parsed: ReloadNotice;
   try {
-    parsed = JSON.parse(readFileSync(reloadNoticePath(), "utf8")) as ReloadNotice;
+    parsed = JSON.parse(raw) as ReloadNotice;
   } catch {
+    // Archivo corrupto: no puede ser un recibo válido, se limpia para que
+    // una escritura posterior no falle sobre basura.
+    clearReloadNotice();
     return undefined;
   }
   if (

@@ -199,6 +199,19 @@ y se reabren solos si la sesión revive.
 
 ---
 
+## Mantenimiento del server
+
+| Comando | Qué hace |
+| --- | --- |
+| `/reload` | Le pide al server que relea config, providers, modelos, agentes, MCP, skills y plugins **sin reiniciar el proceso**. Usá `/reload force` para saltar la confirmación cuando haya preguntas o permisos pendientes. |
+| `/dashboard on` | Ancla en el hilo de la sesión un panel con título, modelo, tokens, coste y estado, y lo mantiene al día con cada evento (solo re-ancla cuando el contenido cambia). |
+| `/dashboard off` | Desancla y elimina el panel del hilo. |
+| `/dashboard refresh` | Vuelve a dibujar el panel ahora. |
+
+El panel sobrevive a un `/reload`: el estado se persiste y se reanuda al arrancar.
+
+---
+
 ## Multi-bot: un bot por proyecto o por sesión
 
 Con un solo bot, todas las sesiones de todos los proyectos comparten un foro.

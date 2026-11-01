@@ -211,6 +211,19 @@ on their own if the session revives.
 
 ---
 
+## Server maintenance
+
+| Command | What it does |
+| --- | --- |
+| `/reload` | Asks the server to re-read config, providers, models, agents, MCP, skills and plugins **without restarting the process**. Use `/reload force` to skip confirmation when there are pending questions or permissions. |
+| `/dashboard on` | Pins a panel in the session's topic — title, model, tokens, cost and status — and keeps it up to date on every event (only re-pins when content changes). |
+| `/dashboard off` | Unpins and removes the panel from the topic. |
+| `/dashboard refresh` | Redraws the panel now. |
+
+The panel survives a `/reload`: state is persisted and resumes on boot.
+
+---
+
 ## Multi-bot: one bot per project or per session
 
 With a single bot, every session of every project shares one forum. Extra

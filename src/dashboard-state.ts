@@ -44,7 +44,15 @@ export function readDashboardState(): Map<number, DashboardEntry> {
   }
   for (const [threadId, entry] of Object.entries(parsed ?? {})) {
     const n = Number(threadId);
-    if (!Number.isFinite(n) || !entry || typeof entry.chatId !== "number" || typeof entry.messageId !== "number") continue;
+    if (
+      !Number.isFinite(n) ||
+      !entry ||
+      typeof entry.chatId !== "number" ||
+      typeof entry.messageId !== "number" ||
+      typeof entry.sessionID !== "string" ||
+      entry.sessionID.length === 0
+    )
+      continue;
     state.set(n, entry as DashboardEntry);
   }
   return state;

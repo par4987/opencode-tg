@@ -33,6 +33,14 @@ mismas sesiones y eventos que el desktop, porque es parte del mismo server.
   del proyecto marcado ✅), `/usagestats` con tokens, costo y racha, tareas
   programadas (`/newtask`, `/tasks`) y la cola del server con reordenamiento
   y steering (`/queue`, `/flush`).
+- **Recarga en caliente**: `/reload` (y `/reload force`) le pide al server que
+  relea config, providers, modelos, agentes, MCP, skills y plugins sin
+  reiniciar el proceso. Si hay preguntas o permisos pendientes pide
+  confirmación con botones.
+- **Panel vivo por hilo**: `/dashboard on` ancla en el hilo de la sesión un
+  resumen con título, modelo, tokens, coste y estado, y lo mantiene al día
+  con cada evento; `/dashboard refresh` lo vuelve a dibujar y
+  `/dashboard off` lo desancla. Sobrevive a un `/reload`.
 - **Si el proveedor falla, te enterás**: cuando el modelo nunca arranca el
   turno (créditos agotados, rate limit, modelo dado de baja), un watchdog te
   dice la causa real a los 90 s — no un timeout mudo que no explica nada.
