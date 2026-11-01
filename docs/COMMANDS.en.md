@@ -354,3 +354,20 @@ Deletion is **path-scoped**: `Remove-Item` (and `rm`, `del`, `rmdir`...) is allo
 - `/ci deps` → only the `deps-audit` workflow runs
 
 **Notes**: Reads GitHub's REST API with no dependencies. The repo is public, so it works with no token (60 calls/hour per IP); a `GITHUB_TOKEN` in `~/.opencode/tg/.env` raises the limit and reaches private repos. The default repo is `par4987/opencode-tg` — a fork overrides it with `"ci": { "repo": "owner/repo" }` in `config.json` or `TG_CI_REPO`.
+
+## Server
+
+### /reload
+
+**What it does**: Forces the server to re-read config, providers, models, agents, MCP, skills and plugins without restarting the process.
+
+**Usage**: `/reload` or `/reload force`
+
+**Examples**:
+- `/reload` → re-reads everything and reports how long it took
+- `/reload force` → reloads even with a pending question (it gets cancelled)
+
+**Notes**:
+- Uses `POST /location/reload`, the server's own location rebuild.
+- Pending questions and permissions are cancelled; running sessions continue at the next step.
+- If the plugin restarts during the reload, the receipt arrives when it comes back.

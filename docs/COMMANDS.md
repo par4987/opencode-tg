@@ -570,3 +570,20 @@ El borrado está **acotado por ruta**: `Remove-Item` (y `rm`, `del`, `rmdir`...)
 - `/watch off` → no mires nada
 
 **Notas**: Con `mirror: all` en el config, `/watch <id>` silencia al resto.
+
+## Servidor
+
+### /reload
+
+**Qué hace**: Fuerza al servidor a releer config, providers, modelos, agentes, MCP, skills y plugins, sin reiniciar el proceso.
+
+**Uso**: `/reload` o `/reload force`
+
+**Ejemplos**:
+- `/reload` → relee todo y confirma cuánto tardó
+- `/reload force` → recarga aunque haya una pregunta pendiente (la cancela)
+
+**Notas**:
+- Usa `POST /location/reload`, el rebuild de locations del propio servidor.
+- Las preguntas y permisos pendientes se cancelan; las sesiones en curso siguen en el próximo paso.
+- Si el plugin se reinicia durante la recarga, el aviso de confirmación llega al volver.

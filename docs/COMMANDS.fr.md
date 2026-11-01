@@ -571,3 +571,20 @@ L'effacement est **limité par chemin**: `Remove-Item` (et `rm`, `del`, `rmdir`.
 - `/watch off` → ne surveille rien
 
 **Notes**: Avec `mirror: all` dans la configuration, `/watch <id>` met les autres en sourdine.
+
+## Serveur
+
+### /reload
+
+**Ce que ça fait** : Force le serveur à relire la config, les providers, modèles, agents, MCP, skills et plugins, sans redémarrer le processus.
+
+**Utilisation** : `/reload` ou `/reload force`
+
+**Exemples** :
+- `/reload` → relit tout et indique la durée
+- `/reload force` → recharge même avec une question en attente (elle est annulée)
+
+**Notes** :
+- Utilise `POST /location/reload`, le rebuild de locations du serveur.
+- Les questions et permissions en attente sont annulées ; les sessions en cours continuent à l'étape suivante.
+- Si le plugin redémarre pendant le rechargement, la confirmation arrive à son retour.

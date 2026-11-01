@@ -570,3 +570,20 @@ La cancellazione è **limitata per percorso**: `Remove-Item` (e `rm`, `del`, `rm
 - `/watch off` → non monitorare niente
 
 **Note**: Con `mirror: all` nella config, `/watch <id>` silenzia le altre.
+
+## Server
+
+### /reload
+
+**Cosa fa**: Forza il server a rileggere config, provider, modelli, agenti, MCP, skill e plugin, senza riavviare il processo.
+
+**Uso**: `/reload` o `/reload force`
+
+**Esempi**:
+- `/reload` → rilegge tutto e indica quanto è durato
+- `/reload force` → ricarica anche con una domanda in sospeso (viene annullata)
+
+**Note**:
+- Usa `POST /location/reload`, il rebuild delle location del server.
+- Domande e permessi in sospeso vengono annullati; le sessioni in corso proseguono al passo successivo.
+- Se il plugin si riavvia durante il ricaricamento, la conferma arriva al ritorno.

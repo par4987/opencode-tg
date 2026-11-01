@@ -571,3 +571,20 @@ Penghapusan **dibatasi per path**: `Remove-Item` (dan `rm`, `del`, `rmdir`...) d
 - `/watch off` → tidak memantau apa pun
 
 **Catatan**: Dengan `mirror: all` di config, `/watch <id>` membisukan yang lain.
+
+## Server
+
+### /reload
+
+**Apa fungsinya**: Memaksa server membaca ulang config, provider, model, agen, MCP, skill, dan plugin tanpa memulai ulang proses.
+
+**Pemakaian**: `/reload` atau `/reload force`
+
+**Contoh**:
+- `/reload` → membaca ulang semuanya dan melaporkan durasinya
+- `/reload force` → memuat ulang meski ada pertanyaan tertunda (pertanyaannya dibatalkan)
+
+**Catatan**:
+- Memakai `POST /location/reload`, rebuild location milik server.
+- Pertanyaan dan izin yang tertunda dibatalkan; sesi yang berjalan lanjut pada langkah berikutnya.
+- Jika plugin mulai ulang saat memuat ulang, konfirmasi datang setelahnya.

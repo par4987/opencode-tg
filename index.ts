@@ -34,6 +34,7 @@ import { MessageCards } from "./src/message-cards.js";
 import { NATIVE_NAMES, availableLocales, locale, setLocale, t } from "./src/locale.js";
 import { dangerousCommand, explainCommand } from "./src/dangerous.js";
 import { setRedactionSecrets } from "./src/redact.js";
+import { clearReloadNotice, readFreshReloadNotice, writeReloadNotice } from "./src/reload-notice.js";
 import { parseSseData, generateTextOf, titleOptionsFrom } from "./src/extra.js";
 import { serverLogTail, lastSessionError, classifyFailure } from "./src/provider-health.js";
 import { fetchRuns, formatRuns, type CiRun } from "./src/ci.js";
@@ -2811,6 +2812,7 @@ const pluginExport = {
       { command: "fork", description: "Fork a session to try ideas safely" },
       { command: "export", description: "Download a session's transcript as JSON" },
       { command: "config", description: "Project config: /config model <provider/model>" },
+      { command: "reload", description: "Reload config, models, agents, MCP and skills" },
       { command: "use", description: "Where prompts go: /use <id>" },
       { command: "watch", description: "Watch a session: /watch <id|all|off>" },
       { command: "send", description: "Send a prompt: /send <id> <text>" },
@@ -3160,6 +3162,61 @@ const pluginExport = {
         replyMarkup: { inline_keyboard: keyboard },
       });
       if (sent !== null) archiveCards.set(sent, { rows, page: 0 });
+    };
+
+    /**
+     * `/reload` — make OpenCode re-read configuration, providers, models,
+     * agents, MCP, skills and plugins. `POST /location/reload` is the server's
+     * own "Shut down and rebuild every loaded location" (documented in the
+     * binary's OpenAPI route table; 204 measured live): pending permissions
+     * and forms are cancelled, running sessions continue at the next step.
+     *
+     * The rebuild includes THIS plugin, so the receipt is written to a marker
+     * before the POST. If the transport dies with the rebuild, the next
+     * instance to boot finds the marker and finishes the announcement; if the
+     * old instance survives, it answers and clears the marker. A failed POST
+     * with the instance still alive reports the error and clears it, so no
+     * stale "reloaded" message can appear later.
+     */
+    let reloading = false;
+    const performReload = async (origin?: string): Promise<void> => {
+      if (chatId === undefined) return;
+      if (reloading) {
+        await send(t("reload_started"), origin);
+        return;
+      }
+      if (!(await forms.connect())) {
+        await send(t("reload_api_down"), origin);
+        return;
+      }
+      reloading = true;
+      const at = Date.now();
+      const threadId = threadOf(origin);
+      try {
+        await send(t("reload_started"), origin);
+        writeReloadNotice({ chatId, threadId, at, stage: "pending" });
+        await forms.raw("POST", "/location/reload", {}, 120_000);
+        const secs = (Date.now() - at) / 1000;
+        writeReloadNotice({ chatId, threadId, at, stage: "done", secs });
+        await send(t("reload_ok", { secs: secs.toFixed(1) }), origin);
+        clearReloadNotice();
+      } catch (error) {
+        log("WARN", "reload", safe(error));
+        try {
+          await send(
+            t("reload_fail", { detail: escapeHtml(String((error as Error).message).slice(0, 200)) }),
+            origin,
+          );
+          // Alive enough to report: no boot notice is coming, drop the marker
+          // so a later restart cannot claim a reload that actually failed.
+          clearReloadNotice();
+        } catch {
+          // The transport died with the rebuild: leave the marker for the
+          // next instance, which is the only one that can still reach Telegram.
+        }
+      } finally {
+        reloading = false;
+      }
     };
 
     const handleCommand = async (name: string, argument: string, threadSession?: string): Promise<void> => {
@@ -3745,6 +3802,42 @@ const pluginExport = {
           } catch {
             await reply(t("config_parse_fail"));
           }
+          return;
+        }
+
+        case "reload": {
+          // /reload — the server's own location rebuild, with a confirmation
+          // when something is waiting on a human: the endpoint cancels
+          // pending forms and permissions, and doing that silently would
+          // strand a turn that was waiting for an answer.
+          const questions = openForms.size;
+          const permissions = pendingPermissions.size;
+          if (argument.trim().toLowerCase() === "force" || (questions === 0 && permissions === 0)) {
+            await performReload(threadSession);
+            return;
+          }
+          if (chatId === undefined) return;
+          await telegram
+            .sendMessage(
+              chatId,
+              t("reload_card_title") +
+                t("reload_card_body") +
+                t("reload_card_pending", { questions, permissions }) +
+                t("reload_card_foot"),
+              {
+                parseMode: "HTML",
+                messageThreadId: threadOf(threadSession),
+                replyMarkup: {
+                  inline_keyboard: [
+                    [
+                      { text: t("btn_reload_yes"), callback_data: "rl:ok" },
+                      { text: t("btn_cancel"), callback_data: "rl:no" },
+                    ],
+                  ],
+                },
+              },
+            )
+            .catch((error) => log("WARN", "reload ask", safe(error)));
           return;
         }
 
@@ -6216,6 +6309,26 @@ const pluginExport = {
                 }
                 return;
               }
+              if (payload === "rl:ok" || payload === "rl:no") {
+                // Confirmation of a /reload that would cancel pending forms or
+                // permissions. The card knows its thread; the session is the
+                // one that thread belongs to.
+                const thread = cq.message?.message_thread_id;
+                const origin =
+                  (thread !== undefined ? topicStore?.sessionOf(thread) : undefined) ?? targetSession();
+                const cardChat = cq.message?.chat?.id ?? chatId;
+                const cardMsg = cq.message?.message_id;
+                if (cardChat !== undefined && cardMsg !== undefined) {
+                  await telegram.editMessageReplyMarkup(cardChat, cardMsg).catch(() => undefined);
+                }
+                if (payload === "rl:no") {
+                  await ack(t("perm_cancelled"));
+                  return;
+                }
+                await ack(t("ack_running"));
+                await performReload(origin);
+                return;
+              }
               if (payload.startsWith("help:")) {
                 // help:<command> — the detailed section of the tapped
                 // command, from docs/COMMANDS.md (the source of truth).
@@ -7517,6 +7630,29 @@ const pluginExport = {
         .catch((error) => log("ERROR", "longPoll", safe(error)));
     }
 
+    /**
+     * A `/reload` tears down the very instance that asked for it, so its
+     * receipt can be lost mid-flight. The marker written before the POST is
+     * the hand-off: whichever instance boots next and owns the chat finishes
+     * the announcement (src/reload-notice.ts).
+     */
+    const announceReloadReceipt = async (): Promise<void> => {
+      if (chatId === undefined) return;
+      const notice = readFreshReloadNotice(chatId);
+      if (!notice) return;
+      clearReloadNotice();
+      const receipt =
+        notice.stage === "done" && notice.secs !== undefined
+          ? t("reload_ok_boot", { secs: notice.secs.toFixed(1) })
+          : t("reload_ok_reboot");
+      await telegram
+        .sendMessage(chatId, receipt, {
+          parseMode: "HTML",
+          ...(notice.threadId !== undefined ? { messageThreadId: notice.threadId } : {}),
+        })
+        .catch((error) => log("WARN", "reload receipt", safe(error)));
+    };
+
     async function start(): Promise<void> {
       if (started) return;
       started = true;
@@ -7534,6 +7670,7 @@ const pluginExport = {
       renderer.start();
       startTaskTimer();
       startPoll();
+      void announceReloadReceipt();
       log("INFO", `bot ${spec.name} listo (${config.mode})`);
     }
 

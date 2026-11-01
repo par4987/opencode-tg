@@ -570,3 +570,20 @@ O apagamento é **delimitado por caminho**: `Remove-Item` (e `rm`, `del`, `rmdir
 - `/watch off` → não observa nada
 
 **Notas**: Com `mirror: all` na config, `/watch <id>` silencia o resto.
+
+## Servidor
+
+### /reload
+
+**O que faz**: Força o servidor a reler config, providers, modelos, agentes, MCP, skills e plugins, sem reiniciar o processo.
+
+**Uso**: `/reload` ou `/reload force`
+
+**Exemplos**:
+- `/reload` → relê tudo e confirma quanto tempo levou
+- `/reload force` → recarrega mesmo com uma pergunta pendente (ela é cancelada)
+
+**Notas**:
+- Usa `POST /location/reload`, o rebuild de locations do próprio servidor.
+- Perguntas e permissões pendentes são canceladas; as sessões em curso continuam no próximo passo.
+- Se o plugin reiniciar durante a recarga, o aviso chega quando ele voltar.

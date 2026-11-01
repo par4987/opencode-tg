@@ -570,3 +570,20 @@ Silme **yolla sınırlıdır**: `Remove-Item` (ve `rm`, `del`, `rmdir`...) proje
 - `/watch off` → hiçbir şeyi izleme
 
 **Notlar**: Config'te `mirror: all` iken `/watch <id>`, diğerlerini susturur.
+
+## Sunucu
+
+### /reload
+
+**Ne yapar**: Süreci yeniden başlatmadan sunucuyu yapılandırmayı, sağlayıcıları, modelleri, ajanları, MCP'yi, becerileri ve eklentileri yeniden okumaya zorlar.
+
+**Kullanım**: `/reload` veya `/reload force`
+
+**Örnekler**:
+- `/reload` → her şeyi yeniden okur ve ne kadar sürdüğünü bildirir
+- `/reload force` → bekleyen bir soru olsa bile yeniden yükler (soru iptal edilir)
+
+**Notlar**:
+- Sunucunun kendi location rebuild'i olan `POST /location/reload` kullanılır.
+- Bekleyen sorular ve izinler iptal edilir; süren oturumlar sonraki adımda devam eder.
+- Eklenti yeniden yükleme sırasında yeniden başlarsa onay dönüşte gelir.

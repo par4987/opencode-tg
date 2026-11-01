@@ -571,3 +571,20 @@ Das Löschen ist **pfadbegrenzt**: `Remove-Item` (und `rm`, `del`, `rmdir`...) i
 - `/watch off` → beobachte nichts
 
 **Hinweise**: Mit `mirror: all` in der Konfiguration stellt `/watch <id>` die anderen stumm.
+
+## Server
+
+### /reload
+
+**Was es tut**: Zwingt den Server, Konfiguration, Provider, Modelle, Agenten, MCP, Skills und Plugins ohne Neustart des Prozesses neu zu lesen.
+
+**Verwendung**: `/reload` oder `/reload force`
+
+**Beispiele**:
+- `/reload` → liest alles neu und meldet die Dauer
+- `/reload force` → lädt auch bei einer offenen Frage neu (sie wird abgebrochen)
+
+**Hinweise**:
+- Nutzt `POST /location/reload`, den Location-Rebuild des Servers.
+- Offene Fragen und Berechtigungen werden abgebrochen; laufende Sitzungen machen beim nächsten Schritt weiter.
+- Startet das Plugin während des Neuladens neu, kommt die Bestätigung nach dem Wiederanlauf.

@@ -18,6 +18,19 @@ import { join } from "node:path";
 type Catalog = Record<string, string>;
 
 const ES: Catalog = {
+
+  // /reload — recarga forzada (es)
+  reload_started: "♻️ Recargando config, providers, modelos, agentes, MCP, skills y plugins…",
+  reload_ok: "✅ Configuración recargada en {secs}s.\nSe releyeron config, providers, modelos, agentes, MCP, skills y plugins.\nLas sesiones en curso siguen en el próximo paso.",
+  reload_ok_boot: "✅ Configuración recargada ({secs}s). El plugin volvió a arrancar con los servicios nuevos.",
+  reload_ok_reboot: "✅ Configuración recargada. El plugin volvió a arrancar con los servicios nuevos.",
+  reload_api_down: "❌ La API local no responde — sin ella no puedo forzar la recarga.",
+  reload_fail: "❌ La recarga falló: {detail}",
+  reload_card_title: "♻️ Recargar la configuración del servidor",
+  reload_card_body: "\n\nEsto relee config, providers, modelos, agentes, MCP, skills y plugins, sin reiniciar el server.",
+  reload_card_pending: "\n\n⚠️ Se cancelarán {questions} pregunta(s) y {permissions} permiso(s) pendientes.",
+  reload_card_foot: "\n\n¿Seguir?",
+  btn_reload_yes: "♻️ Sí, recargar",
   // legacy keys (kept for the migration backlog)
   sending_prompt: "📤 a <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> está trabajando — encolado. Se envía solo al terminar el turno.",
@@ -783,6 +796,19 @@ const ES: Catalog = {
 };
 
 const EN: Catalog = {
+
+  // /reload — recarga forzada (en)
+  reload_started: "♻️ Reloading config, providers, models, agents, MCP, skills and plugins…",
+  reload_ok: "✅ Configuration reloaded in {secs}s.\nRe-read: config, providers, models, agents, MCP, skills and plugins.\nRunning sessions continue at the next step.",
+  reload_ok_boot: "✅ Configuration reloaded ({secs}s). The plugin restarted with the new services.",
+  reload_ok_reboot: "✅ Configuration reloaded. The plugin restarted with the new services.",
+  reload_api_down: "❌ The local API is not responding — without it I cannot force the reload.",
+  reload_fail: "❌ Reload failed: {detail}",
+  reload_card_title: "♻️ Reload the server configuration",
+  reload_card_body: "\n\nThis re-reads config, providers, models, agents, MCP, skills and plugins without restarting the server.",
+  reload_card_pending: "\n\n⚠️ {questions} pending question(s) and {permissions} permission(s) will be cancelled.",
+  reload_card_foot: "\n\nContinue?",
+  btn_reload_yes: "♻️ Yes, reload",
   sending_prompt: "📤 to <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> is working — queued. It sends itself when the turn ends.",
   no_title: "(no title)",
@@ -1535,6 +1561,19 @@ const EN: Catalog = {
  * dos três ande em paralelo; placeholders e HTML são intocáveis.
  */
 const PT: Catalog = {
+
+  // /reload — recarga forzada (pt)
+  reload_started: "♻️ Recarregando config, providers, modelos, agentes, MCP, skills e plugins…",
+  reload_ok: "✅ Configuração recarregada em {secs}s.\nRelidos: config, providers, modelos, agentes, MCP, skills e plugins.\nAs sessões em curso continuam no próximo passo.",
+  reload_ok_boot: "✅ Configuração recarregada ({secs}s). O plugin voltou a arrancar com os serviços novos.",
+  reload_ok_reboot: "✅ Configuração recarregada. O plugin voltou a arrancar com os serviços novos.",
+  reload_api_down: "❌ A API local não responde — sem ela não posso forçar a recarga.",
+  reload_fail: "❌ A recarga falhou: {detail}",
+  reload_card_title: "♻️ Recarregar a configuração do servidor",
+  reload_card_body: "\n\nIsto relê config, providers, modelos, agentes, MCP, skills e plugins, sem reiniciar o servidor.",
+  reload_card_pending: "\n\n⚠️ Serão canceladas {questions} pergunta(s) e {permissions} permissão(ões) pendentes.",
+  reload_card_foot: "\n\nContinuar?",
+  btn_reload_yes: "♻️ Sim, recarregar",
   sending_prompt: "📤 pra <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> está trabalhando — na fila. Vai sozinho ao terminar o turno.",
   no_title: "(sem título)",
@@ -2263,6 +2302,19 @@ const PT: Catalog = {
  * Sprachen parallel läuft; Platzhalter und HTML sind unantastbar.
  */
 const DE: Catalog = {
+
+  // /reload — recarga forzada (de)
+  reload_started: "♻️ Konfiguration, Provider, Modelle, Agenten, MCP, Skills und Plugins werden neu geladen…",
+  reload_ok: "✅ Konfiguration in {secs}s neu geladen.\nNeu gelesen: Konfiguration, Provider, Modelle, Agenten, MCP, Skills und Plugins.\nLaufende Sitzungen machen beim nächsten Schritt weiter.",
+  reload_ok_boot: "✅ Konfiguration neu geladen ({secs}s). Das Plugin ist mit den neuen Diensten neu gestartet.",
+  reload_ok_reboot: "✅ Konfiguration neu geladen. Das Plugin ist mit den neuen Diensten neu gestartet.",
+  reload_api_down: "❌ Die lokale API antwortet nicht — ohne sie kann ich das Neuladen nicht erzwingen.",
+  reload_fail: "❌ Neuladen fehlgeschlagen: {detail}",
+  reload_card_title: "♻️ Serverkonfiguration neu laden",
+  reload_card_body: "\n\nDies liest Konfiguration, Provider, Modelle, Agenten, MCP, Skills und Plugins neu ein, ohne den Server neu zu starten.",
+  reload_card_pending: "\n\n⚠️ {questions} offene Frage(n) und {permissions} Berechtigung(en) werden abgebrochen.",
+  reload_card_foot: "\n\nWeiter?",
+  btn_reload_yes: "♻️ Ja, neu laden",
   sending_prompt: "📤 an <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> arbeitet — in die Warteschlange gestellt. Geht von selbst raus, wenn der Turn endet.",
   no_title: "(ohne Titel)",
@@ -2991,6 +3043,19 @@ const DE: Catalog = {
  * langages avance en parallèle ; les placeholders et le HTML sont intouchables.
  */
 const FR: Catalog = {
+
+  // /reload — recarga forzada (fr)
+  reload_started: "♻️ Rechargement de la config, des providers, modèles, agents, MCP, skills et plugins…",
+  reload_ok: "✅ Configuration rechargée en {secs}s.\nRechargés : config, providers, modèles, agents, MCP, skills et plugins.\nLes sessions en cours continuent à l'étape suivante.",
+  reload_ok_boot: "✅ Configuration rechargée ({secs}s). Le plugin a redémarré avec les nouveaux services.",
+  reload_ok_reboot: "✅ Configuration rechargée. Le plugin a redémarré avec les nouveaux services.",
+  reload_api_down: "❌ L'API locale ne répond pas — sans elle, impossible de forcer le rechargement.",
+  reload_fail: "❌ Échec du rechargement : {detail}",
+  reload_card_title: "♻️ Recharger la configuration du serveur",
+  reload_card_body: "\n\nCela relit config, providers, modèles, agents, MCP, skills et plugins, sans redémarrer le serveur.",
+  reload_card_pending: "\n\n⚠️ {questions} question(s) et {permissions} permission(s) en attente seront annulées.",
+  reload_card_foot: "\n\nContinuer ?",
+  btn_reload_yes: "♻️ Oui, recharger",
   sending_prompt: "📤 vers <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> travaille — mis en file d'attente. Il part tout seul à la fin du tour.",
   no_title: "(sans titre)",
@@ -3719,6 +3784,19 @@ const FR: Catalog = {
  * lingue viaggia in parallelo; placeholder e HTML sono intoccabili.
  */
 const IT: Catalog = {
+
+  // /reload — recarga forzada (it)
+  reload_started: "♻️ Ricaricamento di config, provider, modelli, agenti, MCP, skill e plugin…",
+  reload_ok: "✅ Configurazione ricaricata in {secs}s.\nRiletti: config, provider, modelli, agenti, MCP, skill e plugin.\nLe sessioni in corso proseguono al passo successivo.",
+  reload_ok_boot: "✅ Configurazione ricaricata ({secs}s). Il plugin è ripartito con i nuovi servizi.",
+  reload_ok_reboot: "✅ Configurazione ricaricata. Il plugin è ripartito con i nuovi servizi.",
+  reload_api_down: "❌ L'API locale non risponde — senza di essa non posso forzare il ricaricamento.",
+  reload_fail: "❌ Ricaricamento fallito: {detail}",
+  reload_card_title: "♻️ Ricarica la configurazione del server",
+  reload_card_body: "\n\nQuesto rilegge config, provider, modelli, agenti, MCP, skill e plugin, senza riavviare il server.",
+  reload_card_pending: "\n\n⚠️ Verranno annullate {questions} domanda/e e {permissions} permesso/i in sospeso.",
+  reload_card_foot: "\n\nContinuare?",
+  btn_reload_yes: "♻️ Sì, ricarica",
   sending_prompt: "📤 a <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> sta lavorando — in coda. Parte da solo a turno finito.",
   no_title: "(senza titolo)",
@@ -4447,6 +4525,19 @@ const IT: Catalog = {
  * antar-bahasa jalan paralel; placeholder dan HTML tidak boleh diubah.
  */
 const ID: Catalog = {
+
+  // /reload — recarga forzada (id)
+  reload_started: "♻️ Memuat ulang config, provider, model, agen, MCP, skill, dan plugin…",
+  reload_ok: "✅ Konfigurasi dimuat ulang dalam {secs}d.\nDimuat ulang: config, provider, model, agen, MCP, skill, dan plugin.\nSesi yang berjalan lanjut pada langkah berikutnya.",
+  reload_ok_boot: "✅ Konfigurasi dimuat ulang ({secs}d). Plugin mulai lagi dengan layanan baru.",
+  reload_ok_reboot: "✅ Konfigurasi dimuat ulang. Plugin mulai lagi dengan layanan baru.",
+  reload_api_down: "❌ API lokal tidak merespons — tanpanya saya tidak bisa memaksa muat ulang.",
+  reload_fail: "❌ Muat ulang gagal: {detail}",
+  reload_card_title: "♻️ Muat ulang konfigurasi server",
+  reload_card_body: "\n\nIni membaca ulang config, provider, model, agen, MCP, skill, dan plugin, tanpa memulai ulang server.",
+  reload_card_pending: "\n\n⚠️ {questions} pertanyaan dan {permissions} izin yang tertunda akan dibatalkan.",
+  reload_card_foot: "\n\nLanjut?",
+  btn_reload_yes: "♻️ Ya, muat ulang",
   sending_prompt: "📤 ke <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> sedang bekerja — diantrikan. Terkirim sendiri saat turn selesai.",
   no_title: "(tanpa judul)",
@@ -5175,6 +5266,19 @@ const ID: Catalog = {
  * параллельно; плейсхолдеры и HTML неприкосновенны.
  */
 const RU: Catalog = {
+
+  // /reload — recarga forzada (ru)
+  reload_started: "♻️ Перезагружаю конфигурацию, провайдеров, модели, агентов, MCP, навыки и плагины…",
+  reload_ok: "✅ Конфигурация перезагружена за {secs}с.\nПеречитаны: конфигурация, провайдеры, модели, агенты, MCP, навыки и плагины.\nТекущие сессии продолжатся на следующем шаге.",
+  reload_ok_boot: "✅ Конфигурация перезагружена ({secs}с). Плагин перезапустился с новыми сервисами.",
+  reload_ok_reboot: "✅ Конфигурация перезагружена. Плагин перезапустился с новыми сервисами.",
+  reload_api_down: "❌ Локальный API не отвечает — без него перезагрузку не форсировать.",
+  reload_fail: "❌ Перезагрузка не удалась: {detail}",
+  reload_card_title: "♻️ Перезагрузить конфигурацию сервера",
+  reload_card_body: "\n\nЭто перечитает конфигурацию, провайдеров, модели, агентов, MCP, навыки и плагины без перезапуска сервера.",
+  reload_card_pending: "\n\n⚠️ Будут отменены {questions} вопрос(ов) и {permissions} разрешени(й), ожидающих ответа.",
+  reload_card_foot: "\n\nПродолжить?",
+  btn_reload_yes: "♻️ Да, перезагрузить",
   sending_prompt: "📤 в <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> работает — поставлено в очередь. Уйдёт само, когда ход завершится.",
   no_title: "(без названия)",
@@ -5903,6 +6007,19 @@ const RU: Catalog = {
  * yürür; yer tutucular ve HTML dokunulmaz.
  */
 const TR: Catalog = {
+
+  // /reload — recarga forzada (tr)
+  reload_started: "♻️ Yapılandırma, sağlayıcılar, modeller, ajanlar, MCP, beceriler ve eklentiler yeniden yükleniyor…",
+  reload_ok: "✅ Yapılandırma {secs}sn içinde yeniden yüklendi.\nYeniden okundu: yapılandırma, sağlayıcılar, modeller, ajanlar, MCP, beceriler ve eklentiler.\nSüren oturumlar sonraki adımda devam eder.",
+  reload_ok_boot: "✅ Yapılandırma yeniden yüklendi ({secs}sn). Eklenti yeni servislerle yeniden başladı.",
+  reload_ok_reboot: "✅ Yapılandırma yeniden yüklendi. Eklenti yeni servislerle yeniden başladı.",
+  reload_api_down: "❌ Yerel API yanıt vermiyor — o olmadan yeniden yüklemeyi zorlayamam.",
+  reload_fail: "❌ Yeniden yükleme başarısız: {detail}",
+  reload_card_title: "♻️ Sunucu yapılandırmasını yeniden yükle",
+  reload_card_body: "\n\nBu, sunucuyu yeniden başlatmadan yapılandırma, sağlayıcılar, modeller, ajanlar, MCP, beceriler ve eklentileri yeniden okur.",
+  reload_card_pending: "\n\n⚠️ Bekleyen {questions} soru ve {permissions} izin iptal edilecek.",
+  reload_card_foot: "\n\nDevam?",
+  btn_reload_yes: "♻️ Evet, yeniden yükle",
   sending_prompt: "📤 <b>{label}</b> <code>{id}…</code>'ya\n{text}",
   queued_notice: "📥 <b>{label}</b> çalışıyor — sıraya alındı. Tur bitince kendiliğinden gider.",
   no_title: "(başlıksız)",
@@ -6633,6 +6750,19 @@ const TR: Catalog = {
  * 占位符与 HTML 标签保持不变。
  */
 const ZH: Catalog = {
+
+  // /reload — recarga forzada (zh)
+  reload_started: "♻️ 正在重新加载配置、提供商、模型、代理、MCP、技能和插件…",
+  reload_ok: "✅ 配置已在 {secs} 秒内重新加载。\n已重新读取：配置、提供商、模型、代理、MCP、技能和插件。\n进行中的会话将在下一步继续。",
+  reload_ok_boot: "✅ 配置已重新加载（{secs} 秒）。插件已使用新服务重新启动。",
+  reload_ok_reboot: "✅ 配置已重新加载。插件已使用新服务重新启动。",
+  reload_api_down: "❌ 本地 API 无响应——没有它无法强制重新加载。",
+  reload_fail: "❌ 重新加载失败：{detail}",
+  reload_card_title: "♻️ 重新加载服务器配置",
+  reload_card_body: "\n\n这会重新读取配置、提供商、模型、代理、MCP、技能和插件，无需重启服务器。",
+  reload_card_pending: "\n\n⚠️ 将取消 {questions} 个待答问题和 {permissions} 个待处理权限。",
+  reload_card_foot: "\n\n继续？",
+  btn_reload_yes: "♻️ 是，重新加载",
   sending_prompt: "📤 发送至 <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> 正在工作 — 已排队。轮次结束后自动发送。",
   no_title: "（无标题）",
@@ -7361,6 +7491,19 @@ const ZH: Catalog = {
  * 하고, 플레이스홀더와 HTML은 건드리지 않습니다.
  */
 const KO: Catalog = {
+
+  // /reload — recarga forzada (ko)
+  reload_started: "♻️ 구성, 공급자, 모델, 에이전트, MCP, 스킬, 플러그인을 다시 불러오는 중…",
+  reload_ok: "✅ 구성을 {secs}초 만에 다시 불러왔습니다.\n다시 읽음: 구성, 공급자, 모델, 에이전트, MCP, 스킬, 플러그인.\n진행 중인 세션은 다음 단계에서 계속됩니다.",
+  reload_ok_boot: "✅ 구성이 다시 로드되었습니다({secs}초). 플러그인이 새 서비스로 다시 시작되었습니다.",
+  reload_ok_reboot: "✅ 구성이 다시 로드되었습니다. 플러그인이 새 서비스로 다시 시작되었습니다.",
+  reload_api_down: "❌ 로컬 API가 응답하지 않습니다 — 없으면 다시 로드를 강제할 수 없습니다.",
+  reload_fail: "❌ 다시 로드 실패: {detail}",
+  reload_card_title: "♻️ 서버 구성 다시 로드",
+  reload_card_body: "\n\n서버를 재시작하지 않고 구성, 공급자, 모델, 에이전트, MCP, 스킬, 플러그인을 다시 읽습니다.",
+  reload_card_pending: "\n\n⚠️ 대기 중인 질문 {questions}개와 권한 {permissions}개가 취소됩니다.",
+  reload_card_foot: "\n\n계속할까요?",
+  btn_reload_yes: "♻️ 예, 다시 로드",
   sending_prompt: "📤 <b>{label}</b> <code>{id}…</code>로\n{text}",
   queued_notice: "📥 <b>{label}</b> 작업 중 — 대기열에 들어갔어요. 턴이 끝나면 자동으로 전송돼요.",
   no_title: "(제목 없음)",
@@ -8089,6 +8232,19 @@ const KO: Catalog = {
  * مع الحفاظ على العناصر النائبة ووسوم HTML كما هي.
  */
 const AR: Catalog = {
+
+  // /reload — recarga forzada (ar)
+  reload_started: "♻️ إعادة تحميل الإعدادات والمزوّدين والنماذج والوكلاء وMCP والمهارات والإضافات…",
+  reload_ok: "✅ تمت إعادة تحميل الإعدادات في {secs} ثانية.\nأُعيدت قراءة: الإعدادات، المزوّدون، النماذج، الوكلاء، MCP، المهارات والإضافات.\nالجلسات الجارية تُكمل في الخطوة التالية.",
+  reload_ok_boot: "✅ تمت إعادة تحميل الإعدادات ({secs} ثانية). أُعيد تشغيل الإضافة بالخدمات الجديدة.",
+  reload_ok_reboot: "✅ تمت إعادة تحميل الإعدادات. أُعيد تشغيل الإضافة بالخدمات الجديدة.",
+  reload_api_down: "❌ واجهة API المحلية لا تستجيب — بدونها لا يمكن فرض إعادة التحميل.",
+  reload_fail: "❌ فشلت إعادة التحميل: {detail}",
+  reload_card_title: "♻️ إعادة تحميل إعدادات الخادم",
+  reload_card_body: "\n\nهذا يعيد قراءة الإعدادات والمزوّدين والنماذج والوكلاء وMCP والمهارات والإضافات دون إعادة تشغيل الخادم.",
+  reload_card_pending: "\n\n⚠️ ستُلغى {questions} أسئلة و{permissions} أذونات معلّقة.",
+  reload_card_foot: "\n\nمتابعة؟",
+  btn_reload_yes: "♻️ نعم، أعد التحميل",
   sending_prompt: "📤 إلى <b>{label}</b> <code>{id}…</code>\n{text}",
   queued_notice: "📥 <b>{label}</b> يعمل — وُضع في الطابور. يُرسل تلقائيًا عند انتهاء الدور.",
   no_title: "(بدون عنوان)",
