@@ -822,6 +822,19 @@ const ES: Catalog = {
   macro_deleted: "🗑️ Macro <b>{name}</b> borrada.",
   macro_not_deleted: "🔎 No existe la macro <b>{name}</b> para borrar.",
   recent_pick: "Tocá uno para reenviarlo a su sesión:",
+  // /lost — sesiones que el server ya no tiene en memoria
+  lost_notice: "⚠️ La sesión <b>{label}</b> no está activa en el servidor (se reinició o la cerraste en la PC).",
+  lost_what_now: "¿Qué querés hacer?",
+  btn_new_session_in_project: "➕ Nueva sesión en este proyecto",
+  btn_all_sessions: "📋 Todas las sesiones",
+  btn_retry: "🔄 Reintentar",
+  lost_header: "🔍 <b>Sesiones perdidas ({n})</b>\n{body}",
+  lost_none: "🔍 No hay sesiones perdidas registradas todavía.",
+  lost_pick: "Tocá una para reabrirla en su proyecto:",
+  lost_reopened: "✅ Nueva sesión en <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ No se pudo crear la sesión.",
+  lost_retry_hint: "Reenviá tu mensaje al hilo de esa sesión, o creá una nueva con <code>/new</code>.",
+  lost_use_command: "Usá <code>/lost</code> para ver las sesiones perdidas y reabrirlas.",
 };
 
 const EN: Catalog = {
@@ -1612,6 +1625,19 @@ const EN: Catalog = {
   macro_deleted: "🗑️ Macro <b>{name}</b> deleted.",
   macro_not_deleted: "🔎 No such macro <b>{name}</b> to delete.",
   recent_pick: "Tap one to resend it to its session:",
+  // /lost — sessions the server no longer holds in memory
+  lost_notice: "⚠️ Session <b>{label}</b> is not active on the server (it restarted, or you closed it on the PC).",
+  lost_what_now: "What would you like to do?",
+  btn_new_session_in_project: "➕ New session in this project",
+  btn_all_sessions: "📋 All sessions",
+  btn_retry: "🔄 Retry",
+  lost_header: "🔍 <b>Lost sessions ({n})</b>\n{body}",
+  lost_none: "🔍 No lost sessions registered yet.",
+  lost_pick: "Tap one to reopen it in its project:",
+  lost_reopened: "✅ New session in <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ Could not create the session.",
+  lost_retry_hint: "Re-send your message to that session's thread, or create a new one with <code>/new</code>.",
+  lost_use_command: "Use <code>/lost</code> to see lost sessions and reopen them.",
 };
 
 /**
@@ -2382,6 +2408,19 @@ const PT: Catalog = {
   macro_deleted: "🗑️ Macro <b>{name}</b> excluída.",
   macro_not_deleted: "🔎 Não existe a macro <b>{name}</b> para excluir.",
   recent_pick: "Toque um para reenviar à sessão dele:",
+  // /lost — sessões que o servidor não mantém mais na memória
+  lost_notice: "⚠️ A sessão <b>{label}</b> não está ativa no servidor (ele reiniciou ou você fechou no PC).",
+  lost_what_now: "O que você quer fazer?",
+  btn_new_session_in_project: "➕ Nova sessão neste projeto",
+  btn_all_sessions: "📋 Todas as sessões",
+  btn_retry: "🔄 Tentar novamente",
+  lost_header: "🔍 <b>Sessões perdidas ({n})</b>\n{body}",
+  lost_none: "🔍 Nenhuma sessão perdida registrada ainda.",
+  lost_pick: "Toque em uma para reabri-la no projeto dela:",
+  lost_reopened: "✅ Nova sessão em <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ Não foi possível criar a sessão.",
+  lost_retry_hint: "Reenvie sua mensagem ao tópico dessa sessão, ou crie uma nova com <code>/new</code>.",
+  lost_use_command: "Use <code>/lost</code> para ver as sessões perdidas e reabri-las.",
 };
 
 /**
@@ -3152,6 +3191,19 @@ const DE: Catalog = {
   macro_deleted: "🗑️ Makro <b>{name}</b> gelöscht.",
   macro_not_deleted: "🔎 Makro <b>{name}</b> nicht zum Löschen gefunden.",
   recent_pick: "Tippen Sie einen, um ihn an seine Sitzung weiterzuleiten:",
+  // /lost — Sessions, die der Server nicht mehr im Speicher hält
+  lost_notice: "⚠️ Die Sitzung <b>{label}</b> ist auf dem Server nicht aktiv (er wurde neu gestartet oder du hast sie auf dem PC geschlossen).",
+  lost_what_now: "Was möchtest du tun?",
+  btn_new_session_in_project: "➕ Neue Sitzung in diesem Projekt",
+  btn_all_sessions: "📋 Alle Sitzungen",
+  btn_retry: "🔄 Wiederholen",
+  lost_header: "🔍 <b>Verlorene Sitzungen ({n})</b>\n{body}",
+  lost_none: "🔍 Noch keine verlorenen Sitzungen registriert.",
+  lost_pick: "Tippe eine, um sie in ihrem Projekt wieder zu öffnen:",
+  lost_reopened: "✅ Neue Sitzung in <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ Sitzung konnte nicht erstellt werden.",
+  lost_retry_hint: "Sende deine Nachricht erneut an den Thread dieser Sitzung, oder erstelle eine neue mit <code>/new</code>.",
+  lost_use_command: "Nutze <code>/lost</code>, um verlorene Sitzungen zu sehen und wieder zu öffnen.",
 };
 
 /**
@@ -3922,6 +3974,19 @@ const FR: Catalog = {
   macro_deleted: "🗑️ Macro <b>{name}</b> supprimée.",
   macro_not_deleted: "🔎 Aucune macro <b>{name}</b> à supprimer.",
   recent_pick: "Appuyez sur l'un pour le renvoyer à sa session:",
+  // /lost — sessions que le serveur ne garde plus en mémoire
+  lost_notice: "⚠️ La session <b>{label}</b> n'est pas active sur le serveur (il a redémarré ou tu l'as fermée sur le PC).",
+  lost_what_now: "Que voulez-vous faire ?",
+  btn_new_session_in_project: "➕ Nouvelle session dans ce projet",
+  btn_all_sessions: "📋 Toutes les sessions",
+  btn_retry: "🔄 Réessayer",
+  lost_header: "🔍 <b>Sessions perdues ({n})</b>\n{body}",
+  lost_none: "🔍 Aucune session perdue enregistrée pour l'instant.",
+  lost_pick: "Appuyez sur l'une pour la rouvrir dans son projet:",
+  lost_reopened: "✅ Nouvelle session dans <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ Impossible de créer la session.",
+  lost_retry_hint: "Renvoyez votre message au sujet de cette session, ou créez-en une nouvelle avec <code>/new</code>.",
+  lost_use_command: "Utilisez <code>/lost</code> pour voir les sessions perdues et les rouvrir.",
 };
 
 /**
@@ -4692,6 +4757,19 @@ const IT: Catalog = {
   macro_deleted: "🗑️ Macro <b>{name}</b> eliminata.",
   macro_not_deleted: "🔎 Nessuna macro <b>{name}</b> da eliminare.",
   recent_pick: "Tocca uno per rinviarlo alla sua sessione:",
+  // /lost — sessioni che il server non tiene più in memoria
+  lost_notice: "⚠️ La sessione <b>{label}</b> non è attiva sul server (si è riavviato o l'hai chiusa sul PC).",
+  lost_what_now: "Cosa vuoi fare?",
+  btn_new_session_in_project: "➕ Nuova sessione in questo progetto",
+  btn_all_sessions: "📋 Tutte le sessioni",
+  btn_retry: "🔄 Riprova",
+  lost_header: "🔍 <b>Sessioni perse ({n})</b>\n{body}",
+  lost_none: "🔍 Nessuna sessione persa registrata per ora.",
+  lost_pick: "Tocca una per riaprirla nel suo progetto:",
+  lost_reopened: "✅ Nuova sessione in <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ Impossibile creare la sessione.",
+  lost_retry_hint: "Rinvia il tuo messaggio al thread di questa sessione, o creane una nuova con <code>/new</code>.",
+  lost_use_command: "Usa <code>/lost</code> per vedere le sessioni perse e riaprirle.",
 };
 
 /**
@@ -5462,6 +5540,19 @@ const ID: Catalog = {
   macro_deleted: "🗑️ Makro <b>{name}</b> dihapus.",
   macro_not_deleted: "🔎 Makro <b>{name}</b> tidak ada untuk dihapus.",
   recent_pick: "Ketuk salah satu untuk mengirimkannya kembali ke sesinya:",
+  // /lost — sesi yang server tidak lagi memuat di memori
+  lost_notice: "⚠️ Sesi <b>{label}</b> tidak aktif di server (server restart atau kamu menutupnya di PC).",
+  lost_what_now: "Apa yang ingin kamu lakukan?",
+  btn_new_session_in_project: "➕ Sesi baru di proyek ini",
+  btn_all_sessions: "📋 Semua sesi",
+  btn_retry: "🔄 Coba lagi",
+  lost_header: "🔍 <b>Sesi hilang ({n})</b>\n{body}",
+  lost_none: "🔍 Belum ada sesi hilang yang tercatat.",
+  lost_pick: "Ketuk satu untuk membukanya kembali di proyeknya:",
+  lost_reopened: "✅ Sesi baru di <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ Tidak bisa membuat sesi.",
+  lost_retry_hint: "Kirim ulang pesan Anda ke topik sesi ini, atau buat yang baru dengan <code>/new</code>.",
+  lost_use_command: "Gunakan <code>/lost</code> untuk melihat sesi hilang dan membukanya kembali.",
 };
 
 /**
@@ -6232,6 +6323,19 @@ const RU: Catalog = {
   macro_deleted: "🗑️ Макрос <b>{name}</b> удалён.",
   macro_not_deleted: "🔎 Макрос <b>{name}</b> не найден для удаления.",
   recent_pick: "Нажмите на один, чтобы отправить его снова в его сессию:",
+  // /lost — сессии, которые сервер больше не держит в памяти
+  lost_notice: "⚠️ Сессия <b>{label}</b> не активна на сервере (он перезапустился или вы закрыли её на ПК).",
+  lost_what_now: "Что вы хотите сделать?",
+  btn_new_session_in_project: "➕ Новая сессия в этом проекте",
+  btn_all_sessions: "📋 Все сессии",
+  btn_retry: "🔄 Повторить",
+  lost_header: "🔍 <b>Потерянные сессии ({n})</b>\n{body}",
+  lost_none: "🔍 Потерянные сессии не зарегистрированы.",
+  lost_pick: "Нажмите на одну, чтобы открыть её снова в её проекте:",
+  lost_reopened: "✅ Новая сессия в <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ Не удалось создать сессию.",
+  lost_retry_hint: "Отправьте ваше сообщение повторно в ветку этой сессии, или создайте новую с помощью <code>/new</code>.",
+  lost_use_command: "Используйте <code>/lost</code>, чтобы увидеть потерянные сессии и открыть их снова.",
 };
 
 /**
@@ -7004,6 +7108,19 @@ const TR: Catalog = {
   macro_deleted: "🗑️ Makro <b>{name}</b> silindi.",
   macro_not_deleted: "🔎 Silinecek <b>{name}</b> adlı makro bulunamadı.",
   recent_pick: "Oturumuna yeniden göndermek için birine dokunun:",
+  // /lost — sunucu artık belleğinde tutmuyor
+  lost_notice: "⚠️ <b>{label}</b> oturumu sunucuda aktif değil (sunucu yeniden başlatıldı veya PC'de kapattınız).",
+  lost_what_now: "Ne yapmak istersiniz?",
+  btn_new_session_in_project: "➕ Bu projede yeni oturum",
+  btn_all_sessions: "📋 Tüm oturumlar",
+  btn_retry: "🔄 Tekrar dene",
+  lost_header: "🔍 <b>Kayıp oturumlar ({n})</b>\n{body}",
+  lost_none: "🔍 Henüz kayıp oturum kayıtlı değil.",
+  lost_pick: "Tek birine dokunarak projesinde yeniden açın:",
+  lost_reopened: "✅ <b>{name}</b> projede yeni oturum: <code>{id}…</code>",
+  lost_create_fail: "❌ Oturum oluşturulamadı.",
+  lost_retry_hint: "Mesajınızı o oturumun konusuna yeniden gönderin veya <code>/new</code> ile yeni bir oturum oluşturun.",
+  lost_use_command: "Kayıp oturumları görmek ve yeniden açmak için <code>/lost</code> komutunu kullanın.",
 };
 
 /**
@@ -7774,6 +7891,19 @@ const ZH: Catalog = {
   macro_deleted: "🗑️ 宏 <b>{name}</b> 已删除。",
   macro_not_deleted: "🔎 没有名为 <b>{name}</b> 的宏可删除。",
   recent_pick: "点击任意一个以将其重新发送到其会话：",
+  // /lost — 服务器不再保留在内存中的会话
+  lost_notice: "⚠️ 会话 <b>{label}</b> 在服务器上不活跃（服务器已重启，或你在 PC 上关闭了它）。",
+  lost_what_now: "你想做什么？",
+  btn_new_session_in_project: "➕ 在此项目中新建会话",
+  btn_all_sessions: "📋 所有会话",
+  btn_retry: "🔄 重试",
+  lost_header: "🔍 <b>丢失的会话 ({n})</b>\n{body}",
+  lost_none: "🔍 暂无已注册的丢失会话。",
+  lost_pick: "点击任意一个在其项目中重新打开：",
+  lost_reopened: "✅ 在 <b>{name}</b> 中新建会话：<code>{id}…</code>",
+  lost_create_fail: "❌ 无法创建会话。",
+  lost_retry_hint: "将你的消息重新发送到该会话的话题，或用 <code>/new</code> 创建一个新会话。",
+  lost_use_command: "使用 <code>/lost</code> 查看丢失的会话并重新打开它们。",
 };
 
 /**
@@ -8544,6 +8674,19 @@ const KO: Catalog = {
   macro_deleted: "🗑️ 매크로 <b>{name}</b> 삭제됨.",
   macro_not_deleted: "🔎 삭제할 <b>{name}</b> 매크로를 찾을 수 없음.",
   recent_pick: "세션으로 다시 보내려면 하나를 탭하세요:",
+  // /lost — 서버가 더 이상 메모리에 보관하지 않는 세션
+  lost_notice: "⚠️ <b>{label}</b> 세션이 서버에서 활성 상태가 아님 (서버 재시작 또는 PC에서 종료).",
+  lost_what_now: "무엇을 하고 싶으신가요?",
+  btn_new_session_in_project: "➕ 이 프로젝트에 새 세션",
+  btn_all_sessions: "📋 모든 세션",
+  btn_retry: "🔄 다시 시도",
+  lost_header: "🔍 <b>잃어버린 세션 ({n})</b>\n{body}",
+  lost_none: "🔍 등록된 잃어버린 세션 없음.",
+  lost_pick: "하나를 탭하여 해당 프로젝트에서 다시 엽니다:",
+  lost_reopened: "✅ <b>{name}</b> 프로젝트에 새 세션: <code>{id}…</code>",
+  lost_create_fail: "❌ 세션을 만들 수 없음.",
+  lost_retry_hint: "해당 세션의 스레드에 메시지를 다시 보내거나, <code>/new</code>로 새 세션을 만드세요.",
+  lost_use_command: "잃어버린 세션을 보고 다시 열려면 <code>/lost</code>를 사용하세요.",
 };
 
 /**
@@ -9314,6 +9457,19 @@ const AR: Catalog = {
   macro_deleted: "🗑️ تم حذف الماكرو <b>{name}</b>.",
   macro_not_deleted: "🔎 لا توجد ماكرو باسم <b>{name}</b> للحذف.",
   recent_pick: "انقر على أي منها لإعادة إرساله إلى الجلسة الخاصة به:",
+  // /lost — الجلسات التي لا يحتفظ بها الخادم في الذاكرة
+  lost_notice: "⚠️ الجلسة <b>{label}</b> غير نشطة في الخادم (أُعيد تشغيله أو أغلقتها في الحاسوب).",
+  lost_what_now: "ماذا تريد أن تفعل؟",
+  btn_new_session_in_project: "➕ جلسة جديدة في هذا المشروع",
+  btn_all_sessions: "📋 جميع الجلسات",
+  btn_retry: "🔄 إعادة المحاولة",
+  lost_header: "🔍 <b>الجلسات المفقودة ({n})</b>\n{body}",
+  lost_none: "🔍 لا توجد جلسات مفقودة مسجلة حتى الآن.",
+  lost_pick: "انقر على أي منها لفتحها مرة أخرى في مشروعها:",
+  lost_reopened: "✅ جلسة جديدة في <b>{name}</b>: <code>{id}…</code>",
+  lost_create_fail: "❌ تعذر إنشاء الجلسة.",
+  lost_retry_hint: "أعد إرسال رسالتك إلى موضوع الجلسة هذه، أو أنشئ جلسة جديدة بـ<code>/new</code>.",
+  lost_use_command: "استخدم <code>/lost</code> لرؤية الجلسات المفقودة وإعادة فتحها.",
 };
 
 const CATALOGS: Record<string, Catalog> = {

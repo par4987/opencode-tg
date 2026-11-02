@@ -60,6 +60,12 @@ import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
 import { readRecent, addRecent, type RecentPrompt } from "./src/recent.js";
 import { readMacros, saveMacro, deleteMacro, findMacro, type Macro } from "./src/macros.js";
+import {
+  readLostSessions,
+  addLostSession,
+  removeLostSession,
+  type LostSession,
+} from "./src/lost-sessions.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, servicePassword, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
 
@@ -2321,10 +2327,14 @@ const pluginExport = {
         // SessionNotFound is the unloaded-session state, verified live: the
         // server only holds sessions in memory and never reloads them from
         // disk — after a restart (or once the PC closes one) every
-        // id-addressed call 404s until it is opened again. Saying so plainly
-        // beats a cryptic 404 the user cannot act on.
+        // id-addressed call 404s until it is opened again. Record it so
+        // /lost can show "which sessions did I lose?" and offer one-tap
+        // reopen instead of a dead end.
         if (raw.includes("SessionNotFound")) {
-          await send(t("session_not_found_restart"), replyThread);
+          const tracked = sessions.get(target);
+          const directory = tracked?.directory ?? readSessionMeta(target)?.directory;
+          addLostSession(target, tracked?.title, directory);
+          await sendLostSessionNotice(target, tracked?.title ?? target.slice(0, 18), replyThread);
         } else {
           await send(t("err_send_fail", { detail: escapeHtml(raw.slice(0, 300)) }), replyThread);
         }
@@ -2368,6 +2378,38 @@ const pluginExport = {
         return;
       }
       await deliver(text, target, files, sessionId, false, skills);
+    };
+
+    /**
+     * SessionNotFound happened: tell the user plainly and offer one-tap
+     * actions — create a new session in the same project, list all sessions,
+     * or retry (re-send the prompt manually).
+     */
+    const sendLostSessionNotice = async (
+      sessionID: string,
+      label: string,
+      threadSession?: string,
+    ): Promise<void> => {
+      if (chatId === undefined) return;
+      const tracked = sessions.get(sessionID);
+      const directory = tracked?.directory ?? readSessionMeta(sessionID)?.directory;
+      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+      if (directory) {
+        rows.push([{ text: t("btn_new_session_in_project"), callback_data: `lost:new:${encodeURIComponent(directory)}` }]);
+      }
+      rows.push([
+        { text: t("btn_all_sessions"), callback_data: "lost:sessions" },
+        { text: t("btn_retry"), callback_data: `lost:retry:${sessionID}` },
+      ]);
+      await telegram.sendMessage(
+        chatId,
+        t("lost_notice", { label: escapeHtml(label) }) + "\n" + t("lost_what_now"),
+        {
+          parseMode: "HTML",
+          ...(threadSession ? { messageThreadId: threadOf(threadSession) } : {}),
+          replyMarkup: { inline_keyboard: rows },
+        },
+      );
     };
     /**
      * A Telegram photo (or image document) as a data: URI the prompt can
@@ -2950,6 +2992,7 @@ const pluginExport = {
       { command: "compact", description: "Compact context: /compact <ses_id?>" },
       { command: "locale", description: `Switch the bot's language: /locale <${availableLocales().join("|")}>` },
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
+      { command: "lost", description: "Sessions lost after a restart: /lost" },
       { command: "bots", description: "This bridge's bots and what each mirrors" },
       { command: "release", description: "Give this per-session bot back to the pool" },
       { command: "macro", description: "Named prompts: /macro save <name> <text> | run | list | del" },
@@ -4084,6 +4127,36 @@ const pluginExport = {
             return;
           }
           await reply(t("macro_usage"));
+          return;
+        }
+
+        case "lost": {
+          // /lost — sessions the user tried to reach but the server no longer
+          // holds in memory (after a restart, or once the PC closed them).
+          // Offers one-tap reopen: create a new session in the same project.
+          const lost = readLostSessions();
+          if (lost.length === 0) {
+            await reply(t("lost_none"));
+            return;
+          }
+          const lines: string[] = [];
+          const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+          for (const s of lost.slice(-10).reverse()) {
+            const ago = fmtAgo(s.at);
+            const dir = s.directory ? `\n  ${escapeHtml(s.directory)}` : "";
+            lines.push(`• <b>${escapeHtml(s.title ?? s.sessionID.slice(0, 18))}</b>${dir} — ${ago}`);
+            if (chatId !== undefined && s.directory) {
+              rows.push([{ text: `↪️ ${(s.title ?? s.sessionID.slice(0, 18))}`.slice(0, 40), callback_data: `lost:new:${encodeURIComponent(s.directory)}` }]);
+            }
+          }
+          await reply(t("lost_header", { n: lost.length, body: lines.join("\n") }));
+          if (rows.length > 0 && chatId !== undefined) {
+            await telegram.sendMessage(chatId, t("lost_pick"), {
+              parseMode: "HTML",
+              messageThreadId: threadOf(threadSession),
+              replyMarkup: { inline_keyboard: rows },
+            });
+          }
           return;
         }
 
@@ -7866,6 +7939,53 @@ const pluginExport = {
                     resolve({ outcome: { outcome: "cancelled" } });
                   }
                 }
+                return;
+              }
+              if (payload.startsWith("lost:new:")) {
+                // lost:new:<directory> — create a new session in the same
+                // project the lost session belonged to.
+                const directory = decodeURIComponent(payload.slice(9));
+                if (!(await forms.connect())) {
+                  await ack(t("api_down_ack"));
+                  return;
+                }
+                try {
+                  const created = await forms.request<{ id?: string }>("POST", "/session", {
+                    location: { directory },
+                  });
+                  if (!created?.id) {
+                    await ack(t("lost_create_fail"));
+                    return;
+                  }
+                  const id = created.id;
+                  track(id);
+                  const name = directory.split(/[\\/]/).filter(Boolean).pop() ?? directory;
+                  if (cq.message) {
+                    await telegram
+                      .editMessageText(
+                        cq.message.chat.id,
+                        cq.message.message_id,
+                        t("lost_reopened", { name: escapeHtml(name), id: id.slice(0, 22) }),
+                        { parseMode: "HTML" },
+                      )
+                      .catch(() => undefined);
+                  }
+                  await ack(t("session_created"));
+                } catch (error) {
+                  log("WARN", "lost new session", safe(error));
+                  await ack(t("lost_create_fail"));
+                }
+                return;
+              }
+              if (payload.startsWith("lost:retry:")) {
+                // lost:retry:<sessionID> — can't resend the original prompt
+                // from here; tell the user what to do.
+                await ack(t("lost_retry_hint"));
+                return;
+              }
+              if (payload === "lost:sessions") {
+                await ack();
+                await send(t("lost_use_command"));
                 return;
               }
               await ack();
