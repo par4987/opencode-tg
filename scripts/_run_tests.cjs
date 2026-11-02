@@ -37,6 +37,8 @@ const suites = [
   "_offsetcheck",
   "_extracheck",
   "_healthcheck",
+  "_macrocheck",
+  "_recentcheck",
   "_cicheck",
 ];
 

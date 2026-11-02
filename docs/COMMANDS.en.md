@@ -389,3 +389,36 @@ Deletion is **path-scoped**: `Remove-Item` (and `rm`, `del`, `rmdir`...) is allo
 - Only works in a session thread, not at chat root.
 - The panel is updated only when its content changes, to avoid constant edits.
 - Survives a /reload: state is persisted and the dashboard resumes on boot.
+
+## Macros and recents
+
+### /macro
+
+**What it does**: Save, list, delete and run named prompts, so you can resend them to any session with one tap.
+
+**Usage**: `/macro save <name> <text>` | `/macro run <name>` | `/macro list` | `/macro del <name>`
+
+**Examples**:
+- `/macro save deploy deploy to production` → saves the prompt under the name "deploy"
+- `/macro run deploy` → sends that prompt to the session of the current thread
+- `/macro list` → shows all saved macros
+- `/macro del deploy` → deletes the macro "deploy"
+
+**Notes**:
+- Stored in `~/.opencode/tg/data/macros.json` (same pattern as scheduled tasks).
+- The name is case-sensitive and cannot be empty.
+- `run` needs an active session: write from a session thread, or use `/use <id>` first from the chat root.
+
+### /recent
+
+**What it does**: Shows the last prompts you sent from this phone, with a button to resend any of them to its session.
+
+**Usage**: `/recent`
+
+**Examples**:
+- `/recent` → lists the last 10 prompts per session, each with a ↪️ button to resend it
+
+**Notes**:
+- Every prompt that reaches the agent is recorded (including `/macro run`).
+- Up to 200 entries, stored in `~/.opencode/tg/data/recent.json`.
+- Prompts are ordered from newest to oldest.

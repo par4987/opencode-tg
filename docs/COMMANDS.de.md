@@ -606,3 +606,36 @@ Das Löschen ist **pfadbegrenzt**: `Remove-Item` (und `rm`, `del`, `rmdir`...) i
 - Funktioniert nur in einem Sitzungs-Thread, nicht im Chat-Stamm.
 - Das Panel wird nur aktualisiert wenn sich der Inhalt ändert, um ständige Edits zu vermeiden.
 - Überlebt einen /reload: der Zustand wird persistiert und das Dashboard setzt sich beim Start fort.
+
+## Makros und Letzte Prompts
+
+### /macro
+
+**Was es tut**: Benannte Prompts speichern, auflisten, löschen und ausführen, um sie mit einem Tipp an jede Sitzung zu senden.
+
+**Verwendung**: `/macro save <name> <text>` | `/macro run <name>` | `/macro list` | `/macro del <name>`
+
+**Beispiele**:
+- `/macro save deploy deploy to production` → speichert den Prompt unter dem Namen "deploy"
+- `/macro run deploy` → sendet diesen Prompt an die Sitzung des aktuellen Threads
+- `/macro list` → zeigt alle gespeicherten Makros
+- `/macro del deploy` → löscht das Makro "deploy"
+
+**Hinweise**:
+- Gespeichert in `~/.opencode/tg/data/macros.json` (gleiches Muster wie geplante Aufgaben).
+- Der Name unterscheidet Groß- und Kleinschreibung und darf nicht leer sein.
+- `run` benötigt eine aktive Sitzung: aus einem Sitzungs-Thread schreiben, oder zuerst `/use <id>` von der Chat-Wurzel aus verwenden.
+
+### /recent
+
+**Was es tut**: Zeigt die letzten von diesem Telefon gesendeten Prompts mit einem Knopf zum erneuten Senden an dessen Sitzung.
+
+**Verwendung**: `/recent`
+
+**Beispiele**:
+- `/recent` → listet die letzten 10 Prompts pro Sitzung, jeder mit einer ↪️-Schaltfläche zum erneuten Senden
+
+**Hinweise**:
+- Jeder Prompt, der beim Agenten ankommt, wird aufgezeichnet (einschließlich `/macro run`).
+- Bis zu 200 Einträge, gespeichert in `~/.opencode/tg/data/recent.json`.
+- Prompts sind vom neuesten zum ältesten sortiert.

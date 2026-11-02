@@ -605,3 +605,36 @@ La cancellazione è **limitata per percorso**: `Remove-Item` (e `rm`, `del`, `rm
 - Funziona solo in un thread di sessione, non alla radice della chat.
 - La bacheca viene aggiornata solo quando il contenuto cambia, per evitare modifiche costanti.
 - Sopravvive a un /reload: lo stato viene persistito e la bacheca riprende all'avvio.
+
+## Macro e recenti
+
+### /macro
+
+**Cosa fa**: Salva, elenca, elimina ed esegue prompt nominati, per rinviarli a qualsiasi sessione con un tocco.
+
+**Uso**: `/macro save <nome> <testo>` | `/macro run <nome>` | `/macro list` | `/macro del <nome>`
+
+**Esempi**:
+- `/macro save deploy deploy to production` → salva il prompt con il nome "deploy"
+- `/macro run deploy` → invia quel prompt alla sessione del thread corrente
+- `/macro list` → mostra tutte le macro salvate
+- `/macro del deploy` → elimina la macro "deploy"
+
+**Note**:
+- Salvate in `~/.opencode/tg/data/macros.json` (stesso pattern delle task pianificate).
+- Il nome distingue maiuscole e minuscole e non può essere vuoto.
+- `run` richiede una sessione attiva: scrivi da un thread di sessione, oppure usa `/use <id>` prima dalla radice della chat.
+
+### /recent
+
+**Cosa fa**: Mostra gli ultimi prompt inviati da questo telefono, con un tasto per rinviarne uno qualsiasi alla sua sessione.
+
+**Uso**: `/recent`
+
+**Esempi**:
+- `/recent` → mostra gli ultimi 10 prompt per sessione, ciascuno con un tasto ↪️ per rinviarlo
+
+**Note**:
+- Ogni prompt che arriva all'agente viene registrato (incluso `/macro run`).
+- Fino a 200 voci, salvate in `~/.opencode/tg/data/recent.json`.
+- I prompt sono ordinati dal più recente al più vecchio.

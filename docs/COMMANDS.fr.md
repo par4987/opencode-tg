@@ -606,3 +606,36 @@ L'effacement est **limité par chemin**: `Remove-Item` (et `rm`, `del`, `rmdir`.
 - Fonctionne uniquement dans un fil de session, pas à la racine du chat.
 - Le panneau est mis à jour seulement quand son contenu change, pour éviter les modifications constantes.
 - Survit à un /reload : l'état est persistant et le tableau de bord reprend au démarrage.
+
+## Macros et récents
+
+### /macro
+
+**Ce que ça fait** : Enregistre, liste, supprime et exécute des prompts nommés pour les renvoyer à n'importe quelle session en un clic.
+
+**Utilisation** : `/macro save <nom> <texte>` | `/macro run <nom>` | `/macro list` | `/macro del <nom>`
+
+**Exemples** :
+- `/macro save deploy deploy to production` → enregistre le prompt sous le nom "deploy"
+- `/macro run deploy` → envoie ce prompt à la session du fil actuel
+- `/macro list` → affiche toutes les macros enregistrées
+- `/macro del deploy` → supprime la macro "deploy"
+
+**Notes** :
+- Enregistrées dans `~/.opencode/tg/data/macros.json` (même modèle que les tâches planifiées).
+- Le nom respecte la casse et ne peut pas être vide.
+- `run` nécessite une session active : écrivez depuis un fil de session, ou utilisez d'abord `/use <id>` depuis la racine du chat.
+
+### /recent
+
+**Ce que ça fait** : Affiche les derniers prompts envoyés depuis ce téléphone, avec un bouton pour renvoyer celui de votre choix à sa session.
+
+**Utilisation** : `/recent`
+
+**Exemples** :
+- `/recent` → liste les 10 derniers prompts par session, chacun avec un bouton ↪️ pour le renvoyer
+
+**Notes** :
+- Chaque prompt qui atteint l'agent est enregistré (y compris `/macro run`).
+- Jusqu'à 200 entrées, stockées dans `~/.opencode/tg/data/recent.json`.
+- Les prompts sont triés du plus récent au plus ancien.

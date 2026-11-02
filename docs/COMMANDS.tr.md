@@ -605,3 +605,36 @@ Silme **yolla sınırlıdır**: `Remove-Item` (ve `rm`, `del`, `rmdir`...) proje
 - Yalnızca bir oturum konusunda çalışır, sohbet kökünde değil.
 - Panel yalnızca içerik değiştiğinde güncellenir, sürekli düzenlenmemesi için.
 - /reload'dan sonra devam eder: durum kalıcıdır ve panel başlangıçta devam eder.
+
+## Makrolar ve Son İstekler
+
+### /macro
+
+**Ne yapar**: Adlandırılmış istekleri kaydeder, listeler, siler ve çalıştırır, böylece herhangi bir oturuma tek bir dokunuşla tekrar gönderilebilir.
+
+**Kullanım**: `/macro save <isim> <metin>` | `/macro run <isim>` | `/macro list` | `/macro del <isim>`
+
+**Örnekler**:
+- `/macro save deploy deploy to production` → isteği "deploy" adıyla kaydeder
+- `/macro run deploy` → bu isteği mevcut konudaki oturuma gönderir
+- `/macro list` → tüm kaydedilmiş makroları gösterir
+- `/macro del deploy` → "deploy" makrosunu siler
+
+**Notlar**:
+- `~/.opencode/tg/data/macros.json` dosyasında saklanır (zamanlanmış görevlerle aynı kalıp).
+- İsim büyük-küçük harfe duyarlı ve boş olamaz.
+- `run` aktif bir oturum gerektirir: bir oturum konusunda yazın veya sohbet kökünden önce `/use <id>` kullanın.
+
+### /recent
+
+**Ne yapar**: Bu telefondan gönderilen son istekleri gösterir, her birini tekrar onun oturumuna göndermek için bir düğmeyle.
+
+**Kullanım**: `/recent`
+
+**Örnekler**:
+- `/recent` → oturum başına son 10 isteği listeler, her biri ↪️ düğmesiyle tekrar gönderilir
+
+**Notlar**:
+- Ajene ulaşan her istek kaydedilir (`/macro run` dahil).
+- En fazla 200 giriş, `~/.opencode/tg/data/recent.json` dosyasında saklanır.
+- İstekler en yeniden eskiye doğru sıralanır.

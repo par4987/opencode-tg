@@ -58,6 +58,8 @@ import {
 } from "./src/new-session.js";
 import { commandSections } from "./src/help.js";
 import { readHistory, jsonlPath, entriesFromExport, type HistoryEntry } from "./src/history.js";
+import { readRecent, addRecent, type RecentPrompt } from "./src/recent.js";
+import { readMacros, saveMacro, deleteMacro, findMacro, type Macro } from "./src/macros.js";
 import { FormClient, choicesOf, answerFor, answerFree, parseFreeCommand, pickOption, formatAnswer, mergeAnswer, formComplete, formatFullAnswer, servicePassword, type FormInfo, type FormOption, type FormChoice } from "./src/forms.js";
 import type { Plugin } from "@opencode/plugin";
 
@@ -2311,6 +2313,8 @@ const pluginExport = {
         if (!sent?.id) log("WARN", `prompt a ${target.slice(0, 18)} sin message id`);
         // The watchdog starts here: this prompt now owes the session a turn.
         pendingPrompts.set(target, { sentAt: Date.now(), warned: false });
+        // Record every delivered prompt so /recent can replay it.
+        addRecent(target, text);
       } catch (error) {
         log("ERROR", "prompt", safe(error));
         const raw = String((error as Error).message);
@@ -2948,6 +2952,8 @@ const pluginExport = {
       { command: "usagestats", description: "Token/cost stats: /usagestats <days?>" },
       { command: "bots", description: "This bridge's bots and what each mirrors" },
       { command: "release", description: "Give this per-session bot back to the pool" },
+      { command: "macro", description: "Named prompts: /macro save <name> <text> | run | list | del" },
+      { command: "recent", description: "Replay recent prompts: /recent" },
 
       { command: "queue", description: "Show queued messages" },
       { command: "flush", description: "Send the queue now; /flush <text> steers" },
@@ -3975,6 +3981,109 @@ const pluginExport = {
           }
           await refreshDashboard(target);
           await reply(t("dashboard_on"));
+          return;
+        }
+
+        case "recent": {
+          // /recent — replay the last prompts sent from this phone: show the
+          // last few per session with a one-tap resend button.
+          const recents = readRecent();
+          if (recents.length === 0) {
+            await reply(t("recent_none"));
+            return;
+          }
+          const lines: string[] = [];
+          const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+          for (const r of recents.slice(-10).reverse()) {
+            const tracked = sessions.get(r.sessionID);
+            const label = tracked?.title ?? r.sessionID.slice(0, 18);
+            const short = r.text.replace(/\s+/g, " ").slice(0, 60);
+            lines.push(`• <b>${escapeHtml(label)}</b> — ${escapeHtml(short)}`);
+            if (chatId !== undefined) {
+              rows.push([{ text: `↪️ ${label.slice(0, 20)}`, callback_data: `recent:${r.at}` }]);
+            }
+          }
+          await reply(t("recent_header", { n: recents.length, body: lines.join("\n") }));
+          if (rows.length > 0 && chatId !== undefined) {
+            await telegram.sendMessage(chatId, t("recent_pick"), {
+              parseMode: "HTML",
+              messageThreadId: threadOf(threadSession),
+              replyMarkup: { inline_keyboard: rows },
+            });
+          }
+          return;
+        }
+
+        case "macro": {
+          // /macro save <name> <text> | /macro run <name> | /macro list |
+          // /macro del <name> — named prompts replayable into any session.
+          const [sub, ...rest] = argument.trim().split(/\s+/);
+          const target = threadSession || targetSession();
+          if (!sub) {
+            await reply(t("macro_usage"));
+            return;
+          }
+          if (sub === "save") {
+            if (!target) {
+              await reply(t("err_in_thread_project"));
+              return;
+            }
+            const name = rest.shift();
+            const text = rest.join(" ");
+            if (!name || !text) {
+              await reply(t("macro_usage"));
+              return;
+            }
+            const saved = saveMacro(name, text);
+            if (!saved) {
+              await reply(t("macro_usage"));
+              return;
+            }
+            await reply(t("macro_saved", { name: escapeHtml(saved.name) }));
+            return;
+          }
+          if (sub === "run") {
+            const name = rest.join(" ");
+            if (!name || !target) {
+              await reply(t("macro_usage"));
+              return;
+            }
+            const macro = findMacro(name);
+            if (!macro) {
+              await reply(t("macro_not_found", { name: escapeHtml(name) }));
+              return;
+            }
+            await sendPrompt(macro.text, target);
+            const tracked = sessions.get(target);
+            const label = tracked?.title ?? target.slice(0, 18);
+            await reply(t("macro_run_sent", { name: escapeHtml(macro.name), label: escapeHtml(label), text: escapeHtml(macro.text.slice(0, 200)) }));
+            return;
+          }
+          if (sub === "list") {
+            const macros = readMacros();
+            if (macros.length === 0) {
+              await reply(t("macro_list_none"));
+              return;
+            }
+            const lines = macros.map((m) => `• <b>${escapeHtml(m.name)}</b> — ${escapeHtml(m.text.slice(0, 60))}`).join("\n");
+            await reply(t("macro_list_header", { n: macros.length, body: lines }));
+            return;
+          }
+          if (sub === "del") {
+            const name = rest.join(" ");
+            if (!name) {
+              await reply(t("macro_usage"));
+              return;
+            }
+            const ok = deleteMacro(name);
+            if (!ok) {
+              await reply(t("macro_not_deleted", { name: escapeHtml(name) }));
+              return;
+            }
+            await reply(t("macro_deleted", { name: escapeHtml(name) }));
+            return;
+          }
+          await reply(t("macro_usage"));
           return;
         }
 

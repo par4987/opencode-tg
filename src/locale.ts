@@ -807,6 +807,21 @@ const ES: Catalog = {
   stt_memory_hint: "Apuntá <code>stt.model</code> a <code>models/ggml-base.bin</code> (~140 MB) o <code>models/ggml-tiny.bin</code> (~75 MB), o cerrá apps pesadas de la PC.",
   tool_cancelled: "cancelado",
   rename_no_suggestions: "sin sugerencias",
+  // /recent — prompts recientes con reenvío de un toque
+  recent_header: "🕒 <b>Prompts recientes ({n})</b>\n{body}",
+  recent_none: "🕒 Sin prompts recientes todavía.",
+  recent_resend: "↪️ Reenviar",
+  recent_sent: "📤 Reenviado a <b>{label}</b>: {text}",
+  // /macro — prompts con nombre
+  macro_usage: "Uso: /macro save <nombre> <texto> | /macro run <nombre> | /macro list | /macro del <nombre>",
+  macro_saved: "💾 Macro <b>{name}</b> guardada.",
+  macro_run_sent: "📤 Macro <b>{name}</b> enviada a <b>{label}</b>: {text}",
+  macro_not_found: "🔎 No existe la macro <b>{name}</b>. Usá /macro list para ver las guardadas.",
+  macro_list_header: "💾 <b>Macros guardadas ({n})</b>\n{body}",
+  macro_list_none: "💾 No hay macros guardadas todavía.",
+  macro_deleted: "🗑️ Macro <b>{name}</b> borrada.",
+  macro_not_deleted: "🔎 No existe la macro <b>{name}</b> para borrar.",
+  recent_pick: "Tocá uno para reenviarlo a su sesión:",
 };
 
 const EN: Catalog = {
@@ -1582,6 +1597,21 @@ const EN: Catalog = {
   stt_memory_hint: "Point <code>stt.model</code> at <code>models/ggml-base.bin</code> (~140 MB) or <code>models/ggml-tiny.bin</code> (~75 MB), or close heavy apps on the PC.",
   tool_cancelled: "cancelled",
   rename_no_suggestions: "no suggestions",
+  // /recent — recent prompts with one-tap resend
+  recent_header: "🕒 <b>Recent prompts ({n})</b>\n{body}",
+  recent_none: "🕒 No recent prompts yet.",
+  recent_resend: "↪️ Resend",
+  recent_sent: "📤 Resent to <b>{label}</b>: {text}",
+  // /macro — named prompts
+  macro_usage: "Usage: /macro save <name> <text> | /macro run <name> | /macro list | /macro del <name>",
+  macro_saved: "💾 Macro <b>{name}</b> saved.",
+  macro_run_sent: "📤 Macro <b>{name}</b> sent to <b>{label}</b>: {text}",
+  macro_not_found: "🔎 No such macro <b>{name}</b>. Use /macro list to see saved ones.",
+  macro_list_header: "💾 <b>Saved macros ({n})</b>\n{body}",
+  macro_list_none: "💾 No macros saved yet.",
+  macro_deleted: "🗑️ Macro <b>{name}</b> deleted.",
+  macro_not_deleted: "🔎 No such macro <b>{name}</b> to delete.",
+  recent_pick: "Tap one to resend it to its session:",
 };
 
 /**
@@ -2337,6 +2367,21 @@ const PT: Catalog = {
   stt_memory_hint: "Aponte <code>stt.model</code> pra <code>models/ggml-base.bin</code> (~140 MB) ou <code>models/ggml-tiny.bin</code> (~75 MB), ou feche apps pesadas do PC.",
   tool_cancelled: "cancelado",
   rename_no_suggestions: "sem sugestões",
+  // /recent — prompts recentes com reenvio de um toque
+  recent_header: "🕒 <b>Prompts recentes ({n})</b>\n{body}",
+  recent_none: "🕒 Sem prompts recentes ainda.",
+  recent_resend: "↪️ Reenviar",
+  recent_sent: "📤 Reenviado a <b>{label}</b>: {text}",
+  // /macro — prompts com nome
+  macro_usage: "Uso: /macro save <nome> <texto> | /macro run <nome> | /macro list | /macro del <nome>",
+  macro_saved: "💾 Macro <b>{name}</b> salva.",
+  macro_run_sent: "📤 Macro <b>{name}</b> enviada a <b>{label}</b>: {text}",
+  macro_not_found: "🔎 Não existe a macro <b>{name}</b>. Use /macro list para ver as salvas.",
+  macro_list_header: "💾 <b>Macros salvas ({n})</b>\n{body}",
+  macro_list_none: "💾 Nenhuma macro salva ainda.",
+  macro_deleted: "🗑️ Macro <b>{name}</b> excluída.",
+  macro_not_deleted: "🔎 Não existe a macro <b>{name}</b> para excluir.",
+  recent_pick: "Toque um para reenviar à sessão dele:",
 };
 
 /**
@@ -3092,6 +3137,21 @@ const DE: Catalog = {
   stt_memory_hint: "Zeige mit <code>stt.model</code> auf <code>models/ggml-base.bin</code> (~140 MB) oder <code>models/ggml-tiny.bin</code> (~75 MB), oder schließe schwere Apps auf dem PC.",
   tool_cancelled: "abgebrochen",
   rename_no_suggestions: "keine Vorschläge",
+  // /recent — letzte Prompts mit Ein-Tipp-Weiterleitung
+  recent_header: "🕒 <b>Letzte Prompts ({n})</b>\n{body}",
+  recent_none: "🕒 Noch keine letzten Prompts.",
+  recent_resend: "↪️ Weiterleiten",
+  recent_sent: "📤 Weitergeleitet an <b>{label}</b>: {text}",
+  // /macro — benannte Prompts
+  macro_usage: "Nutzung: /macro save <name> <text> | /macro run <name> | /macro list | /macro del <name>",
+  macro_saved: "💾 Makro <b>{name}</b> gespeichert.",
+  macro_run_sent: "📤 Makro <b>{name}</b> gesendet an <b>{label}</b>: {text}",
+  macro_not_found: "🔎 Makro <b>{name}</b> nicht gefunden. /macro list zeigt die gespeicherten.",
+  macro_list_header: "💾 <b>Gespeicherte Makros ({n})</b>\n{body}",
+  macro_list_none: "💾 Noch keine Makros gespeichert.",
+  macro_deleted: "🗑️ Makro <b>{name}</b> gelöscht.",
+  macro_not_deleted: "🔎 Makro <b>{name}</b> nicht zum Löschen gefunden.",
+  recent_pick: "Tippen Sie einen, um ihn an seine Sitzung weiterzuleiten:",
 };
 
 /**
@@ -3847,6 +3907,21 @@ const FR: Catalog = {
   stt_memory_hint: "Pointe <code>stt.model</code> vers <code>models/ggml-base.bin</code> (~140 Mo) ou <code>models/ggml-tiny.bin</code> (~75 Mo), ou ferme les apps lourdes du PC.",
   tool_cancelled: "annulé",
   rename_no_suggestions: "aucune suggestion",
+  // /recent — prompts récents avec renvoi en un clic
+  recent_header: "🕒 <b>Prompts récents ({n})</b>\n{body}",
+  recent_none: "🕒 Aucun prompt récent pour l'instant.",
+  recent_resend: "↪️ Renvoyer",
+  recent_sent: "📤 Renvoyé à <b>{label}</b>: {text}",
+  // /macro — prompts nommés
+  macro_usage: "Utilisation : /macro save <nom> <texte> | /macro run <nom> | /macro list | /macro del <nom>",
+  macro_saved: "💾 Macro <b>{name}</b> enregistrée.",
+  macro_run_sent: "📤 Macro <b>{name}</b> envoyée à <b>{label}</b>: {text}",
+  macro_not_found: "🔎 Aucune macro <b>{name}</b>. Utilisez /macro list pour voir les enregistrées.",
+  macro_list_header: "💾 <b>Macros enregistrées ({n})</b>\n{body}",
+  macro_list_none: "💾 Aucune macro enregistrée pour l'instant.",
+  macro_deleted: "🗑️ Macro <b>{name}</b> supprimée.",
+  macro_not_deleted: "🔎 Aucune macro <b>{name}</b> à supprimer.",
+  recent_pick: "Appuyez sur l'un pour le renvoyer à sa session:",
 };
 
 /**
@@ -4602,6 +4677,21 @@ const IT: Catalog = {
   stt_memory_hint: "Punta <code>stt.model</code> a <code>models/ggml-base.bin</code> (~140 MB) o <code>models/ggml-tiny.bin</code> (~75 MB), oppure chiudi le app pesanti del PC.",
   tool_cancelled: "annullato",
   rename_no_suggestions: "nessun suggerimento",
+  // /recent — prompt recenti con inoltro con un tocco
+  recent_header: "🕒 <b>Prompt recenti ({n})</b>\n{body}",
+  recent_none: "🕒 Nessun prompt recente per ora.",
+  recent_resend: "↪️ Rinvia",
+  recent_sent: "📤 Rinviato a <b>{label}</b>: {text}",
+  // /macro — prompt nominati
+  macro_usage: "Uso: /macro save <nome> <testo> | /macro run <nome> | /macro list | /macro del <nome>",
+  macro_saved: "💾 Macro <b>{name}</b> salvata.",
+  macro_run_sent: "📤 Macro <b>{name}</b> inviata a <b>{label}</b>: {text}",
+  macro_not_found: "🔎 Nessuna macro <b>{name}</b>. Usa /macro list per vedere quelle salvate.",
+  macro_list_header: "💾 <b>Macro salvate ({n})</b>\n{body}",
+  macro_list_none: "💾 Nessuna macro salvata per ora.",
+  macro_deleted: "🗑️ Macro <b>{name}</b> eliminata.",
+  macro_not_deleted: "🔎 Nessuna macro <b>{name}</b> da eliminare.",
+  recent_pick: "Tocca uno per rinviarlo alla sua sessione:",
 };
 
 /**
@@ -5357,6 +5447,21 @@ const ID: Catalog = {
   stt_memory_hint: "Arahkan <code>stt.model</code> ke <code>models/ggml-base.bin</code> (~140 MB) atau <code>models/ggml-tiny.bin</code> (~75 MB), atau tutup aplikasi berat di PC.",
   tool_cancelled: "dibatalkan",
   rename_no_suggestions: "tidak ada saran",
+  // /recent — prompt terbaru dengan kirim ulang satu ketukan
+  recent_header: "🕒 <b>Prompt terbaru ({n})</b>\n{body}",
+  recent_none: "🕒 Belum ada prompt terbaru.",
+  recent_resend: "↪️ Kirim ulang",
+  recent_sent: "📤 Dikirim ulang ke <b>{label}</b>: {text}",
+  // /macro — prompt bernama
+  macro_usage: "Penggunaan: /macro save <nama> <teks> | /macro run <nama> | /macro list | /macro del <nama>",
+  macro_saved: "💾 Makro <b>{name}</b> disimpan.",
+  macro_run_sent: "📤 Makro <b>{name}</b> dikirim ke <b>{label}</b>: {text}",
+  macro_not_found: "🔎 Makro <b>{name}</b> tidak ada. Gunakan /macro list untuk melihat yang disimpan.",
+  macro_list_header: "💾 <b>Makro disimpan ({n})</b>\n{body}",
+  macro_list_none: "💾 Belum ada makro disimpan.",
+  macro_deleted: "🗑️ Makro <b>{name}</b> dihapus.",
+  macro_not_deleted: "🔎 Makro <b>{name}</b> tidak ada untuk dihapus.",
+  recent_pick: "Ketuk salah satu untuk mengirimkannya kembali ke sesinya:",
 };
 
 /**
@@ -6112,6 +6217,21 @@ const RU: Catalog = {
   stt_memory_hint: "Направь <code>stt.model</code> на <code>models/ggml-base.bin</code> (~140 МБ) или <code>models/ggml-tiny.bin</code> (~75 МБ), либо закрой на ПК тяжёлые приложения.",
   tool_cancelled: "отменено",
   rename_no_suggestions: "вариантов нет",
+  // /recent — недавние промпты с повторной отправкой одним тапом
+  recent_header: "🕒 <b>Недавние промпты ({n})</b>\n{body}",
+  recent_none: "🕒 Пока нет недавних промптов.",
+  recent_resend: "↪️ Отправить снова",
+  recent_sent: "📤 Отправлено снова в <b>{label}</b>: {text}",
+  // /macro — именованные промпты
+  macro_usage: "Использование: /macro save <имя> <текст> | /macro run <имя> | /macro list | /macro del <имя>",
+  macro_saved: "💾 Макрос <b>{name}</b> сохранён.",
+  macro_run_sent: "📤 Макрос <b>{name}</b> отправлен в <b>{label}</b>: {text}",
+  macro_not_found: "🔎 Макроса <b>{name}</b> не существует. /macro list покажет сохранённые.",
+  macro_list_header: "💾 <b>Сохранённые макросы ({n})</b>\n{body}",
+  macro_list_none: "💾 Пока нет сохранённых макросов.",
+  macro_deleted: "🗑️ Макрос <b>{name}</b> удалён.",
+  macro_not_deleted: "🔎 Макрос <b>{name}</b> не найден для удаления.",
+  recent_pick: "Нажмите на один, чтобы отправить его снова в его сессию:",
 };
 
 /**
@@ -6869,6 +6989,21 @@ const TR: Catalog = {
   stt_memory_hint: "<code>stt.model</code>'i <code>models/ggml-base.bin</code> (~140 MB) ya da <code>models/ggml-tiny.bin</code> (~75 MB) olarak işaretle, ya da PC'deki ağır uygulamaları kapat.",
   tool_cancelled: "iptal edildi",
   rename_no_suggestions: "öneri yok",
+  // /recent — son istemler, tek bir dokunuşla yeniden gönderme
+  recent_header: "🕒 <b>Son istekler ({n})</b>\n{body}",
+  recent_none: "🕒 Henüz son istek yok.",
+  recent_resend: "↪️ Yeniden gönder",
+  recent_sent: "📤 <b>{label}</b>'ye yeniden gönderildi: {text}",
+  // /macro — adlandırılmış istekler
+  macro_usage: "Kullanım: /macro save <isim> <metin> | /macro run <isim> | /macro list | /macro del <isim>",
+  macro_saved: "💾 Makro <b>{name}</b> kaydedildi.",
+  macro_run_sent: "📤 Makro <b>{name}</b> gönderildi <b>{label}</b>: {text}",
+  macro_not_found: "🔎 <b>{name}</b> adlı makro yok. /macro list kayıtlıları gösterir.",
+  macro_list_header: "💾 <b>Kayıtlı makrolar ({n})</b>\n{body}",
+  macro_list_none: "📤 Henüz kayıtlı makro yok.",
+  macro_deleted: "🗑️ Makro <b>{name}</b> silindi.",
+  macro_not_deleted: "🔎 Silinecek <b>{name}</b> adlı makro bulunamadı.",
+  recent_pick: "Oturumuna yeniden göndermek için birine dokunun:",
 };
 
 /**
@@ -7624,6 +7759,21 @@ const ZH: Catalog = {
   stt_memory_hint: "把 <code>stt.model</code> 指向 <code>models/ggml-base.bin</code>（约 140 MB）或 <code>models/ggml-tiny.bin</code>（约 75 MB），或关闭 PC 上的重型应用。",
   tool_cancelled: "已取消",
   rename_no_suggestions: "无建议",
+  // /recent — 最近提示，轻点即重发
+  recent_header: "🕒 <b>最近提示 ({n})</b>\n{body}",
+  recent_none: "🕒 暂无最近提示。",
+  recent_resend: "↪️ 重新发送",
+  recent_sent: "📤 已重新发送到 <b>{label}</b>: {text}",
+  // /macro — 命名提示
+  macro_usage: "用法：/macro save <名称> <文本> | /macro run <名称> | /macro list | /macro del <名称>",
+  macro_saved: "💾 宏 <b>{name}</b> 已保存。",
+  macro_run_sent: "📤 宏 <b>{name}</b> 已发送到 <b>{label}</b>: {text}",
+  macro_not_found: "🔎 找不到宏 <b>{name}</b>。使用 /macro list 查看已保存的。",
+  macro_list_header: "💾 <b>已保存宏 ({n})</b>\n{body}",
+  macro_list_none: "💾 暂无已保存宏。",
+  macro_deleted: "🗑️ 宏 <b>{name}</b> 已删除。",
+  macro_not_deleted: "🔎 没有名为 <b>{name}</b> 的宏可删除。",
+  recent_pick: "点击任意一个以将其重新发送到其会话：",
 };
 
 /**
@@ -8379,6 +8529,21 @@ const KO: Catalog = {
   stt_memory_hint: "<code>stt.model</code>을 <code>models/ggml-base.bin</code> (~140 MB) 또는 <code>models/ggml-tiny.bin</code> (~75 MB)으로 지정하거나, PC의 무거운 앱을 닫아요.",
   tool_cancelled: "취소됨",
   rename_no_suggestions: "추천 없음",
+  // /recent — 최근 프롬프트, 한 번 터치로 재전송
+  recent_header: "🕒 <b>최근 프롬프트 ({n})</b>\n{body}",
+  recent_none: "🕒 아직 최근 프롬프트 없음.",
+  recent_resend: "↪️ 다시 보내기",
+  recent_sent: "📤 <b>{label}</b>에 다시 전송됨: {text}",
+  // /macro — 이름 붙은 프롬프트
+  macro_usage: "사용법: /macro save <이름> <텍스트> | /macro run <이름> | /macro list | /macro del <이름>",
+  macro_saved: "💾 매크로 <b>{name}</b> 저장됨.",
+  macro_run_sent: "📤 매크로 <b>{name}</b> <b>{label}</b>로 전송됨: {text}",
+  macro_not_found: "🔎 <b>{name}</b> 매크로가 없습니다. /macro list로 저장된 매크로를 보세요.",
+  macro_list_header: "💾 <b>저장된 매크로 ({n})</b>\n{body}",
+  macro_list_none: "💾 저장된 매크로 없음.",
+  macro_deleted: "🗑️ 매크로 <b>{name}</b> 삭제됨.",
+  macro_not_deleted: "🔎 삭제할 <b>{name}</b> 매크로를 찾을 수 없음.",
+  recent_pick: "세션으로 다시 보내려면 하나를 탭하세요:",
 };
 
 /**
@@ -9134,6 +9299,21 @@ const AR: Catalog = {
   stt_memory_hint: "وجِّه <code>stt.model</code> إلى <code>models/ggml-base.bin</code> (~140 ميجابايت) أو <code>models/ggml-tiny.bin</code> (~75 ميجابايت)، أو أغلق التطبيقات الثقيلة على الحاسوب.",
   tool_cancelled: "أُلغي",
   rename_no_suggestions: "لا اقتراحات",
+  // /recent — المقتطفات الأخيرة، إعادة إرسال بنقرة واحدة
+  recent_header: "🕒 <b>المقتطفات الأخيرة ({n})</b>\n{body}",
+  recent_none: "🕒 لا توجد مقتطفات حديثة حتى الآن.",
+  recent_resend: "↪️ إعادة الإرسال",
+  recent_sent: "📤 أُعيد الإرسال إلى <b>{label}</b>: {text}",
+  // /macro — المقتطفات المسماة
+  macro_usage: "الاستخدام: /macro save <الاسم> <النص> | /macro run <الاسم> | /macro list | /macro del <الاسم>",
+  macro_saved: "💾 تم حفظ الماكرو <b>{name}</b>.",
+  macro_run_sent: "📤 أُرسل الماكرو <b>{name}</b> إلى <b>{label}</b>: {text}",
+  macro_not_found: "🔎 الماكرو <b>{name}</b> غير موجود. استخدم /macro list لعرض المحفوظة.",
+  macro_list_header: "💾 <b>الماكرو المحفوظة ({n})</b>\n{body}",
+  macro_list_none: "💾 لا توجد ماكرو محفوظة حتى الآن.",
+  macro_deleted: "🗑️ تم حذف الماكرو <b>{name}</b>.",
+  macro_not_deleted: "🔎 لا توجد ماكرو باسم <b>{name}</b> للحذف.",
+  recent_pick: "انقر على أي منها لإعادة إرساله إلى الجلسة الخاصة به:",
 };
 
 const CATALOGS: Record<string, Catalog> = {

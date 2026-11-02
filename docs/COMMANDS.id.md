@@ -606,3 +606,36 @@ Penghapusan **dibatasi per path**: `Remove-Item` (dan `rm`, `del`, `rmdir`...) d
 - Hanya berfungsi di topik sesi, bukan di root obrolan.
 - Panel diperbarui hanya saat konten berubah, menghindari edit konstan.
 - Tetap bertahan setelah /reload: state tersimpan dan dashboard dilanjutkan saat boot.
+
+## Makro dan Terbaru
+
+### /macro
+
+**Apa fungsinya**: Simpan, daftar, hapus dan jalankan prompt dengan nama untuk mengirimnya ulang ke semua sesi dengan satu ketukan.
+
+**Pemakaian**: `/macro save <nama> <teks>` | `/macro run <nama>` | `/macro list` | `/macro del <nama>`
+
+**Contoh**:
+- `/macro save deploy deploy to production` → simpan prompt dengan nama "deploy"
+- `/macro run deploy` → kirim prompt itu ke sesi topik saat ini
+- `/macro list` → tampilkan semua makro yang disimpan
+- `/macro del deploy` → hapus makro "deploy"
+
+**Catatan**:
+- Disimpan di `~/.opencode/tg/data/macros.json` (pola yang sama dengan tugas terjadwal).
+- Nama bersifat case-sensitive dan tidak boleh kosong.
+- `run` membutuhkan sesi aktif: tulis dari topik sesi, atau gunakan `/use <id>` dari root obrolan terlebih dahulu.
+
+### /recent
+
+**Apa fungsinya**: Tampilkan prompt terakhir yang dikirim dari ponsel ini, dengan tombol untuk mengirim ulang salah satunya ke sesinya.
+
+**Pemakaian**: `/recent`
+
+**Contoh**:
+- `/recent` → daftar 10 prompt terakhir per sesi, masing-masing dengan tombol ↪️ untuk mengirim ulang
+
+**Catatan**:
+- Setiap prompt yang sampai ke agen dicatat (termasuk `/macro run`).
+- Maksimal 200 entri, disimpan di `~/.opencode/tg/data/recent.json`.
+- Prompt diurutkan dari terbaru ke terlama.

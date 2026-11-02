@@ -605,3 +605,36 @@ O apagamento é **delimitado por caminho**: `Remove-Item` (e `rm`, `del`, `rmdir
 - Funciona apenas em um tópico de sessão, não na raiz do chat.
 - O painel é atualizado apenas quando o conteúdo muda, evitando edições constantes.
 - Sobrevive a um /reload: o estado é persistido e o painel retoma no arranque.
+
+## Macros e recentes
+
+### /macro
+
+**O que faz**: Salva, lista, apaga e executa prompts com nome, para reenviá-los a qualquer sessão com um toque.
+
+**Uso**: `/macro save <nome> <texto>` | `/macro run <nome>` | `/macro list` | `/macro del <nome>`
+
+**Exemplos**:
+- `/macro save deploy despliega a produccion` → guarda o prompt com o nome "deploy"
+- `/macro run deploy` → envia esse prompt para a sessão do tópico atual
+- `/macro list` → mostra todas as macros salvas
+- `/macro del deploy` → apaga a macro "deploy"
+
+**Notas**:
+- Salvas em `~/.opencode/tg/data/macros.json` (mesmo padrão das tarefas agendadas).
+- O nome diferencia maiúsculas e não pode ficar vazio.
+- `run` precisa de uma sessão ativa: escreva em um tópico de sessão, ou use `/use <id>` primeiro da raiz do chat.
+
+### /recent
+
+**O que faz**: Mostra os últimos prompts que você enviou deste telefone, com um botão para reenviar qualquer um deles à sua sessão.
+
+**Uso**: `/recent`
+
+**Exemplos**:
+- `/recent` → lista os últimos 10 prompts por sessão, cada um com um botão ↪️ para reenviar
+
+**Notas**:
+- Cada prompt que chega ao agente é gravado (incluindo o de `/macro run`).
+- Até 200 entradas, salvas em `~/.opencode/tg/data/recent.json`.
+- Os prompts ficam ordenados do mais novo para o mais antigo.
