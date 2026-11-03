@@ -38,7 +38,12 @@ export function saveMacro(name: string, text: string, file: string = macrosFile(
   if (!trimmed || !trimmedText) return undefined;
   const all = readMacros(file);
   const existing = all.findIndex((m) => m.name === trimmed);
-  const macro: Macro = { name: trimmed, text: trimmedText, at: Date.now() };
+  // `readMacros` sorts newest-first, so `all[0]` holds the highest `at`.
+  // Guaranteeing a strictly increasing stamp keeps the order deterministic
+  // when two saves land in the same millisecond (fast CI): ties no longer
+  // depend on sort stability or object insertion order.
+  const newestAt = all.length > 0 ? all[0].at : 0;
+  const macro: Macro = { name: trimmed, text: trimmedText, at: Math.max(Date.now(), newestAt + 1) };
   if (existing >= 0) all[existing] = macro;
   else all.push(macro);
   const obj: Record<string, Macro> = {};
