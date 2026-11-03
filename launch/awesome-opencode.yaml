@@ -1,0 +1,84 @@
+name: opencode-tg
+repo: https://github.com/par4987/opencode-tg
+tagline: "Telegram bridge inside the OpenCode server: one forum thread per session, live replies"
+description: >
+  Telegram bridge that runs inside the OpenCode server as a plugin, so it sees the
+  same sessions and events as the desktop app — no second process, no mirrored
+  database, no activity heuristics. Each session — and each subagent — gets its
+  own forum thread: writing in a thread prompts that session, and the reply
+  streams back live with text, reasoning, edit diffs and tool output. Answer the
+  agent's questions and approve or deny permissions with inline buttons, run shell
+  commands behind a three-tier guard (read-only passes, service-breaking asks with
+  a plain-language explanation, irreversible or evasion-vector commands are
+  blocked), browse the project tree, attach files, schedule recurring tasks,
+  switch models and agents, watch the repo's CI runs, export transcripts and steer
+  the message queue mid-turn. Optional multi-bot topologies (one bot per project
+  or per session) and a dead-prompt watchdog that reports the real cause — out of
+  credits, rate limit, retired model — when a turn never starts. Voice notes are
+  transcribed locally with whisper.cpp (no cloud, no keys) or any
+  OpenAI-compatible API. UI translated into 12 languages. Zero runtime
+  dependencies: @opencode/plugin is imported type-only.
+min_version: 2.0.15
+homepage: https://github.com/par4987/opencode-tg#readme
+scope:
+  - global
+tags:
+  - telegram
+  - mobile
+  - remote-control
+  - notifications
+  - permissions
+  - voice
+  - multi-session
+  - forum-topics
+installation: |
+  ## 1. Add the plugin
+
+  OpenCode installs npm plugins with Bun at startup. In `opencode.jsonc` (global
+  or project):
+
+  ```jsonc
+  {
+    "plugin": ["opencode-tg"]
+  }
+  ```
+
+  ## 2. Create the bot and the forum
+
+  Create a bot with [@BotFather](https://t.me/BotFather), then create a Telegram
+  group with **Topics** enabled (group settings → Topics) and add the bot as an
+  administrator with permission to manage topics. Each OpenCode session becomes
+  a topic in that group.
+
+  ## 3. Store the credentials
+
+  `~/.opencode/tg/.env` — read by the plugin, never written, never committed:
+
+  ```
+  TELEGRAM_BOT_TOKEN=123456:ABC...
+  ALLOWED_USERS=123456789
+  ```
+
+  `ALLOWED_USERS` is a comma-separated list of Telegram user ids; everyone else
+  is ignored.
+
+  ## 4. Optional: tune it
+
+  Copy
+  [`config.example.json`](https://github.com/par4987/opencode-tg/blob/main/config.example.json)
+  to `~/.opencode/tg/config.json`. That path lives outside the package, so it
+  survives updates. Start with `"mode": "dry"`: the plugin logs what it *would*
+  send without touching Telegram, which is the safe way to validate the token and
+  the group before going live. Then set `"mode": "live"`.
+
+  `mirror` chooses what gets mirrored (`all`, or only sessions marked with
+  `/watch`), `render.*` controls the live message, and `bots` enables the
+  multi-bot topologies.
+
+  ## 5. Restart and use it
+
+  Restart OpenCode. The bridge creates a forum thread per session; anything you
+  write in a thread becomes a prompt for that session. Send `/help` in the chat
+  for the full command list (it is generated from the same
+  [`docs/COMMANDS.md`](https://github.com/par4987/opencode-tg/blob/main/docs/COMMANDS.md)
+  the bot ships with).
