@@ -55,15 +55,14 @@ The full user manual is in [`MANUAL.md`](MANUAL.md) (Español) /
 [`docs/COMMANDS.en.md`](docs/COMMANDS.en.md) — which is also what `/help`
 serves from the bot.
 
-## Configuration
+## Installation
 
-1. Register the plugin in OpenCode's config (global `opencode.jsonc` or the
-   project's) pointing at the directory:
+**From npm (recommended).** OpenCode installs npm plugins with Bun at startup:
+
+1. Add the plugin to `opencode.jsonc` (global or project):
 
    ```jsonc
-   "plugins": [
-     { "package": "C:/path/to/opencode-tg" }
-   ]
+   "plugin": ["opencode-tg"]
    ```
 
 2. Create `~/.opencode/tg/.env` (never committed to the repo):
@@ -73,10 +72,20 @@ serves from the bot.
    ALLOWED_USERS=123456789
    ```
 
-3. Adjust `config.json` next to the plugin: `mode` (`off`/`dry`/`live`),
+3. (Optional) Copy [`config.example.json`](config.example.json) to
+   `~/.opencode/tg/config.json` and adjust `mode` (`off`/`dry`/`live`),
    `mirror` (`all`/`watched`), `bots` (multi-bot topology), `coalesceMs`,
    `coalesceBusyMs`, `archiveAfterDays`, `render.*`. Start in `dry` to
-   validate without touching Telegram.
+   validate without touching Telegram. That file lives **outside the
+   package**, so it survives updates.
+
+**From the repo (development, or if you'd rather not use npm):**
+
+```jsonc
+"plugins": [{ "package": "C:/path/to/opencode-tg" }]
+```
+
+The `config.json` next to the plugin still works that way.
 
 Exercised against OpenCode 2.0.15–2.0.22; the finer per-version details
 (permissions, sessions after a restart, leader watchdogs) live in the

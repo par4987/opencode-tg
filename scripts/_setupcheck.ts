@@ -198,6 +198,10 @@ writeFileSync(CONFIG, forced);
 // and no real secret ever reaches a test. Env wins over the .env file.
 process.env.TELEGRAM_BOT_TOKEN = "123456789:TEST_FAKE_TOKEN_never_used_12345";
 process.env.ALLOWED_USERS = "123456789";
+// A developer's ~/.opencode/tg/config.json (now a config source) could say
+// "live". TG_MODE is read first and process.env wins last, so this pins the
+// suite to dry even when that file exists.
+process.env.TG_MODE = "dry";
 
 let cleanup: (() => Promise<void>) | undefined;
 try {

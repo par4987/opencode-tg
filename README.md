@@ -55,13 +55,13 @@ El manual completo de uso está en [`MANUAL.md`](MANUAL.md) (Español) /
 
 ## Instalación
 
-1. Registrar el plugin en la config de OpenCode (`opencode.jsonc` global o
-   del proyecto) apuntando al directorio:
+**Desde npm (recomendado).** OpenCode instala los plugins de npm solo, con
+Bun, al arrancar:
+
+1. Agregar el plugin a `opencode.jsonc` (global o del proyecto):
 
    ```jsonc
-   "plugins": [
-     { "package": "C:/ruta/al/opencode-tg" }
-   ]
+   "plugin": ["opencode-tg"]
    ```
 
 2. Crear `~/.opencode/tg/.env` (nunca se sube al repo):
@@ -71,10 +71,20 @@ El manual completo de uso está en [`MANUAL.md`](MANUAL.md) (Español) /
    ALLOWED_USERS=123456789
    ```
 
-3. Ajustar `config.json` junto al plugin: `mode` (`off`/`dry`/`live`),
+3. (Opcional) Copiar [`config.example.json`](config.example.json) a
+   `~/.opencode/tg/config.json` y ajustar `mode` (`off`/`dry`/`live`),
    `mirror` (`all`/`watched`), `bots` (topología multi-bot), `coalesceMs`,
-   `coalesceBusyMs`, `archiveAfterDays`, `render.*`. Arrancar en `dry` para
-   validar sin tocar Telegram.
+   `coalesceBusyMs`, `archiveAfterDays`, `render.*`. Arrancá en `dry` para
+   validar sin tocar Telegram. Ese archivo vive **fuera del paquete**, así que
+   sobrevive a las actualizaciones.
+
+**Desde el repo (desarrollo, o si preferís no usar npm):**
+
+```jsonc
+"plugins": [{ "package": "C:/ruta/al/opencode-tg" }]
+```
+
+En ese caso el `config.json` junto al plugin sigue funcionando como antes.
 
 Probado contra OpenCode 2.0.15–2.0.22; los detalles finos de cada versión
 (permisos, sesiones tras reinicio, watchdogs de líder) están en el

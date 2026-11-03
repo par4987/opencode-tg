@@ -4,8 +4,11 @@
  * Sources, later wins:
  *   1. `~/.opencode/tg/.env`   — reused from the previous bot so the token and
  *      the allow-list are not duplicated (it is read, never written).
- *   2. `config.json` next to index.ts — everything else.
- *   3. `TG_*` environment variables.
+ *   2. `config.json` next to index.ts — packaged defaults / local installs.
+ *   3. `~/.opencode/tg/config.json` — user config. It lives outside the
+ *      package so it survives npm updates (npm installs land in
+ *      `~/.cache/opencode/node_modules/`, which a new version overwrites).
+ *   4. `TG_*` environment variables.
  *
  * `mode` is what makes the migration safe:
  *   off   — plugin does nothing.
@@ -24,6 +27,8 @@ import type { Topology, BotAssign } from "./bots.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** Plugin root: this file lives in `src/`, config.json sits one level up. */
 const ROOT = join(HERE, "..");
+/** User config: outside the package, survives npm updates. */
+const USER_CONFIG = join(homedir(), ".opencode", "tg", "config.json");
 
 export type Mode = "off" | "dry" | "live";
 
@@ -223,6 +228,7 @@ export function loadConfig(): Config {
   const env = {
     ...readDotEnv(join(homedir(), ".opencode", "tg", ".env")),
     ...readJson(join(ROOT, "config.json")),
+    ...readJson(USER_CONFIG),
     ...Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined) as [string, string][]),
   };
 

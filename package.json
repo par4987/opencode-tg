@@ -1,16 +1,51 @@
 {
   "name": "opencode-tg",
-  "private": true,
   "version": "1.0.0",
+  "description": "Telegram bridge that runs inside the OpenCode server: one forum thread per session, live streaming, permissions, voice transcription and scheduled tasks. Zero runtime dependencies.",
   "license": "MIT",
   "type": "module",
-  "description": "Telegram bridge that runs inside the OpenCode server (no runtime dependencies)",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.ts",
+    "src/**/*.ts",
+    "config.example.json",
+    "README.md",
+    "README.en.md",
+    "MANUAL.md",
+    "MANUAL.en.md",
+    "docs/**/*.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22"
   },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "telegram",
+    "telegram-bot",
+    "ai-agents",
+    "agent",
+    "developer-tools",
+    "remote",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/par4987/opencode-tg.git"
+  },
+  "homepage": "https://github.com/par4987/opencode-tg#readme",
+  "bugs": {
+    "url": "https://github.com/par4987/opencode-tg/issues"
+  },
   "scripts": {
     "test": "node scripts/_run_tests.cjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "devDependencies": {
     "@opencode/plugin": "^2.0.24",

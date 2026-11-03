@@ -1,0 +1,62 @@
+{
+  // opencode-tg — example user config.
+  //
+  // Copy this file to ~/.opencode/tg/config.json and edit it. On npm installs
+  // the package itself lives under ~/.cache/opencode/node_modules/ and is
+  // replaced on every update, so user settings belong OUTSIDE the package.
+  //
+  // The token and the allow-list do NOT go here: they are read from
+  // ~/.opencode/tg/.env (TELEGRAM_BOT_TOKEN, ALLOWED_USERS). That file is only
+  // read, never written.
+  //
+  // "mode":
+  //   off   -> the plugin does nothing.
+  //   dry   -> subscribes and logs to ~/.opencode/tg/logs/plugin.log what it
+  //            WOULD send, without touching the token. Safe first run.
+  //   live  -> sends messages and long-polls Telegram. Turn this on once the
+  //            token works and nothing else is polling it (HTTP 409 otherwise).
+  "mode": "dry",
+
+  // all     -> mirror every session the server sees.
+  // watched -> only the sessions marked with /watch in the chat.
+  "mirror": "all",
+
+  // Multi-bot: every extra token (TELEGRAM_BOT_TOKEN_<NAME> in .env) is
+  // another bot with its own chat and forum. "topology" decides who mirrors
+  // what: "single" (classic), "per-project" or "per-session". /bots shows the
+  // split. See MANUAL.md for the full shape.
+  // "bots": { "topology": "per-project", "assign": [] },
+
+  // /rebuild recreates threads for sessions used within these hours.
+  // 0 = no limit.
+  "rebuildIdleHours": 24,
+
+  // Dump structural event shapes to the log. Turn off after validating.
+  "debugEvents": false,
+
+  // Dead-prompt watchdog (ms): if a delivered prompt never starts its turn,
+  // the bridge reads the server log and reports the real cause. 0 = off.
+  // 20s..15min.
+  "deadPromptMs": 90000,
+
+  // Voice-note transcription — pick a provider:
+  //   "local"             -> whisper.cpp under ~/.opencode/tg/stt (no cloud).
+  //   "openai-compatible" -> Groq / OpenAI / self-hosted; STT_API_KEY goes in
+  //                          ~/.opencode/tg/.env, never here.
+  "stt": { "provider": "local" },
+
+  // /ci — the GitHub repo whose Actions runs the command reports.
+  // The token is optional and rides ~/.opencode/tg/.env as GITHUB_TOKEN.
+  "ci": { "repo": "par4987/opencode-tg" },
+
+  "render": {
+    // Minimum milliseconds between edits of the same message.
+    "editIntervalMs": 1400,
+    // Own message with the diff of each edit/write.
+    "showDiffs": true,
+    "diffMaxLines": 40,
+    // The model's reasoning, trimmed and capped.
+    "showReasoning": false,
+    "reasoningChars": 1400
+  }
+}
