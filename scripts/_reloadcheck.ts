@@ -142,6 +142,13 @@ try {
   while (Date.now() < deadline && !captured.some((line) => line.includes("setup mode=dry"))) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+  // El descubrimiento de la API vive en la bomba REST, y cleanup() ya NO es lo
+  // que le da tiempo a correr: el puente se conserva cuando la instancia se
+  // descarga sin heredero. Esperar el sondeo acá, con tope, antes de limpiar.
+  const apiDeadline = Date.now() + 5000;
+  while (Date.now() < apiDeadline && infoCalls === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
   if (cleanup) await cleanup();
 } finally {
   console.log = origLog;

@@ -256,6 +256,15 @@ interface BridgeRegistry {
   leader?: BridgeInstance;
   /** Mode the sitting leader was built for — a config flip leaves it stale. */
   leaderMode?: Mode;
+  /**
+   * The leader whose plugin instance OpenCode disposed while no other member
+   * could inherit the seat. It keeps serving on purpose — `cleanup` refuses to
+   * stop a bridge nobody else can take over, because doing so left the mirror
+   * dark until the next `setup` (measured 2026-11-11: 21:51 → 22:48, and
+   * 13 h on 2026-11-09). Held as a reference, not a flag, so it invalidates
+   * itself the moment the seat changes hands.
+   */
+  orphan?: BridgeInstance;
   members: Set<BridgeInstance>;
   /** The mode each member was created for, so a hand-over reinstates the right one. */
   memberModes: WeakMap<BridgeInstance, Mode>;
@@ -268,8 +277,18 @@ interface BridgeRegistry {
 export interface BridgeSeat {
   /** One watchdog round — the caller's timer fires this every LOCK_INTERVAL. */
   tick: () => Promise<void>;
-  /** Removes the member; a leader hands the seat over on its way out. */
-  cleanup: () => Promise<void>;
+  /**
+   * Removes the member; a leader hands the seat over on its way out.
+   *
+   * `true` means the bridge was KEPT: it leads, OpenCode disposed its location
+   * and there was nobody to inherit the seat, so the caller must keep its
+   * watchdog timer armed and let the bridge serve on. `false` means everything
+   * this instance owned was stopped and the timer can be cleared.
+   *
+   * `keepOrphan: false` restores the unconditional stop — for a caller that
+   * really wants the bridge down (a test drain, an explicit hard unload).
+   */
+  cleanup: (options?: { keepOrphan?: boolean }) => Promise<boolean>;
 }
 
 /**
@@ -481,6 +500,21 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode, lockFile?
   const needsLock = mode === "live";
   if (needsLock) ensureLockDir();
 
+  // An orphaned leader kept the seat because its location was disposed with
+  // nobody to inherit it (see `cleanup`). A fresh setup carries the config read
+  // at this moment, so it takes the seat instead of idling behind a leader
+  // whose owner is gone — that is what a `/reload` needs to take effect. Only
+  // an orphan is adopted here: a leader with a live owner is left alone, as
+  // before, and a waiter must never depose it.
+  if (reg.leader && reg.orphan === reg.leader) {
+    log("INFO", "relevo del puente hu\u00e9rfano: la instancia nueva toma el asiento");
+    const previous = reg.leader;
+    reg.leader = undefined;
+    reg.leaderMode = undefined;
+    reg.orphan = undefined;
+    await previous.stop().catch((error) => log("ERROR", "stop del puente hu\u00e9rfano", safe(error)));
+  }
+
   // The leader was chosen by the FIRST instance to join, which read whatever
   // mode config.json had at that moment. If the file has been flipped since
   // (dry -> live after stopping the old bot), the sitting leader is driving
@@ -637,16 +671,34 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode, lockFile?
     }
   };
 
-  const cleanup = async (): Promise<void> => {
+  const cleanup = async (options?: { keepOrphan?: boolean }): Promise<boolean> => {
+    const keepOrphan = options?.keepOrphan ?? true;
+    const leading = reg.leader === guarded;
     reg.members.delete(instance);
-    if (reg.leader === guarded) {
+    if (leading && reg.members.size === 0 && keepOrphan) {
+      // OpenCode scopes the plugin per location: it evaluates `setup` once per
+      // project and calls this cleanup when that location goes away. The bridge
+      // is not a per-project thing — it polls one token for the whole machine —
+      // so stopping here, with no member left to inherit the seat, is how the
+      // mirror went silent for 57 minutes on 2026-11-11 and for 13 hours on
+      // 2026-11-09: the transports were aborted, the lock released, and nothing
+      // called `setup` again until the next app restart.
+      //
+      // Keep leading. A later `setup` adopts the seat (joinBridge stops this
+      // one first, so a config reload still takes effect), and the watchdog
+      // tick below keeps watching the poll it now owns alone.
+      reg.orphan = guarded;
+      log("WARN", "instancia descargada sin heredero: el puente sigue sirviendo en este proceso");
+      return true;
+    }
+    if (leading) {
       reg.leader = undefined;
       reg.leaderMode = undefined;
       await guarded.stop();
       // A waiter may have won the seat while the stop above was awaited —
       // handing over on top of it installs a second leader. Act only if
       // the seat is still empty.
-      if (reg.leader !== undefined) return;
+      if (reg.leader !== undefined) return false;
       const next = [...reg.members].find((member) => member !== instance);
       const wrapper = next ? reg.wrappers.get(next) : undefined;
       if (next && wrapper) {
@@ -675,6 +727,7 @@ export async function joinBridge(instance: BridgeInstance, mode: Mode, lockFile?
       // shut our transport down rather than leaving a stray poller.
       await guarded.stop().catch((error) => log("ERROR", "stop de instancia relevada", safe(error)));
     }
+    return false;
   };
 
   return { tick, cleanup };
@@ -1048,9 +1101,18 @@ const pluginExport = {
       () => void seat.tick().catch((error) => log("ERROR", "watchdog", safe(error))),
       LOCK_INTERVAL,
     );
+    // The watchdog must not be the handle that keeps a one-shot CLI alive once
+    // OpenCode disposes the plugin; inside the server the loop is held by its
+    // own sockets anyway.
+    (timer as unknown as { unref?: () => void }).unref?.();
     return async () => {
-      clearInterval(timer);
-      await seat.cleanup();
+      // `true` = the bridge was kept: it leads with no heir, so its tick must
+      // keep running. Clearing it here is exactly the silence this guards.
+      const kept = await seat.cleanup().catch((error) => {
+        log("ERROR", "cleanup", safe(error));
+        return true;
+      });
+      if (!kept) clearInterval(timer);
     };
   },
 

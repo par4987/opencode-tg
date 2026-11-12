@@ -142,7 +142,13 @@ async function main() {
     const t = lineTime(l);
     return !Number.isNaN(t) && now - t <= WINDOW_MS;
   });
-  const deliveries = recent.filter((l) => /coalesce|reply:|título sincronizado|sesión nueva/i.test(l));
+  const sends = recent.filter((l) => /envio: mensaje \d+/i.test(l));
+  // Real sends when the log carries them; the render-line heuristic is the
+  // fallback for logs written before the transport confirmed deliveries.
+  const deliveries =
+    sends.length > 0
+      ? sends
+      : recent.filter((l) => /coalesce|reply:|título sincronizado|sesión nueva/i.test(l));
   const churn = recent.filter((l) => /cede el asiento|líder local muerto/i.test(l)).length;
   const dnsFails = recent.filter((l) => /getaddrinfo|ENOTFOUND|EAI_AGAIN/i.test(l)).length;
   const lock = readLock();

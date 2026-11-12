@@ -454,7 +454,7 @@ export class Telegram {
     if (options.messageThreadId) body.message_thread_id = options.messageThreadId;
     try {
       const message = await this.call<{ message_id: number }>("sendMessage", body);
-      return message?.message_id ?? null;
+      return this.delivered(message?.message_id ?? null);
     } catch (error) {
       if (error instanceof TelegramError && error.isStaleTarget) return null;
       if (options.messageThreadId !== undefined && this.isDeadThreadError(error)) {
@@ -462,7 +462,7 @@ export class Telegram {
         const healed: Record<string, unknown> = { ...body };
         delete healed.message_thread_id;
         const message = await this.call<{ message_id: number }>("sendMessage", healed);
-        return message?.message_id ?? null;
+        return this.delivered(message?.message_id ?? null);
       }
       // "can't parse entities" must not eat a message: one raw `<` in the
       // text used to lose the whole send. Retry once with no parse mode —
@@ -473,13 +473,24 @@ export class Telegram {
         delete plain.parse_mode;
         try {
           const message = await this.call<{ message_id: number }>("sendMessage", plain);
-          return message?.message_id ?? null;
+          return this.delivered(message?.message_id ?? null);
         } catch {
           throw error;
         }
       }
       throw error;
     }
+  }
+
+  /**
+   * One line per message Telegram CONFIRMED — its own message_id, so this is a
+   * real delivery and not a render. Edits stay unlogged: thousands a day, and
+   * they prove nothing about the send path. The health check used to count
+   * render lines as "deliveries" and called a dead mirror healthy (2026-11-11).
+   */
+  private delivered(messageId: number | null): number | null {
+    if (messageId !== null) log("INFO", `envio: mensaje ${messageId}`);
+    return messageId;
   }
 
   /** Returns null when the message vanished or the content was identical. */

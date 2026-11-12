@@ -103,7 +103,7 @@ async function drain(members: Array<{ raw: Fake; seat: BridgeSeat }>): Promise<v
       (reg.wrappers.get(a.raw) === leaderWrapper ? 1 : 0) -
       (reg.wrappers.get(b.raw) === leaderWrapper ? 1 : 0),
   );
-  for (const m of ordered) await m.seat.cleanup();
+  for (const m of ordered) await m.seat.cleanup({ keepOrphan: false });
 }
 
 async function member(name: string, gates?: { start?: Promise<void>; stop?: Promise<void> }) {
@@ -216,6 +216,49 @@ async function main(): Promise<void> {
     check("la abdicacion no instala a B4 encima de C4", leaderIs(c4.raw));
     check("B4 nunca arranco", b4.raw.startCalls === 0, `${b4.raw.startCalls} llamadas`);
     await drain([a4, b4, c4]);
+  }
+
+  // -- 5. Disposing the last member does NOT kill the bridge ---------------
+  // The incident (2026-11-11 21:51 local): OpenCode disposed the location
+  // whose plugin instance held the seat, no other member remained, and the
+  // old cleanup stopped every transport and released the lock. Nothing called
+  // setup again: 57 minutes of silence that day, 13 h on 2026-11-09. The
+  // bridge belongs to the server, not to the location that happened to win
+  // the seat first.
+  {
+    const solo = await member("S1");
+    check("S1 lidera sola", leaderIs(solo.raw));
+    const kept = await solo.seat.cleanup();
+    check("cleanup sin heredero: el puente se conserva", kept === true);
+    check("cleanup sin heredero: sigue liderando", leaderIs(solo.raw));
+    check(
+      "cleanup sin heredero: no freno el transporte",
+      solo.raw.stopCalls === 0,
+      `${solo.raw.stopCalls} llamadas`,
+    );
+    // The tick keeps watching the poll it now owns alone.
+    await solo.seat.tick();
+    check("el tick sigue vivo tras la descarga", leaderIs(solo.raw));
+    // A later setup adopts the orphan: it carries the config just read, so a
+    // /reload still takes effect instead of idling behind a stale bridge.
+    const fresh = await member("S2");
+    check("la instancia nueva releva al huerfano", leaderIs(fresh.raw));
+    check("el huerfano se detuvo al ser relevado", solo.raw.stopCalls === 1, `${solo.raw.stopCalls} llamadas`);
+    check("la instancia nueva arranco", fresh.raw.startCalls === 1, `${fresh.raw.startCalls} llamadas`);
+    await drain([fresh]);
+  }
+
+  // -- 6. With an heir, cleanup still stops and hands over -----------------
+  // The keep-alive above must not leak into the normal case: a leader whose
+  // location closes while others remain stops, and exactly one of them leads.
+  {
+    const a6 = await member("A6");
+    const b6 = await member("B6");
+    const kept6 = await a6.seat.cleanup();
+    check("cleanup con heredero: no se conserva", kept6 === false);
+    check("cleanup con heredero: traspaso a B6", leaderIs(b6.raw));
+    check("A6 se detuvo", a6.raw.stopCalls === 1, `${a6.raw.stopCalls} llamadas`);
+    await drain([b6]);
   }
 
   try {
