@@ -209,7 +209,7 @@ the first time the process dies at the wrong moment.
 
 The project is MIT and lives here: **https://github.com/par4987/opencode-tg**
 
-It passes 32 test suites (809 checks) and a typecheck on every push, plus a
+It passes 32 test suites (820 checks) and a typecheck on every push, plus a
 twice-weekly dependency audit that only pushes an update when the whole suite is
 still green.
 

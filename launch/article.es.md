@@ -213,7 +213,7 @@ equivocado.
 
 El proyecto es MIT y vive acá: **https://github.com/par4987/opencode-tg**
 
-Pasa 32 suites de tests (809 checks) y un typecheck en cada push, más una
+Pasa 32 suites de tests (820 checks) y un typecheck en cada push, más una
 auditoría de dependencias dos veces por semana que solo empuja una actualización
 cuando toda la suite sigue en verde.
 
