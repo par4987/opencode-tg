@@ -2826,6 +2826,7 @@ const pluginExport = {
           dead: h.deadProvider,
           stale: h.stale,
           dup: h.collapsed,
+          extra: h.extra,
         })
       );
     };
@@ -2941,13 +2942,17 @@ const pluginExport = {
     interface ModelsHidden {
       /** Models actually offered. */
       shown: number;
-      /** Enabled in the desktop (or config) — the number to compare against. */
+      /** Switched on in the desktop (or the config set) — the number the user
+       *  compares against. Does NOT include `extra`. */
       visible: number;
       /** Enabled, but their provider is not on this server at all. */
       deadProvider: number;
       /** Enabled, provider present, model no longer published. */
       stale: number;
-      /** Published twice (two providers) — collapsed to one button. */
+      /** Published by the server and unknown to the desktop's snapshot —
+       *  offered anyway: nobody ever switched them off. */
+      extra: number;
+      /** Published twice within a provider — collapsed to one button. */
       collapsed: number;
     }
     const modelCatalog = async (
@@ -2983,9 +2988,25 @@ const pluginExport = {
       // otherwise. Both worlds speak "providerID\u0000modelID".
       const showKeys = new Set<string>();
       const toggles = await desktopVisibleModels();
+      const desktopOn = toggles.filter((t) => t.visible);
+      let extra = 0;
       if (toggles.length > 0) {
-        for (const t of toggles) {
-          if (t.visible) showKeys.add(`${t.providerID}\u0000${t.modelID}`);
+        const known = new Set(toggles.map((t) => `${t.providerID}\u0000${t.modelID}`));
+        for (const t of desktopOn) showKeys.add(`${t.providerID}\u0000${t.modelID}`);
+        // Models the server publishes that the desktop state has never heard
+        // of: not switched off, absent from its snapshot (2026-11-14: all of
+        // sambanova, 26 xkiro/cohere/*, opencode/iceman-free — 30 of the 138
+        // published). The desktop cannot have chosen against a model it does
+        // not list, so hiding them made the picker stricter than BOTH worlds
+        // and left a whole provider out of the list. Only the toggles path:
+        // the config fallback below already declares its own set.
+        if (Array.isArray(all)) {
+          for (const m of all) {
+            const key = `${m.providerID}\u0000${m.modelID ?? m.id}`;
+            if (known.has(key)) continue;
+            showKeys.add(key);
+            extra++;
+          }
         }
       } else {
         for (const [pid, models] of enabledKeys) {
@@ -3044,7 +3065,7 @@ const pluginExport = {
         seen.add(seenKey);
         items.push(model);
       }
-      const stale = showKeys.size - deadProvider - matched;
+      const stale = Math.max(0, showKeys.size - deadProvider - matched);
       // The API returns variants as objects ({id, settings} / {id, body}),
       // but the picker and the POST only need the id string. Normalise every
       // item so ApiModel.variants is always string[] (none, minimal, low,
@@ -3059,14 +3080,15 @@ const pluginExport = {
       items.sort((a, b) => a.id.localeCompare(b.id));
       const hidden: ModelsHidden = {
         shown: items.length,
-        visible: showKeys.size,
+        visible: toggles.length > 0 ? desktopOn.length : showKeys.size,
         deadProvider,
         stale,
         collapsed: matched - items.length,
+        extra,
       };
       log(
         "INFO",
-        `models: ${items.length} publicados (${toggles.length > 0 ? `estado del desktop, ${showKeys.size} habilitados, ${deadProvider} en proveedores que el server no publica, ${stale} ya no publicados, ${hidden.collapsed} duplicados` : "config"})`,
+        `models: ${items.length} publicados (${toggles.length > 0 ? `estado del desktop: ${desktopOn.length} habilitados, ${extra} publicados solo por el server, ${deadProvider} en proveedores ausentes, ${stale} ya no publicados, ${hidden.collapsed} duplicados` : "config"})`,
       );
       const provList = [...new Set(items.map((m) => m.providerID))]
         .map((pid) => ({ id: pid, name: provNames.get(pid) ?? pid }))
