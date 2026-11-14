@@ -3096,6 +3096,38 @@ const pluginExport = {
       return { items, providers: provList, hidden };
     };
 
+    /**
+     * Sesión activa, directorio y catálogo de modelos de un target — el trío
+     * que `/models` y `/reasoning` necesitan para armar el picker, junto con
+     * el `current` de la sesión para saber qué modelo está en uso.
+     *
+     * Responde al chat y devuelve `undefined` cuando el comando debe
+     * abortarse (API sin responder, sesión sin cargar o catálogo vacío), así
+     * cada caso no vuelve a repetir el conectar → pedir /session → calcular
+     * directorio → pedir catálogo. El caller sigue decidiendo qué página del
+     * picker abre o qué modelo edita.
+     */
+    async function sessionCatalog(target: string, say: (text: string) => Promise<void>): Promise<{
+      current: ApiSession | undefined;
+      directory: string | undefined;
+      catalog: { items: ApiModel[]; providers: Array<{ id: string; name: string }>; hidden: ModelsHidden };
+    } | undefined> {
+      if (!(await forms.connect())) {
+        await say(t("api_down"));
+        return undefined;
+      }
+      const current = await forms
+        .request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`)
+        .catch(() => undefined);
+      const directory = current?.location?.directory ?? (await directoryOf(target));
+      const catalog = await modelCatalog(directory);
+      if (!catalog) {
+        await say(t("model_none"));
+        return undefined;
+      }
+      return { current, directory, catalog };
+    }
+
     const commands = [
       { command: "help", description: "Show this help" },
       { command: "sessions", description: "Sessions seen by the server" },
@@ -3785,19 +3817,9 @@ const pluginExport = {
             await reply(t("model_needs_session"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
-          const current = await forms
-            .request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`)
-            .catch(() => undefined);
-          const currentDirectory = current?.location?.directory ?? (await directoryOf(target));
-          const catalog = await modelCatalog(currentDirectory);
-          if (!catalog) {
-            await reply(t("model_none"));
-            return;
-          }
+          const loaded = await sessionCatalog(target, reply);
+          if (!loaded) return;
+          const { current, directory: currentDirectory, catalog } = loaded;
           if (catalog.items.length === 0) {
             await reply(t("models_nothing_enabled"));
             return;
@@ -3843,22 +3865,12 @@ const pluginExport = {
             await reply(t("reasoning_needs_session"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
-          const current = await forms
-            .request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`)
-            .catch(() => undefined);
+          const loaded = await sessionCatalog(target, reply);
+          if (!loaded) return;
+          const { current, directory: dir, catalog } = loaded;
           const currentModel = current?.model;
           if (!currentModel?.id) {
             await reply(t("model_needs_session"));
-            return;
-          }
-          const dir = current?.location?.directory ?? (await directoryOf(target));
-          const catalog = await modelCatalog(dir);
-          if (!catalog) {
-            await reply(t("model_none"));
             return;
           }
           const model = catalog.items.find((m) => m.id === currentModel.id || (m.providerID === currentModel.providerID && m.modelID === currentModel.id));
