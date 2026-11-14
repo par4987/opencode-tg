@@ -6676,6 +6676,18 @@ const pluginExport = {
               // answered; an ack with no words is how "nothing happened" feels.
               const ack = (text?: string) =>
                 telegram.answerCallbackQuery(cq.id, text).catch((error) => log("WARN", "callback", safe(error)));
+
+              /** Una llamada al API local o nada: responde `api_down_ack` y
+               *  descarta el callback si no hay server. Cierra sobre `ack` y
+               *  `forms` de este alcance (solo lo usa el manejador de
+               *  callbacks, que tiene su propio `ack`). */
+              const requireApiAck = async (): Promise<boolean> => {
+                if (!(await forms.connect())) {
+                  await ack(t("api_down_ack"));
+                  return false;
+                }
+                return true;
+              };
               const ripDeadButtons = async (formID: string): Promise<void> => {
                 log("WARN", `callback form sin entrada: ${formID || "?"} (abiertas: ${openForms.size})`);
                 // A button outliving its form (a restart dropped the entry, or
@@ -7361,10 +7373,7 @@ const pluginExport = {
                   await ack();
                   return;
                 }
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 try {
                   await forms.request("POST", `/session/${encodeURIComponent(target)}/model`, {
                     model: { id: chosen.id, providerID: chosen.providerID },
@@ -7399,10 +7408,7 @@ const pluginExport = {
                   await ack(t("models_stale"));
                   return;
                 }
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 try {
                   await forms.request("POST", `/session/${encodeURIComponent(target)}/model`, {
                     model: { id: model.id, providerID: model.providerID, variant },
@@ -7566,7 +7572,7 @@ const pluginExport = {
                   await ack(arg === "pick" ? t("models_pick_prompt") : t("models_picked_ack"));
                   if (arg === "pick") {
                     // Reuse the /models mirror: desktop-shown models only.
-                    if (!(await forms.connect())) { await ack(t("api_down_ack")); return; }
+                    if (!(await requireApiAck())) return;
                     const [all, providers] = await Promise.all([
                       forms.request<Array<{ id: string; modelID?: string; providerID: string; name?: string; enabled?: boolean; status?: string }>>("GET", "/model").catch(() => undefined),
                       forms.request<Array<{ id?: string; name?: string; activation?: string }>>("GET", "/provider").catch(() => undefined),
@@ -7667,7 +7673,7 @@ const pluginExport = {
                   return;
                 }
                 if (!task) { await ack(t("tasks_gone")); return; }
-                if (!(await forms.connect())) { await ack(t("api_down_ack")); return; }
+                if (!(await requireApiAck())) return;
                 if (action === "view") {
                   await ack();
                   if (cq.message) {
@@ -7772,10 +7778,7 @@ const pluginExport = {
                   await ack(t("queue_stale"));
                   return;
                 }
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 const rerender = async (): Promise<void> => {
                   if (!cq.message) return;
                   const { text, keyboard } = renderInboxList(card);
@@ -7904,10 +7907,7 @@ const pluginExport = {
                 // Drop BEFORE waking: a double tap must not wake it twice.
                 archiveCards.drop(cq.message?.message_id);
                 await ack(t("unarchive_waking", { title: escapeHtml(title) }));
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 const note = t(await unarchiveSession(row.id));
                 if (cq.message) {
                   await telegram
@@ -7956,10 +7956,7 @@ const pluginExport = {
                 // Drop BEFORE creating: a double tap must not open two sessions.
                 newProjectCards.drop(cq.message?.message_id);
                 await ack(t("new_opening"));
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 try {
                   const born = await bornSession(chosen.directory, card.title, originThread);
                   if (born) {
@@ -7987,10 +7984,7 @@ const pluginExport = {
                   await ack(t("projects_stale"));
                   return;
                 }
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 try {
                   const created = await forms.request<{ id?: string }>("POST", "/session", {
                     location: { directory: chosen.directory },
@@ -8025,10 +8019,7 @@ const pluginExport = {
                   await ack(t("agents_stale"));
                   return;
                 }
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 try {
                   await forms.request("POST", `/session/${encodeURIComponent(target)}/agent`, { agent: chosen.id });
                   if (cq.message) {
@@ -8075,10 +8066,7 @@ const pluginExport = {
                 // lost:new:<directory> — create a new session in the same
                 // project the lost session belonged to.
                 const directory = decodeURIComponent(payload.slice(9));
-                if (!(await forms.connect())) {
-                  await ack(t("api_down_ack"));
-                  return;
-                }
+                if (!(await requireApiAck())) return;
                 try {
                   const created = await forms.request<{ id?: string }>("POST", "/session", {
                     location: { directory },
