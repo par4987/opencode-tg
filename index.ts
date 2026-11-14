@@ -1231,6 +1231,9 @@ const pluginExport = {
       /** The filtered catalogue; `mpk:` indexes are stable against it. */
       items: ApiModel[];
       providers: Array<{ id: string; name: string }>;
+      /** Why the picker offers fewer models than the desktop switched on;
+       *  drawn under the hint so a short list never looks like a bug. */
+      hidden?: ModelsHidden;
       /** The provider whose models are showing; undefined in the provider list. */
       chosen?: string;
       search: string;
@@ -2806,6 +2809,26 @@ const pluginExport = {
       taskTimer = undefined;
     };
 
+    /**
+     * The arithmetic line: how many models the desktop switched on, and where
+     * the rest went. Shown only when there IS a difference — a picker that
+     * offers everything it can stays quiet, and a short list that explains
+     * itself never looks like a bug (2026-11-14: "no me aparecen todos").
+     */
+    const hiddenSummary = (state: ModelPicker): string => {
+      const h = state.hidden;
+      if (!h || h.visible <= h.shown) return "";
+      return (
+        "\n" +
+        t("models_hidden_summary", {
+          shown: h.shown,
+          visible: h.visible,
+          dead: h.deadProvider,
+          stale: h.stale,
+          dup: h.collapsed,
+        })
+      );
+    };
     /** One page of the /models picker — shared by the command and its pagination. */
     const MODEL_PAGE_SIZE = 8;
     /** The provider list the picker opens with — the desktop selector's first step. */
@@ -2818,7 +2841,8 @@ const pluginExport = {
         text:
           (state.announce ?? "") +
           t("models_pick_header", { label: escapeHtml(state.label ?? tracked?.title ?? state.target.slice(0, 18)) }) +
-          t("models_pick_provider"),
+          t("models_pick_provider") +
+          hiddenSummary(state),
         keyboard,
       };
     };
@@ -2909,10 +2933,27 @@ const pluginExport = {
      * there, with the config file as fallback when that state cannot be read.
      * Shared by /models and /new's model step, so the two pickers can never
      * disagree about what is on offer. The caller connects first.
+     *
+     * `hidden` is the arithmetic behind the difference between what the
+     * desktop switched on and what the picker can honestly offer.
      */
+    interface ModelsHidden {
+      /** Models actually offered. */
+      shown: number;
+      /** Enabled in the desktop (or config) — the number to compare against. */
+      visible: number;
+      /** Enabled, but their provider is not on this server at all. */
+      deadProvider: number;
+      /** Enabled, provider present, model no longer published. */
+      stale: number;
+      /** Published twice (two providers) — collapsed to one button. */
+      collapsed: number;
+    }
     const modelCatalog = async (
       directory: string | undefined,
-    ): Promise<{ items: ApiModel[]; providers: Array<{ id: string; name: string }> } | undefined> => {
+    ): Promise<
+      { items: ApiModel[]; providers: Array<{ id: string; name: string }>; hidden: ModelsHidden } | undefined
+    > => {
       const [all, providers] = await Promise.all([
         forms.request<ApiModel[]>("GET", "/model"),
         forms.request<Array<{ id?: string; activation?: string; name?: string }>>("GET", "/provider"),
@@ -2964,6 +3005,11 @@ const pluginExport = {
       // neither the reasoning step nor the POST can act on.
       const items: ApiModel[] = [];
       const seen = new Set<string>();
+      // Why the picker offers fewer models than the desktop switched on. Every
+      // enabled key lands in exactly one bucket, so the numbers add up:
+      // showKeys = matched + deadProvider + stale.
+      let matched = 0;
+      let deadProvider = 0;
       for (const key of showKeys) {
         // Exact key match, else a provider+id lookup for the toggles whose
         // modelID carries a path the API keeps under `id` instead.
@@ -2977,11 +3023,27 @@ const pluginExport = {
               break;
             }
           }
+          if (!model) {
+            // Not published. Either the provider is not on this server at all
+            // (llmgateway with no credits, openrouter with no key — both are
+            // in `disabled_providers` in opencode.jsonc) or the model left the
+            // catalogue since the desktop wrote its toggle.
+            if (pid && !provNames.has(pid)) deadProvider++;
+            continue;
+          }
         }
-        if (!model || seen.has(model.id)) continue;
-        seen.add(model.id);
+        matched++;
+        // Dedupe WITHIN a provider — the same model reachable through two
+        // keys. Keying on `model.id` alone collapsed ACROSS providers: the
+        // API's `id` carries no provider prefix (`z-ai/glm-5.3-flash`), so
+        // nvidia2's copies of nvidia's models were dropped and a provider you
+        // enabled offered 1 of its 13 models (measured 2026-11-14).
+        const seenKey = `${model.providerID} ${model.modelID ?? model.id}`;
+        if (seen.has(seenKey)) continue;
+        seen.add(seenKey);
         items.push(model);
       }
+      const stale = showKeys.size - deadProvider - matched;
       // The API returns variants as objects ({id, settings} / {id, body}),
       // but the picker and the POST only need the id string. Normalise every
       // item so ApiModel.variants is always string[] (none, minimal, low,
@@ -2994,14 +3056,21 @@ const pluginExport = {
         }
       }
       items.sort((a, b) => a.id.localeCompare(b.id));
+      const hidden: ModelsHidden = {
+        shown: items.length,
+        visible: showKeys.size,
+        deadProvider,
+        stale,
+        collapsed: matched - items.length,
+      };
       log(
         "INFO",
-        `models: ${items.length} publicados (${toggles.length > 0 ? `estado del desktop, ${toggles.filter((t) => t.visible).length} visibles` : "config"})`,
+        `models: ${items.length} publicados (${toggles.length > 0 ? `estado del desktop, ${showKeys.size} habilitados, ${deadProvider} en proveedores que el server no publica, ${stale} ya no publicados, ${hidden.collapsed} duplicados` : "config"})`,
       );
       const provList = [...new Set(items.map((m) => m.providerID))]
         .map((pid) => ({ id: pid, name: provNames.get(pid) ?? pid }))
         .sort((a, b) => a.name.localeCompare(b.name));
-      return { items, providers: provList };
+      return { items, providers: provList, hidden };
     };
 
     const commands = [
@@ -3167,6 +3236,7 @@ const pluginExport = {
         announce,
         label: title,
         currentModelID: def?.id,
+        hidden: catalog.hidden,
       };
       const { text, keyboard } = chosen ? modelPickerPage(state, 0) : modelProviderPage(state);
       const sent = await telegram.sendMessage(chatId, text, {
@@ -3720,7 +3790,15 @@ const pluginExport = {
             : undefined;
           const chosen = matchedProvider?.id ?? (arg ? undefined : home || undefined);
           const search = !matchedProvider && arg ? arg : "";
-          const state: ModelPicker = { target, items, providers: provList, chosen, search, currentModelID: current?.model?.id };
+          const state: ModelPicker = {
+            target,
+            items,
+            providers: provList,
+            chosen,
+            search,
+            currentModelID: current?.model?.id,
+            hidden: catalog.hidden,
+          };
           if (chatId === undefined) return;
           const chosenPage = chosen || search;
           const { text, keyboard } = chosenPage ? modelPickerPage(state, 0) : modelProviderPage(state);
