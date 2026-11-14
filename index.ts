@@ -2908,7 +2908,8 @@ const pluginExport = {
           (state.announce ?? "") +
           t("models_pick_header", { label: escapeHtml(state.label ?? tracked?.title ?? state.target.slice(0, 18)) }) +
           t("models_page_header", { heading: escapeHtml(heading), page: safe + 1, pages }) +
-          t("models_pick_hint"),
+          t("models_pick_hint") +
+          hiddenSummary(state),
         keyboard,
       };
     };
