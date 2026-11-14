@@ -3557,6 +3557,18 @@ const pluginExport = {
       // written there, the chat root when not. The switch talks through
       // `reply`, never bare `send`.
       const reply = (text: string): Promise<void> => send(text, threadSession);
+
+      /** Una llamada al API local o nada: responde `api_down` y sale del
+       *  comando si no hay server. `handleCommand` es el unico caller, por
+       *  eso cierra sobre `reply` y `forms` de este alcance. */
+      const requireApi = async (): Promise<boolean> => {
+        if (!(await forms.connect())) {
+          await reply(t("api_down"));
+          return false;
+        }
+        return true;
+      };
+
       switch (name) {
         case "start":
         case "help": {
@@ -3767,10 +3779,7 @@ const pluginExport = {
         }
 
         case "mcp": {
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           // /mcp connect|disconnect <server> — the ops pair of the list
           // (verified: POST /experimental/mcp/{server}/connect|disconnect
           // with no body -> 204).
@@ -3943,10 +3952,7 @@ const pluginExport = {
             return;
           }
           const wanted = parts.slice(1).join(" ").trim();
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const catalog = await modelCatalog(task.directory);
           if (!catalog) {
             await reply(t("model_none"));
@@ -3987,10 +3993,7 @@ const pluginExport = {
             await reply(t("agent_needs_session"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const all = await forms.request<ApiAgent[]>("GET", "/agent");
           if (!Array.isArray(all) || all.length === 0) {
             await reply(t("agent_none"));
@@ -4703,10 +4706,7 @@ const pluginExport = {
         }
 
         case "projects": {
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const projects = await forms.request<
             Array<{ id?: string; canonical?: string; time?: { updated?: number; created?: number } }>
           >("GET", "/project");
@@ -4841,10 +4841,7 @@ const pluginExport = {
             await reply(t("queue_needs_session"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           let inbox: Array<Record<string, unknown>> | undefined;
           try {
             inbox = await forms.request<Array<Record<string, unknown>>>(
@@ -4898,10 +4895,7 @@ const pluginExport = {
             await reply(t("flush_needs_session"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           // First drain anything the busy coalescing buffer is still holding:
           // those messages never reached the server, so flushing the inbox
           // alone would miss them.
@@ -4974,10 +4968,7 @@ const pluginExport = {
             await reply(t("clearqueue_needs_session"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           let inbox: Array<Record<string, unknown>> | undefined;
           try {
             inbox = await forms.request<Array<Record<string, unknown>>>(
@@ -5050,10 +5041,7 @@ const pluginExport = {
             return;
           }
           const label = sessions.get(target)?.title ?? target.slice(0, 18);
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           // Interrupting through the server is the safe stop: it cancels the
           // session's turn wherever the server is running it, without taking
           // any process down.
@@ -5084,10 +5072,7 @@ const pluginExport = {
           // first as the default. /projects remains the session picker for
           // jumping into an existing conversation.
           const target = threadSession || targetSession();
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const directory = await directoryOf(target);
           if (!directory) {
             await reply(t("newtask_needs_project"));
@@ -5171,7 +5156,7 @@ const pluginExport = {
         case "compact": {
           const target = argument.trim() || threadSession || targetSession();
           if (!target) { await reply(t("compact_needs_session")); return; }
-          if (!(await forms.connect())) { await reply(t("api_down")); return; }
+          if (!(await requireApi())) return;
           try {
             await forms.request("POST", "/session/" + encodeURIComponent(target) + "/compact", {});
             await reply(t("compact_done"));
@@ -5219,7 +5204,7 @@ const pluginExport = {
 
         case "usagestats": {
           const days = Math.min(Math.max(Number(argument) || 7, 1), 90);
-          if (!(await forms.connect())) { await reply(t("api_down")); return; }
+          if (!(await requireApi())) return;
           const to = Date.now();
           const from = to - days * 86_400_000;
           try {
@@ -5412,10 +5397,7 @@ const pluginExport = {
             await reply(t("err_no_target"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           // 128 is Telegram's topic-name ceiling; the server takes more,
           // but a title the thread cannot wear is half a rename.
           if (!title) {
@@ -5548,10 +5530,7 @@ const pluginExport = {
             }
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           try {
             await forms.request("POST", "/session/" + encodeURIComponent(target) + "/shell", { command: cmdText });
             await reply(
@@ -5600,10 +5579,7 @@ const pluginExport = {
             await reply(t("err_no_sub_arg"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           try {
             await forms.request("POST", "/session/" + encodeURIComponent(target) + "/synthetic", { text });
             await reply(t("note_added"));
@@ -5627,10 +5603,7 @@ const pluginExport = {
             await reply(t("err_in_thread_use"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const parts = argument.trim().split(/\s+/);
           const sub = (parts[0] ?? "").toLowerCase();
           try {
@@ -5692,10 +5665,7 @@ const pluginExport = {
           // The natural pair of the 🔁 button: see what accumulated,
           // take one back.
           const parts = argument.trim().split(/\s+/);
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           try {
             if ((parts[0] ?? "").toLowerCase() === "del") {
               const id = parts[1] ?? "";
@@ -5735,10 +5705,7 @@ const pluginExport = {
             await reply(t("err_in_thread_turns"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const diff = await forms
             .request<Array<Record<string, unknown>>>("GET", "/session/" + encodeURIComponent(target) + "/diff")
             .catch(() => undefined);
@@ -5761,10 +5728,7 @@ const pluginExport = {
             await reply(t("err_in_thread_log"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const raw = await forms
             .raw("GET", "/api/experimental/session/" + encodeURIComponent(target) + "/log", undefined, 8000, 4000)
             .catch(() => "");
@@ -5787,10 +5751,7 @@ const pluginExport = {
             await reply(t("err_in_thread_terminal"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           const read = await forms
             .request<{ lines?: unknown } | null>("GET", "/api/experimental/session/" + encodeURIComponent(target) + "/terminal/read")
             .catch(() => undefined);
@@ -5830,10 +5791,7 @@ const pluginExport = {
             await reply(t("err_no_project"));
             return;
           }
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           try {
             await forms.request("POST", "/session/" + encodeURIComponent(target) + "/move", { directory });
             const tracked = sessions.get(target);
@@ -5856,10 +5814,7 @@ const pluginExport = {
           // is POST /session/{id}/command with {text}).
           const parts = argument.trim().split(/\s+/);
           const sub = (parts[0] ?? "").toLowerCase();
-          if (!(await forms.connect())) {
-            await reply(t("api_down"));
-            return;
-          }
+          if (!(await requireApi())) return;
           if (sub === "run") {
             const target = threadSession || targetSession();
             const text = argument.slice(3).trim();
