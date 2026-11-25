@@ -3256,7 +3256,26 @@ const pluginExport = {
         t("new_session_here") +
         "\n\n" +
         t("new_pick_model");
-      const catalog = await modelCatalog(directory);
+      // El mismo camino de catálogo que /models: conectar al API local, leer
+      // el directorio que el servidor registró para la sesión recién creada
+      // y pedir el catálogo de modelos. Usar session.location.directory (el
+      // path real del servidor) en lugar del directorio del picker evita que
+      // una normalización de ruta deje el catálogo fuera de lo que /models
+      // muestra para esa misma sesión.
+      if (!(await forms.connect())) {
+        await telegram
+          .sendMessage(chatId, announce + "\n" + t("api_down"), {
+            parseMode: "HTML",
+            messageThreadId: originThread,
+          })
+          .catch(() => undefined);
+        return;
+      }
+      const current = await forms
+        .request<ApiSession>("GET", `/session/${encodeURIComponent(target)}`)
+        .catch(() => undefined);
+      const dir = current?.location?.directory ?? directory;
+      const catalog = await modelCatalog(dir);
       if (!catalog || catalog.items.length === 0) {
         // No models to offer: the announcement still has to reach the thread
         // so the user knows where to write. /models picks the model up later.
